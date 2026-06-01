@@ -1,0 +1,299 @@
+# ============================================================
+# Fixed Agent Enhanced Configuration
+# ============================================================
+#
+# Defines detailed configuration for each fixed agent, including:
+# - LLM configuration (model, temperature, etc.)
+# - Capability configuration (supported output formats, data sources, etc.)
+# - Template configuration (output template paths)
+# - Validation configuration (input/output validation rules)
+#
+# ============================================================
+
+version: "1.0"
+
+# ============================================================
+# Requirement Analysis Agent
+# ============================================================
+requirement_analysis:
+  # LLM Configuration
+  llm:
+    model: gpt-4o
+    temperature: 0.3              # Low temperature for accuracy
+    max_tokens: 2000
+
+  # Capability Configuration
+  capabilities:
+    - Industry Identification
+    - Topic Extraction
+    - Dimensional Analysis
+    - Region Identification
+    - Depth Assessment
+    - Skill Recommendation
+
+  # Industry Templates
+  industry_templates:
+    - name: New Energy
+      keywords: [Energy Storage, Photovoltaic, Wind Power, New Energy Vehicles, Batteries]
+      aspects: [Market Size, Technology Roadmap, Competitive Landscape, Policy Analysis, Investment Suggestions]
+    - name: Semiconductors
+      keywords: [Chips, Semiconductors, Integrated Circuits, AI Chips]
+      aspects: [Market Size, Technology Node, Localization Rate, Industry Chain, Investment Suggestions]
+    - name: Healthcare
+      keywords: [Medical, Pharmaceuticals, Biomedical, Innovative Drugs]
+      aspects: [Market Size, R&D Pipeline, Competitive Landscape, Policy Analysis, Investment Suggestions]
+
+  # Output Configuration
+  output:
+    format: structured            # structured / freeform
+    include_complexity: true
+    include_skills: true
+
+# ============================================================
+# Report Generation Agent
+# ============================================================
+report_generation:
+  # LLM Configuration
+  llm:
+    model: gpt-4o
+    temperature: 0.5
+    max_tokens: 8000
+
+  # Capability Configuration
+  capabilities:
+    - Content Integration
+    - Structural Organization
+    - Style Unification
+    - Logic Sorting
+    - Chart Description Generation
+    - Executive Summary Generation
+
+  # Report Templates
+  templates:
+    market_research:
+      name: Market Research Report
+      structure:
+        - cover
+        - toc
+        - exec_summary
+        - market_size
+        - competition
+        - technology
+        - forecast
+        - risks
+        - recommendations
+        - appendix
+      style: formal
+      word_count_target: 8000
+
+    investment:
+      name: Investment Research Report
+      structure:
+        - cover
+        - exec_summary
+        - company_overview
+        - financials
+        - valuation
+        - risk_factors
+        - investment_thesis
+      style: concise
+      word_count_target: 5000
+
+    competitor:
+      name: Competitor Analysis Report
+      structure:
+        - cover
+        - exec_summary
+        - market_overview
+        - competitor_profiles
+        - comparison_matrix
+        - swot_analysis
+        - recommendations
+      style: analytical
+      word_count_target: 6000
+
+  # Output Formats
+  output_formats:
+    - markdown
+    - html
+    - docx
+
+# ============================================================
+# Layout Design Agent
+# ============================================================
+layout_design:
+  # Capability Configuration
+  capabilities:
+    - Word Document Generation
+    - PPT Presentation Generation
+    - PDF Export
+    - HTML Generation
+    - Style Application
+    - Chart Insertion
+    - Table Insertion
+    - Table of Contents Generation
+
+  # Supported Output Formats
+  supported_formats:
+    docx:
+      enabled: true
+      library: python-docx
+      features:
+        - Title Style
+        - Paragraph Format
+        - Table Style
+        - Chart Insertion
+        - Header & Footer
+        - Table of Contents
+
+    pptx:
+      enabled: true
+      library: python-pptx
+      features:
+        - Slide Layout
+        - Title Style
+        - Content Layout
+        - Chart Insertion
+        - Table Style
+        - Animation Effects
+
+    pdf:
+      enabled: true
+      library: reportlab
+      features:
+        - Page Layout
+        - Font Embedding
+        - Chart Rendering
+
+    html:
+      enabled: true
+      features:
+        - Responsive Layout
+        - Stylesheet
+        - Chart Embedding
+
+  # Style Templates Directory
+  style_templates_dir: config/styles
+
+  # Default Style
+  default_style: professional
+
+# ============================================================
+# Quality Check Agent
+# ============================================================
+quality_check:
+  # LLM Configuration
+  llm:
+    model: gpt-4o
+    temperature: 0.2              # Low temperature for strict checking
+    max_tokens: 2000
+
+  # Check Items Configuration
+  check_items:
+    - name: Data Accuracy
+      weight: 0.3
+      rules:
+        - Data source traceable
+        - Data format consistent
+        - No obvious logic errors
+
+    - name: Content Completeness
+      weight: 0.25
+      rules:
+        - Sections complete
+        - Key information covered
+        - No missing points
+
+    - name: Logical Coherence
+      weight: 0.2
+      rules:
+        - Argument logic clear
+        - Paragraph transitions natural
+        - Conclusions consistent with evidence
+
+    - name: Format Standard
+      weight: 0.15
+      rules:
+        - Title hierarchy correct
+        - Chart numbering standard
+        - Citation format consistent
+
+    - name: Language Quality
+      weight: 0.1
+      rules:
+        - No grammar errors
+        - Expression accurate
+        - Professional terminology appropriate
+
+  # Quality Thresholds
+  thresholds:
+    pass_score: 0.7
+    warn_score: 0.5
+
+  # Output Configuration
+  output:
+    include_suggestions: true
+    include_details: true
+
+# ============================================================
+# Data Collection Agent
+# ============================================================
+data_collection:
+  # LLM Configuration
+  llm:
+    model: gpt-4o
+    temperature: 0.3
+    max_tokens: 4000
+
+  # Capability Configuration
+  capabilities:
+    - Web Search
+    - Database Query
+    - API Call
+    - File Parsing
+    - Data Cleaning
+    - Data Integration
+
+  # Data Source Configuration
+  data_sources:
+    - name: Public Data
+      enabled: true
+      providers:
+        - akshare
+        - tushare
+        - National Bureau of Statistics
+        - World Bank
+
+    - name: Commercial Data
+      enabled: false
+      providers:
+        - bloomberg
+        - wind
+
+    - name: Web Search
+      enabled: true
+      providers:
+        - tavily
+        - serper
+
+  # Timeout Configuration
+  timeout:
+    search: 30                    # seconds
+    api: 60
+    total: 600
+
+# ============================================================
+# Timeout and Retry Configuration (Global)
+# ============================================================
+timeouts:
+  requirement_analysis: 300
+  data_collection: 600
+  report_generation: 1800
+  layout_design: 300
+  quality_check: 300
+
+retries:
+  max_attempts: 3
+  initial_delay: 1.0
+  max_delay: 30.0
+  backoff_multiplier: 2.0

@@ -1,0 +1,266 @@
+# ============================================================
+# Internationalization (i18n) Configuration
+# ============================================================
+# 
+# This file defines language settings and labels for multi-language support.
+# The system supports Chinese (zh), English (en), Japanese (ja), and Korean (ko).
+# 
+# Usage:
+#   from src.core.i18n import get_localized_text, set_language, Language
+#   set_language(Language.EN)
+#   title = get_localized_text({"zh": "Executive Summary", "en": "Executive Summary"})
+# 
+# ============================================================
+
+# Default language (can be overridden by user preference or request parameter)
+default_language: "zh"
+
+# Supported languages
+supported_languages:
+  - zh  # Chinese (Simplified)
+  - en  # English
+  - ja  # Japanese
+  - ko  # Korean
+
+# Report labels (used by ReportGenerationAgent and templates)
+report_labels:
+  # Cover page
+  research_report:
+    zh: "研究报告"
+    en: "Research Report"
+    ja: "研究報告"
+    ko: "연구 보고서"
+  publish_date:
+    zh: "发布日期"
+    en: "Publish Date"
+    ja: "公開日"
+    ko: "발행일"
+  report_type:
+    zh: "报告类型"
+    en: "Report Type"
+    ja: "報告種別"
+    ko: "보고서 유형"
+  disclaimer:
+    zh: "免责声明"
+    en: "Disclaimer"
+    ja: "免責事項"
+    ko: "면책 조항"
+  disclaimer_text:
+    zh: "本报告基于公开信息编制。报告中的信息或意见不构成任何投资建议。投资者应自行判断并承担投资风险。报告中的推测性描述可能不构成实际结果。本公司/研究团队不保证其准确性。过往业绩不代表未来收益。投资有风险，请谨慎决策。"
+    en: "This report is prepared based on public information. The information or opinions in this report do not constitute any investment advice. Investors should make their own judgments and bear investment risks. Speculative descriptions in the report may not constitute actual results. Our company/research team does not guarantee their accuracy. Past performance does not indicate future returns. Investment involves risks, please be cautious."
+    ja: "本報告書は公開情報に基づいて作成されています。本報告書の情報または意見は、いかなる投資アドバイスも構成しません。投資家は自己判断を行い、投資リスクを負う必要があります。報告書の推測的記述は実際の結果を構成しない可能性があります。過去のパフォーマンスは将来のリターンを示すものではありません。投資にはリスクがあります。"
+    ko: "본 보고서는 공개 정보를 기반으로 작성되었습니다. 본 보고서의 정보나 의견은 어떠한 투자 조언도 구성하지 않습니다. 투자자는 스스로 판단하고 투자 위험을 감수해야 합니다. 과거 성과는 미래 수익을 보장하지 않습니다. 투자에는 위험이 따릅니다."
+  
+  # Table of contents
+  toc:
+    zh: "目录"
+    en: "Table of Contents"
+    ja: "目次"
+    ko: "목차"
+  
+  # Main sections
+  exec_summary:
+    zh: "执行摘要"
+    en: "Executive Summary"
+    ja: "エグゼクティブサマリー"
+    ko: "요약"
+  conclusion:
+    zh: "研究结论"
+    en: "Conclusion"
+    ja: "結論"
+    ko: "결론"
+  appendix:
+    zh: "附录"
+    en: "Appendix"
+    ja: "付録"
+    ko: "부록"
+  
+  # Appendix subsections
+  data_sources:
+    zh: "数据来源"
+    en: "Data Sources"
+    ja: "データソース"
+    ko: "데이터 출처"
+  methodology:
+    zh: "研究方法"
+    en: "Research Methodology"
+    ja: "研究方法"
+    ko: "연구 방법"
+  desk_research:
+    zh: "桌面研究：收集整理公开资料"
+    en: "Desk Research: Collect and organize public information"
+    ja: "デスクリサーチ：公開資料の収集・整理"
+    ko: "데스크 리서치: 공개 정보 수집 및 정리"
+  data_analysis_method:
+    zh: "数据分析：运用统计方法处理数据"
+    en: "Data Analysis: Apply statistical methods to process data"
+    ja: "データ分析：統計手法を用いたデータ処理"
+    ko: "데이터 분석: 통계적 방법 적용"
+  expert_interview:
+    zh: "专家访谈：补充定性洞察"
+    en: "Expert Interview: Supplement qualitative insights"
+    ja: "専門家インタビュー：定性的洞察の補完"
+    ko: "전문가 인터뷰: 정성적 통찰 보완"
+  
+  # Chapter labels
+  chapter:
+    zh: "章节"
+    en: "Chapter"
+    ja: "章"
+    ko: "장"
+  chapter_summary:
+    zh: "本章小结"
+    en: "Chapter Summary"
+    ja: "章のまとめ"
+    ko: "장 요약"
+
+# Report type names
+report_types:
+  market_research:
+    zh: "市场研究报告"
+    en: "Market Research Report"
+    ja: "市場研究報告"
+    ko: "시장 연구 보고서"
+  investment:
+    zh: "投资研究报告"
+    en: "Investment Research Report"
+    ja: "投資研究報告"
+    ko: "투자 연구 보고서"
+  policy:
+    zh: "政策分析报告"
+    en: "Policy Analysis Report"
+    ja: "政策分析報告"
+    ko: "정책 분석 보고서"
+  competitor:
+    zh: "竞品分析报告"
+    en: "Competitor Analysis Report"
+    ja: "競合分析報告"
+    ko: "경쟁사 분석 보고서"
+  technology:
+    zh: "技术调研报告"
+    en: "Technology Research Report"
+    ja: "技術調査報告"
+    ko: "기술 조사 보고서"
+  industry_report:
+    zh: "行业研究报告"
+    en: "Industry Research Report"
+    ja: "業界研究報告"
+    ko: "산업 연구 보고서"
+  company_research:
+    zh: "公司研究报告"
+    en: "Company Research Report"
+    ja: "企業調査報告"
+    ko: "기업 조사 보고서"
+
+# ============================================================
+# Interaction Text (交互文本)
+# ============================================================
+interaction:
+  select_output_type:
+    zh: "请选择输出类型："
+    en: "Please select the output type:"
+    ja: "出力タイプを選択してください："
+    ko: "출력 유형을 선택하세요:"
+  select_framework:
+    zh: "请选择研究框架："
+    en: "Please select a research framework:"
+    ja: "研究フレームワークを選択してください："
+    ko: "연구 프레임워크를 선택하세요:"
+  confirm_sections:
+    zh: "请确认以下章节："
+    en: "Please confirm the following sections:"
+    ja: "以下の章の内容を確認してください："
+    ko: "다음 장의 내용을 확인하세요:"
+  confirm_parameters:
+    zh: "请确认研究参数："
+    en: "Please confirm research parameters:"
+    ja: "研究パラメータを確認してください："
+    ko: "연구 매개변수를 확인하세요:"
+  confirm_start:
+    zh: "确认开始研究？"
+    en: "Confirm to start research?"
+    ja: "研究を開始しますか？"
+    ko: "연구를 시작하시겠습니까?"
+  research_completed:
+    zh: "研究已完成"
+    en: "Research completed"
+    ja: "研究完了"
+    ko: "연구 완료"
+  research_failed:
+    zh: "研究失败"
+    en: "Research failed"
+    ja: "研究失敗"
+    ko: "연구 실패"
+
+  # Framework names
+  framework_detailed:
+    zh: "详细版"
+    en: "Detailed"
+    ja: "詳細版"
+    ko: "상세판"
+  framework_standard:
+    zh: "标准版"
+    en: "Standard"
+    ja: "標準版"
+    ko: "표준판"
+  framework_brief:
+    zh: "简略版"
+    en: "Brief"
+    ja: "簡略版"
+    ko: "간략판"
+
+# Error messages
+errors:
+  missing_field:
+    zh: "缺少必填字段 '{field}'"
+    en: "Missing required field '{field}'"
+    ja: "必須フィールド '{field}' が不足しています"
+    ko: "필수 필드 '{field}' 누락"
+  invalid_type:
+    zh: "'{field}' 必须是 {expected_type} 类型"
+    en: "'{field}' must be {expected_type}"
+    ja: "'{field}' は {expected_type} である必要があります"
+    ko: "'{field}'은(는) {expected_type}이어야 합니다"
+  no_data:
+    zh: "数据不足，结论可靠性降低"
+    en: "Insufficient data, conclusion reliability reduced"
+    ja: "データ不足、結論の信頼性低下"
+    ko: "데이터 부족, 결론 신뢰성 저하"
+  timeout:
+    zh: "操作超时"
+    en: "Operation timeout"
+    ja: "操作タイムアウト"
+    ko: "작업 시간 초과"
+  agent_failed:
+    zh: "智能体执行失败"
+    en: "Agent execution failed"
+    ja: "エージェント実行失敗"
+    ko: "에이전트 실행 실패"
+
+# Log messages
+logs:
+  agent_started:
+    zh: "智能体开始执行"
+    en: "Agent execution started"
+    ja: "エージェント実行開始"
+    ko: "에이전트 실행 시작"
+  agent_completed:
+    zh: "智能体执行完成"
+    en: "Agent execution completed"
+    ja: "エージェント実行完了"
+    ko: "에이전트 실행 완료"
+  agent_failed:
+    zh: "智能体执行失败"
+    en: "Agent execution failed"
+    ja: "エージェント実行失敗"
+    ko: "에이전트 실행 실패"
+  data_collected:
+    zh: "数据采集完成"
+    en: "Data collection completed"
+    ja: "データ収集完了"
+    ko: "데이터 수집 완료"
+  report_generated:
+    zh: "报告生成完成"
+    en: "Report generation completed"
+    ja: "レポート生成完了"
+    ko: "보고서 생성 완료"

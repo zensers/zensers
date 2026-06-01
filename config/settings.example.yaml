@@ -1,0 +1,129 @@
+# ============================================================
+# Zensers System Configuration Template
+# ============================================================
+#
+# Copy this file to settings.yaml and fill in your values:
+#   cp config/settings.example.yaml config/settings.yaml
+#
+# Configuration priority: settings.yaml > system.yaml > .env > defaults
+# Recommended: use .env to manage API keys and model names
+#       Use this file to manage non-sensitive runtime configurations
+# ============================================================
+
+# --- LLM Configuration ---
+# Sensitive information (api_key) and model names managed by .env file (highest priority)
+llm:
+  # api_key: ""              # Use LLM_API_KEY in .env
+  # base_url: ""             # Use LLM_BASE_URL in .env
+  # model: ""                # Use LLM_MODEL in .env
+  # cheap_model: ""          # Use LLM_CHEAP_MODEL in .env
+  embedding_model: "text-embedding-3-small"
+  temperature: 0.7
+  max_tokens: 4096
+  top_p: 0.9
+  cost_limit_per_report: 5.0
+
+# --- Database Configuration ---
+database:
+  postgres:
+    enabled: false
+    host: "localhost"
+    port: 5432
+    name: "zensers"
+    user: ""
+    password: ""             # Use DB_PASSWORD in .env
+    pool_size: 10
+    max_overflow: 20
+    pool_timeout: 30
+
+  redis:
+    enabled: false
+    host: "localhost"
+    port: 6379
+    password: ""             # Use REDIS_PASSWORD in .env
+    default_ttl: 3600
+
+  sqlite:
+    enabled: true
+    path: "data/zensers.db"
+
+# --- Agent Execution Configuration ---
+agents:
+  orchestrator:
+    max_retries: 3
+
+  fixed:
+    requirement_analysis_timeout: 120
+    data_collection_timeout: 300
+    report_generation_timeout: 180
+    quality_check_timeout: 60
+
+  dynamic:
+    max_lifetime: 3600
+    max_count: 20
+
+  survey:
+    simulation_timeout: 300
+    max_respondents: 500
+
+# --- Search Configuration ---
+search:
+  max_results_per_query: 20
+  max_queries_per_aspect: 10
+  max_total_searches: 100
+  min_quality_score: 50.0
+  min_sources: 8
+  region: "cn-cn"
+  enable_pagination: true
+  enable_quality_filter: true
+
+# --- MCP Configuration ---
+mcp:
+  max_concurrent_servers: 5
+  max_concurrent_tools: 10
+  max_concurrent_requests: 20
+  log_level: "INFO"
+  default_timeout:
+    connect: 30
+    request: 60
+  cache:
+    enabled: true
+    ttl: 600
+    max_size: 1000
+  servers: []
+  tools: []
+  data_sources: []
+
+# --- System Configuration ---
+system:
+  environment: "development"
+  debug: false
+  logging:
+    level: "INFO"
+    format: "structured"
+    rotation: "daily"
+    max_backups: 30
+  paths:
+    data_dir: "data"
+    output_dir: "output"
+    logs_dir: "logs"
+    temp_dir: "data/temp"
+  concurrency:
+    max_parallel_agents: 5
+    max_parallel_searches: 3
+
+# --- Conversation Configuration ---
+conversation:
+  max_tool_iterations: 10
+
+# --- Quality Control Configuration ---
+quality:
+  enabled: true
+  min_success_rate: 0.5
+  min_data_points: 10
+  min_content_length: 500
+  max_retry_iterations: 3
+
+# --- Prompt Configuration ---
+prompt:
+  strict_mode: false

@@ -1,0 +1,49 @@
+# Content Quality Pipeline Configuration
+# Content Quality Pipeline Configuration
+#
+# Used to control content cleaning and quality check behavior.
+
+content_quality:
+  # Whether to enable content quality pipeline
+  enabled: true
+
+  # Filter configuration (in execution order)
+  filters:
+    # 1. Prompt pattern filter
+    - name: prompt_pattern_filter
+      enabled: true
+      # Whether to remove colloquial expressions
+      remove_colloquial: true
+
+    # 2. Cross-type deduplication (title vs paragraph)
+    - name: cross_type_duplicate_detector
+      enabled: true
+      # Similarity threshold (0-1), higher is stricter
+      threshold: 0.75
+      # Number of scan lines
+      max_scan_lines: 5
+
+    # 3. Global cross-section deduplication
+    - name: global_duplicate_detector
+      enabled: true
+      # Similarity threshold (0-1)
+      threshold: 0.85
+      # Minimum paragraph length (characters), below this skip check
+      # Recommended: 30 for Chinese, 50 for English
+      min_length: 30
+
+  # Quality gate configuration
+  quality_gate:
+    # Whether to enable quality gate
+    enabled: true
+    # Maximum retry attempts
+    max_retries: 2
+    # Whether to enable auto fix
+    auto_fix_enabled: true
+
+  # Log level
+  logging:
+    # Filter execution log
+    filter_execution: INFO
+    # Quality check log
+    quality_check: WARNING

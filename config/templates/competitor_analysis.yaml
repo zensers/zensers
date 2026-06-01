@@ -1,0 +1,53 @@
+# Competitor Analysis Report Template
+# Professional use: Multi-dimensional comparison of key competitors' strengths and weaknesses
+
+id: competitor_analysis_standard
+name: Competitive Comparison Analysis
+description: Multi-dimensional comparison of key competitors' strengths and weaknesses
+output_type: competitor_analysis
+estimated_pages: 8-15 pages
+suitable_for:
+  - Product Positioning
+  - Competitive Strategy
+  - Differentiation Design
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: market-analysis
+
+sections:
+  - id: summary
+    name: Summary
+    required: true
+    description: Core conclusions of competitor analysis
+    
+  - id: competitor_list
+    name: Competitor List
+    required: true
+    description: Key competitor list and selection criteria
+    
+  - id: feature_comparison
+    name: Feature Comparison
+    required: true
+    description: Product feature comparison matrix
+    
+  - id: pricing_comparison
+    name: Pricing Comparison
+    required: true
+    description: Pricing strategy, package comparison
+    
+  - id: market_positioning
+    name: Market Positioning
+    required: true
+    description: Positioning map, differentiation analysis
+    
+  - id: strength_weakness
+    name: Strengths & Weaknesses Analysis
+    required: true
+    description: SWOT analysis, core strengths and weaknesses
+    
+  - id: strategy_recommendation
+    name: Strategy Recommendations
+    required: false
+    description: Competitive strategy recommendations

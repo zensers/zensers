@@ -1,0 +1,63 @@
+# Company Deep Research Report Template
+# Professional use: Comprehensive analysis of listed company investment value
+
+id: company_research_standard
+name: Company Deep Research Report
+description: Comprehensive analysis of listed company investment value, including financial models, valuation analysis, competitive advantages
+output_type: company_research
+estimated_pages: 15-40 pages
+suitable_for:
+  - Value Investing
+  - In-depth Research
+  - Long-term Holding
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: summary
+    name: Key Investment Points Summary
+    required: true
+    description: Earnings forecast, target price, core investment thesis
+    
+  - id: company_overview
+    name: Company Overview
+    required: true
+    description: Basic information, development history, shareholding structure
+    
+  - id: business_analysis
+    name: Business Analysis
+    required: true
+    description: Main business, product analysis, business model
+    
+  - id: industry_analysis
+    name: Industry Analysis
+    required: true
+    description: Industry lifecycle, competitive landscape, policy environment
+    
+  - id: competitive_advantage
+    name: Competitive Advantage
+    required: true
+    description: Technology advantages, regional advantages, moat analysis
+    
+  - id: financial_analysis
+    name: Financial Analysis
+    required: true
+    description: Financial position, operational quality, key indicators
+    
+  - id: valuation
+    name: Valuation & Forecast
+    required: true
+    description: DCF model, PE/PB valuation, earnings forecast
+    
+  - id: investment_logic
+    name: Investment Logic
+    required: true
+    description: Investment catalysts, key drivers
+    
+  - id: risks
+    name: Risk Factors
+    required: true
+    description: Key risk factors and impacts

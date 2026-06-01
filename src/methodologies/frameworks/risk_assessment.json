@@ -1,0 +1,7 @@
+{
+  "id": "risk_assessment",
+  "name": "风险评估框架",
+  "priority": 6,
+  "aspects": ["risk_assessment", "investment_analysis"],
+  "content": "请按以下维度评估风险:\n1. 市场风险\n2. 信用风险\n3. 运营风险\n4. 监管合规风险\n5. 技术/颠覆性风险"
+}

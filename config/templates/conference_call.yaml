@@ -1,0 +1,52 @@
+# Conference Call Report Template
+# Professional use: Meeting minutes and management commentary highlights
+
+id: conference_call_standard
+name: Conference Call Report
+description: Meeting minutes and management commentary highlights, including core conclusions, key takeaways, and follow-up tracking
+output_type: conference_call
+estimated_pages: 5-12 pages
+suitable_for:
+  - Real-time Tracking
+  - Management Perspectives
+  - Information Flash
+supported_formats:
+  - docx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: meeting_info
+    name: Meeting Basic Information
+    required: true
+    description: Time, participants, topic, moderator
+    
+  - id: core_conclusion
+    name: Core Conclusions
+    required: true
+    description: Meeting key viewpoints, market impact assessment
+    
+  - id: management_speech
+    name: Management Remarks Highlights
+    required: true
+    description: Key quotes and viewpoints from management
+    
+  - id: qa_highlight
+    name: Q&A Highlights
+    required: true
+    description: Investor focus areas, management responses
+    
+  - id: business_outlook
+    name: Business Outlook Statements
+    required: false
+    description: Management's forward-looking statements
+    
+  - id: follow_up
+    name: Follow-up Recommendations
+    required: true
+    description: Key metrics to monitor, verification approach
+    
+  - id: risks
+    name: Risk Factors
+    required: false
+    description: Uncertainty factors

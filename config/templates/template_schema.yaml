@@ -1,0 +1,71 @@
+# Template configuration file specification
+# Used for validating template definition correctness
+
+schema_version: "1.0"
+
+# Required template fields
+required_fields:
+  - id          # Template unique identifier
+  - name        # Template display name
+  - description # Template description
+  - output_type # Output type (see output_types)
+  - sections    # Section list
+
+# Optional fields
+optional_fields:
+  - estimated_pages    # Estimated page count
+  - suitable_for       # Applicable scenarios list
+  - supported_formats  # Supported output formats
+  - category_name      # Category name (corresponds to CategoryRouter categories)
+
+# Supported category names (corresponds to CategoryRouter categories)
+category_names:
+  - market-analysis       # Market analysis
+  - financial-analysis    # Financial analysis
+  - data-collection       # Data collection
+  - report-generation     # Report generation
+  - quality-check         # Quality check
+  - academic-research     # Academic research
+  - visual-engineering    # Visualization
+  - data-analysis         # Data analysis
+
+# Supported output types (corresponds to OutputType enum)
+output_types:
+  # Broker/investment institution standard reports
+  - industry_report          # Industry research report
+  - industry_weekly          # Industry weekly
+  - company_research         # Company deep research report
+  - quarterly_commentary     # Quarterly commentary
+  - annual_analysis          # Annual report analysis
+  - conference_call          # Conference call report
+  
+  # Fundraising/commercial reports
+  - commercial_plan          # Commercial plan
+  - pitch_deck               # Pitch deck
+  - investment_memo          # Investment memo
+  
+  # Analysis reports
+  - competitor_analysis      # Competitor analysis report
+  - policy_brief             # Policy brief report
+  - market_brief             # Market brief
+  - data_dashboard           # Data dashboard
+  
+  # Custom
+  - custom                   # Custom
+
+# Supported output formats (corresponds to OutputFormat enum)
+output_formats:
+  - docx   # Word document
+  - pptx   # PowerPoint presentation
+  - pdf    # PDF document
+  - md     # Markdown
+  - html   # HTML page
+
+# Section definition specification
+section_schema:
+  required_fields:
+    - id          # Section unique identifier
+    - name        # Section display name
+  optional_fields:
+    - required    # Whether mandatory (default false)
+    - description # Section description

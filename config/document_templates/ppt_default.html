@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <style>
+        /* ============================================
+           PPT样式定义 - 修改此部分自定义样式
+           ============================================ */
+        
+        /* 幻灯片尺寸：16:9宽屏 */
+        .slide {
+            width: 1920px;
+            height: 1080px;
+            padding: 60px 80px;
+            box-sizing: border-box;
+            position: relative;
+            margin: 0 auto;
+        }
+
+        @media screen {
+            body {
+                padding: 20px 40px;
+                background: #E8E8E8;
+            }
+            .slide {
+                box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+                margin-bottom: 20px;
+            }
+        }
+        
+        /* 封面样式 */
+        .slide.cover {
+            background: linear-gradient(135deg, #1A2744 0%, #2C3E50 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        
+        .slide.cover h1 {
+            color: #C9A227;  /* 琥珀金 - 主标题颜色 */
+            font-size: 72px;
+            font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+            font-weight: bold;
+            margin-bottom: 40px;
+        }
+        
+        .slide.cover .subtitle {
+            color: #FFFFFF;
+            font-size: 36px;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        
+        .slide.cover .meta {
+            color: #FFFFFF;
+            font-size: 24px;
+            margin-top: 60px;
+        }
+        
+        /* 内容页样式 */
+        .slide.content {
+            background: #FFFFFF;
+        }
+        
+        .slide.content h2 {
+            color: #1A2744;  /* 深海军蓝 - 章节标题 */
+            font-size: 48px;
+            font-family: 'Microsoft YaHei', 'SimHei', sans-serif;
+            font-weight: bold;
+            margin-bottom: 40px;
+            border-bottom: 3px solid #C9A227;
+            padding-bottom: 20px;
+        }
+        
+        .slide.content .content-body {
+            font-size: 24px;
+            color: #333333;
+            line-height: 1.8;
+            font-family: 'Microsoft YaHei', 'SimSun', sans-serif;
+        }
+        
+        /* 目录页样式 */
+        .slide.toc {
+            background: #F5F5F5;
+        }
+        
+        .slide.toc h2 {
+            color: #1A2744;
+            font-size: 48px;
+            text-align: center;
+        }
+        
+        .slide.toc ul {
+            font-size: 28px;
+            color: #333333;
+            list-style: none;
+        }
+        
+        .slide.toc li {
+            margin: 20px 0;
+            padding-left: 40px;
+            border-left: 4px solid #C9A227;
+        }
+        
+        /* 数据页样式 */
+        .slide.data {
+            background: #FFFFFF;
+        }
+        
+        .slide.data table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 20px;
+        }
+        
+        .slide.data th {
+            background: #1A2744;
+            color: #FFFFFF;
+            padding: 15px;
+            text-align: left;
+        }
+        
+        .slide.data td {
+            padding: 15px;
+            border-bottom: 1px solid #CCCCCC;
+        }
+        
+        /* 结束页样式 */
+        .slide.end {
+            background: #1A2744;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        
+        .slide.end h2 {
+            color: #C9A227;
+            font-size: 56px;
+        }
+        
+        .slide.end .thanks {
+            color: #FFFFFF;
+            font-size: 32px;
+            margin-top: 40px;
+        }
+        
+        /* Logo位置（可选） */
+        .logo {
+            position: absolute;
+            top: 40px;
+            right: 40px;
+            width: 120px;
+            height: auto;
+        }
+        
+        /* 页脚装饰条 */
+        .footer-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 8px;
+            background: #C9A227;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ============================================
+     幻灯片1：封面
+     ============================================ -->
+<section class="slide cover" data-type="cover" data-page="1">
+    <img class="logo" src="{{ logo_path }}" alt="Logo" onerror="this.style.display='none'">
+    <h1>{{ title }}</h1>
+    <div class="subtitle">{{ subtitle }}</div>
+    <div class="meta">{{ date }}</div>
+    <div class="footer-bar"></div>
+</section>
+
+<!-- ============================================
+     幻灯片2：目录
+     ============================================ -->
+<section class="slide toc" data-type="toc" data-page="2">
+    <h2>目录</h2>
+    <ul>
+        {% for section in sections %}
+        <li>{{ section.title }}</li>
+        {% endfor %}
+    </ul>
+    <div class="footer-bar"></div>
+</section>
+
+<!-- ============================================
+     幻灯片3-N：内容页（动态生成）
+     ============================================ -->
+{% for section in sections %}
+<section class="slide content" data-type="content" data-page="{{ section.page }}" data-section="{{ section.id }}">
+    <img class="logo" src="{{ logo_path }}" alt="Logo" onerror="this.style.display='none'">
+    <h2>{{ section.title }}</h2>
+    <div class="content-body">{{ section.content }}</div>
+    {% if section.tables %}
+    <div class="data-table">
+        {% for table in section.tables %}
+        <table>
+            <caption>{{ table.caption }}</caption>
+            <thead>
+                <tr>
+                    {% for header in table.headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table.rows %}
+                <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="footer-bar"></div>
+</section>
+{% endfor %}
+
+<!-- ============================================
+     注意：以下章节已废弃，由 Agent 动态生成
+     预设标题不再硬编码，避免重复出现在报告末尾
+     ============================================ -->
+
+<!-- ============================================
+     幻灯片N+2：结束页
+     ============================================ -->
+<section class="slide end" data-type="end" data-page="{{ end_page }}">
+    <h2>{{ title }}</h2>
+    <div class="thanks">感谢关注</div>
+    <div class="footer-bar" style="background: #FFFFFF;"></div>
+</section>
+
+</body>
+</html>

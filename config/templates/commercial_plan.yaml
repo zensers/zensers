@@ -1,0 +1,72 @@
+# Commercial Plan Template
+# Professional use: Systematic description of business model and development plan
+
+id: commercial_plan_standard
+name: Standard Commercial Plan
+description: Systematic description of business model and development plan, for fundraising or internal planning
+output_type: commercial_plan
+estimated_pages: 30-50 pages
+suitable_for:
+  - Fundraising Application
+  - Internal Planning
+  - Partnership Development
+supported_formats:
+  - docx
+  - pdf
+category_name: report-generation
+
+sections:
+  - id: exec_summary
+    name: Executive Summary
+    required: true
+    description: Project highlights summary (standard business plan terminology, 1-2 pages)
+    
+  - id: company_intro
+    name: Company Introduction
+    required: true
+    description: Mission & vision, business status, registration information
+    
+  - id: market_analysis
+    name: Market Analysis
+    required: true
+    description: Industry size, growth trends, competitive analysis
+    
+  - id: product_service
+    name: Products & Services
+    required: true
+    description: Product/service description, core advantages, technology barriers
+    
+  - id: business_model
+    name: Business Model
+    required: true
+    description: Revenue model, pricing strategy, unit economics
+    
+  - id: marketing_sales
+    name: Marketing & Sales Strategy
+    required: false
+    description: Channel strategy, promotion plan, customer acquisition cost (CAC)
+    
+  - id: operations
+    name: Operations Plan
+    required: false
+    description: Supply chain management, capacity planning, cost structure
+    
+  - id: team
+    name: Team Introduction
+    required: true
+    description: Core member backgrounds, organizational structure, complementarity
+    
+  - id: financial_plan
+    name: Financial Plan
+    required: true
+    description: Historical data, future projections, breakeven analysis
+    
+  - id: funding_plan
+    name: Funding Requirements
+    required: true
+    description: Funding amount, use of funds, milestone plan
+    
+  - id: risks
+    name: Risk Analysis
+    required: false
+    description: Potential risks and contingency measures

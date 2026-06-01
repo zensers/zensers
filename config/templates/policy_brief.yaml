@@ -1,0 +1,53 @@
+# Policy Brief Report Template
+# Professional use: In-depth interpretation of industry-related policies and impacts
+
+id: policy_brief_standard
+name: Policy Brief Report
+description: In-depth interpretation of industry-related policies and impacts
+output_type: policy_brief
+estimated_pages: 10-15 pages
+suitable_for:
+  - Compliance Preparation
+  - Strategic Planning
+  - Risk Assessment
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: academic-research
+
+sections:
+  - id: summary
+    name: Summary
+    required: true
+    description: Core policy highlights
+    
+  - id: policy_overview
+    name: Policy Overview
+    required: true
+    description: Policy background, main content
+    
+  - id: policy_analysis
+    name: Policy Analysis
+    required: true
+    description: Policy intent, scope of impact
+    
+  - id: industry_impact
+    name: Industry Impact
+    required: true
+    description: Impact analysis on various industries
+    
+  - id: company_impact
+    name: Company Impact
+    required: true
+    description: Impact on key companies
+    
+  - id: compliance_guide
+    name: Compliance Guide
+    required: false
+    description: Compliance recommendations, countermeasures
+    
+  - id: outlook
+    name: Policy Outlook
+    required: false
+    description: Future policy trend forecast

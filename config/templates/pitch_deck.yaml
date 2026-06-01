@@ -1,0 +1,66 @@
+# Pitch Deck Template
+# Professional use: Concise and compelling market opportunity presentation for investors
+
+id: pitch_deck_investment
+name: Investment Pitch Deck
+description: Concise and compelling market opportunity presentation for investors (10-20 slides)
+output_type: pitch_deck
+estimated_pages: 10-15 pages
+suitable_for:
+  - Fundraising Pitch
+  - Investment Promotion
+  - Partnership Discussions
+supported_formats:
+  - pptx
+category_name: report-generation
+
+sections:
+  - id: title
+    name: Project Overview
+    required: true
+    description: One-sentence project description
+    
+  - id: problem
+    name: Pain Points & Opportunity
+    required: true
+    description: Market pain points, opportunity window
+    
+  - id: solution
+    name: Solution
+    required: true
+    description: How the product/service solves the pain points
+    
+  - id: market_opportunity
+    name: Market Opportunity
+    required: true
+    description: TAM/SAM/SOM, growth drivers
+    
+  - id: business_model
+    name: Business Model
+    required: true
+    description: How to make money, unit economics (LTV/CAC)
+    
+  - id: traction
+    name: Progress Data
+    required: false
+    description: Key metrics, growth data, milestones
+    
+  - id: competition
+    name: Competitive Analysis
+    required: true
+    description: Competitive landscape, differentiation advantage
+    
+  - id: team
+    name: Team Introduction
+    required: true
+    description: Founder and core member backgrounds
+    
+  - id: financials
+    name: Financial Projections
+    required: false
+    description: Revenue forecast, cost structure
+    
+  - id: ask
+    name: Funding Requirements
+    required: true
+    description: Funding amount, use of funds, milestones

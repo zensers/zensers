@@ -1,0 +1,246 @@
+# Keyword Mapping Configuration
+# Keyword Mapping Configuration
+#
+# Used for intelligent routing, Skill inference, chapter classification, etc.
+# Supports dynamic extension without code modification.
+
+# ============================================================
+# Section Role Keywords
+# ============================================================
+section_roles:
+  # Synthesis chapters (summary, conclusion, etc.)
+  synthesis:
+    keywords:
+      - "Summary"
+      - "Executive Summary"
+      - "Core Summary"
+      - "summary"
+      - "executive summary"
+      - "Core Insights"
+      - "Key Findings"
+      - "key insights"
+      - "key findings"
+      - "Conclusion"
+      - "Research Conclusion"
+      - "Summary"
+      - "Research Summary"
+      - "conclusion"
+      - "findings"
+      - "Comprehensive Analysis"
+      - "Comprehensive Assessment"
+      - "Overall Analysis"
+      - "Comprehensive Evaluation"
+
+  # Supporting chapters (appendix, references, etc.)
+  supporting:
+    keywords:
+      - "Appendix"
+      - "appendix"
+      - "Data Sources"
+      - "data source"
+      - "References"
+      - "references"
+      - "Research Methodology"
+      - "methodology"
+
+  # Data collection chapters
+  data_collection:
+    keywords:
+      - "Data Collection"
+      - "Data Acquisition"
+      - "Information Collection"
+      - "data collection"
+      - "Research"
+      - "survey"
+      - "Questionnaire"
+      - "Interview"
+      - "interview"
+
+# ============================================================
+# Skill Inference Keywords
+# ============================================================
+skill_inference:
+  # Finance / Valuation related
+  financial:
+    keywords:
+      - "Finance"
+      - "Valuation"
+      - "financial"
+      - "Revenue"
+      - "Profit"
+      - "Market Cap"
+      - "Earnings"
+      - "Loss"
+      - "Cash Flow"
+      - "Assets and Liabilities"
+    skills:
+      - "stock_analysis"
+      - "data_analysis"
+
+  # Data / Statistics related
+  data_analysis:
+    keywords:
+      - "Data"
+      - "data"
+      - "Statistics"
+      - "Indicator"
+      - "Analysis"
+      - "Quantitative"
+      - "Calculation"
+    skills:
+      - "data_analysis"
+      - "lc_python_repl"
+
+  # Market size / Share related
+  market_size:
+    keywords:
+      - "Market Size"
+      - "Market Share"
+      - "market size"
+      - "market share"
+      - "Scale"
+      - "Share"
+      - "Capacity"
+      - "Space"
+    skills:
+      - "data_analysis"
+      - "lc_python_repl"
+
+  # Competition related
+  competition:
+    keywords:
+      - "Competition"
+      - "Competitive Landscape"
+      - "competit"
+      - "Competitor"
+      - "Enterprise Analysis"
+      - "Competing Product"
+      - "Competitor"
+      - "Market Position"
+    skills:
+      - "market_analysis"
+      - "data_analysis"
+
+  # Industry trend related
+  trend:
+    keywords:
+      - "Trend"
+      - "Industry Trend"
+      - "trend"
+      - "Development"
+      - "Prospect"
+      - "Forecast"
+      - "Outlook"
+      - "Future"
+    skills:
+      - "data_analysis"
+
+  # Supply chain related
+  supply_chain:
+    keywords:
+      - "Industry Chain"
+      - "Value Chain"
+      - "chain"
+      - "Supply Chain"
+      - "Upstream and Downstream"
+      - "Ecosystem"
+      - "Value Ecosystem"
+    skills:
+      - "market_analysis"
+
+  # Policy and regulation related
+  policy:
+    keywords:
+      - "Policy"
+      - "Regulation"
+      - "policy"
+      - "Supervision"
+      - "Compliance"
+      - "Law"
+      - "Ordinance"
+    skills:
+      - "search_skill"
+
+  # Technology related
+  technology:
+    keywords:
+      - "Technology"
+      - "technology"
+      - "Innovation"
+      - "R&D"
+      - "Patent"
+      - "Science & Technology"
+      - "Technology Roadmap"
+    skills:
+      - "lc_arxiv"
+
+# ============================================================
+# Agent Classification Keywords
+# ============================================================
+agent_categories:
+  analysis:
+    keywords:
+      - "Analysis"
+      - "Research"
+      - "Survey"
+      - "Investigation"
+      - "analysis"
+      - "research"
+
+  data_collection:
+    keywords:
+      - "Collection"
+      - "Acquisition"
+      - "Crawl"
+      - "Scrape"
+      - "collection"
+      - "scrape"
+
+  synthesis:
+    keywords:
+      - "Synthesis"
+      - "Integration"
+      - "Summary"
+      - "Summary"
+      - "synthesis"
+      - "summary"
+
+# ============================================================
+# Chart Type Keywords
+# ============================================================
+chart_types:
+  pie:
+    keywords:
+      - "Market Share"
+      - "Proportion"
+      - "Market Share Rate"
+      - "Share"
+      - "Composition"
+      - "Distribution"
+
+  bar:
+    keywords:
+      - "Sales Volume"
+      - "Sales"
+      - "Scale"
+      - "Output"
+      - "Comparison"
+      - "Ranking"
+
+  line:
+    keywords:
+      - "Growth"
+      - "Trend"
+      - "Year-over-Year"
+      - "Month-over-Month"
+      - "Change"
+      - "Movement"
+
+  ranking:
+    keywords:
+      - "Ranking"
+      - "TOP"
+      - "Leading"
+      - "First"
+      - "Second"
+      - "Top Three"

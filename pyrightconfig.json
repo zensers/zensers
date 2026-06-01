@@ -1,0 +1,13 @@
+{
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "venv",
+    "archive"
+  ],
+  "venvPath": "venv",
+  "pythonVersion": "3.10",
+  "typeCheckingMode": "basic"
+}

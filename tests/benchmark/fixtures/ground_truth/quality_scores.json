@@ -1,0 +1,58 @@
+{
+    "metadata": {
+        "description": "质量评估真值标签",
+        "version": "1.0",
+        "created_at": "2025-01-15",
+        "annotators": ["human_expert_1", "human_expert_2"],
+        "agreement_score": 0.92
+    },
+    "accuracy_labels": [
+        {
+            "report_id": "analyst_001",
+            "data_points_checked": 45,
+            "correct_points": 45,
+            "accuracy_rate": 1.0,
+            "error_types": []
+        },
+        {
+            "report_id": "ai_001",
+            "data_points_checked": 40,
+            "correct_points": 39,
+            "accuracy_rate": 0.975,
+            "error_types": ["minor_rounding"]
+        }
+    ],
+    "completeness_labels": [
+        {
+            "report_id": "analyst_001",
+            "required_elements": 10,
+            "present_elements": 10,
+            "completeness_rate": 1.0
+        },
+        {
+            "report_id": "ai_001",
+            "required_elements": 10,
+            "present_elements": 9,
+            "completeness_rate": 0.9,
+            "missing": ["风险提示章节"]
+        }
+    ],
+    "quality_scores": {
+        "analyst_threshold": {
+            "min_accuracy": 0.99,
+            "min_completeness": 0.95,
+            "min_consistency": 0.90,
+            "min_format": 0.95,
+            "min_language": 0.90,
+            "overall_min": 85
+        },
+        "ai_target": {
+            "min_accuracy": 0.98,
+            "min_completeness": 0.95,
+            "min_consistency": 0.90,
+            "min_format": 0.95,
+            "min_language": 0.85,
+            "overall_min": 85
+        }
+    }
+}

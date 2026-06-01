@@ -1,0 +1,57 @@
+# Investment Memo Template
+# Professional use: Internal investment decision reference for investment institutions
+
+id: investment_memo_standard
+name: Investment Memo
+description: Internal investment decision reference for investment institutions, covering investment thesis and risk assessment
+output_type: investment_memo
+estimated_pages: 10-20 pages
+suitable_for:
+  - Investment Decisions
+  - Investment Committee Review
+  - Due Diligence
+supported_formats:
+  - docx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: one_pager
+    name: One-Page Summary
+    required: true
+    description: Final recommendation, key investment points, risks and mitigating factors
+    
+  - id: company_overview
+    name: Company Overview
+    required: true
+    description: Solution, business model, market size
+    
+  - id: traction
+    name: Traction Data
+    required: true
+    description: Revenue growth, user growth, unit economics
+    
+  - id: growth_friction
+    name: Growth Friction
+    required: false
+    description: Current bottlenecks, use of funds
+    
+  - id: competition
+    name: Competitive Landscape
+    required: true
+    description: Competitor comparison, core differentiation, moat
+    
+  - id: team
+    name: Team Assessment
+    required: true
+    description: Background and experience, complementarity, organizational culture
+    
+  - id: risks
+    name: Risks & Counterarguments
+    required: true
+    description: All internal and external risks and mitigation measures
+    
+  - id: thesis_alignment
+    name: Investment Philosophy Alignment
+    required: false
+    description: Fit with fund investment strategy

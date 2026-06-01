@@ -1,0 +1,70 @@
+# Zensers 依赖文件
+# 说明: 此文件用于开发环境，使用宽松版本约束
+# 生产环境请使用: requirements-lock.txt
+#
+# 安装开发环境:
+#   pip install -r requirements.txt
+#   pip install -r requirements-dev.txt
+#
+# 安装生产环境:
+#   pip install -r requirements-lock.txt
+
+# ==================== 核心依赖 ====================
+pydantic>=2.0.0,<3.0.0
+pyyaml>=6.0
+aiohttp>=3.9.0,<4.0.0
+
+# ==================== LLM 客户端 ====================
+openai>=1.0.0
+anthropic>=0.18.0
+
+# ==================== 文档处理 ====================
+python-docx>=1.0.0
+markdown>=3.5.0
+docxtpl>=0.16.7           # Word模板引擎
+python-pptx>=0.6.21       # PPT生成
+reportlab>=4.0.0          # PDF生成
+
+# ==================== 图表生成 ====================
+matplotlib>=3.7.0         # 核心绑图库
+seaborn>=0.12.0           # 统计图表
+plotly>=5.15.0            # 交互式图表
+
+# ==================== 数据处理 ====================
+pandas>=2.0.0
+numpy>=1.24.0
+
+# ==================== 测试框架 ====================
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+
+# ==================== CLI 工具 ====================
+typer>=0.9.0
+click>=8.1.0
+rich>=13.0.0
+
+# ==================== 工具库 ====================
+python-dotenv>=1.0.0
+tenacity>=8.2.0
+
+# ==================== 热加载 ====================
+watchdog>=3.0.0        # Skill 文件系统监听，支持生产环境热更新
+
+# ==================== LangChain 生态 (Day 3 新增) ====================
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-experimental>=0.3.0
+tavily-python>=0.5.0   # Tavily 搜索 API
+
+# ==================== 搜索 (无需 API Key) ====================
+duckduckgo-search>=7.0.0  # DuckDuckGo 搜索，无需 API Key
+
+# ==================== 桌面通知 ====================
+plyer>=2.1.0              # Cross-platform desktop notifications
+
+# ==================== MCP 协议集成 ====================
+# MCPClient HTTP transport (aiohttp >= 3.9.0 is already in core dependencies)
+cryptography>=42.0.0       # Credential encryption (SecureCredentialStorage)
+keyring>=25.0.0            # OS-level secure credential storage

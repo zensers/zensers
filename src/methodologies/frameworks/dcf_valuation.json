@@ -1,0 +1,7 @@
+{
+  "id": "dcf_valuation",
+  "name": "DCF估值分析",
+  "priority": 4,
+  "aspects": ["financial_valuation", "investment_analysis"],
+  "content": "请按以下步骤进行DCF估值:\n1. 预测未来自由现金流\n2. 确定折现率 (WACC)\n3. 计算终值\n4. 折现并加总\n5. 敏感性分析"
+}

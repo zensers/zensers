@@ -1,0 +1,52 @@
+# Quarterly Commentary Template
+# Professional use: Rapid interpretation of listed company quarterly results
+
+id: quarterly_commentary_standard
+name: Quarterly Commentary
+description: Rapid interpretation of listed company quarterly results, including financial comparison, segment analysis, and outlook adjustments
+output_type: quarterly_commentary
+estimated_pages: 8-15 pages
+suitable_for:
+  - Quarterly Tracking
+  - Earnings Interpretation
+  - Rapid Response
+supported_formats:
+  - docx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: performance_overview
+    name: Performance Overview
+    required: true
+    description: Revenue, net profit, EPS comparison, beat/miss assessment
+    
+  - id: business_breakdown
+    name: Segment Analysis
+    required: true
+    description: Revenue by segment, gross margin changes and reasons
+    
+  - id: cost_analysis
+    name: Cost & Expense Analysis
+    required: false
+    description: Changes in selling expenses, administrative expenses, R&D expenses
+    
+  - id: cashflow
+    name: Cash Flow Analysis
+    required: true
+    description: Operating cash flow, financial health assessment
+    
+  - id: outlook
+    name: Performance Outlook
+    required: true
+    description: Management guidance, industry trends
+    
+  - id: rating_adjustment
+    name: Rating Adjustment
+    required: true
+    description: Earnings forecast revision, investment rating change
+    
+  - id: risks
+    name: Risk Factors
+    required: false
+    description: Performance uncertainty factors

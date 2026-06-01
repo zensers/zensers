@@ -1,0 +1,139 @@
+# Broker-Style In-depth Industry Report Template
+# Professional use: Benchmarking against top broker research reports (CICC, CITIC, etc.)
+# 
+# Multi-language support: name and description fields support multi-language
+# Format: direct string (backward compatible) or multi-language dictionary
+
+id: industry_report_broker
+name: Broker-Style In-depth Industry Report
+description: In-depth industry analysis benchmarked against broker research standards, covering investment thesis, financial analysis, valuation and ratings
+output_type: industry_report
+estimated_pages: 30-50 pages
+suitable_for:
+  - Investment Decisions
+  - Strategic Planning
+  - In-depth Industry Research
+  - Broker Research Report Output
+supported_formats:
+  - docx
+  - pdf
+category_name: market-analysis
+
+sections:
+  # ===== Investment Essentials (Required) =====
+  - id: investment_summary
+    name:
+      zh: Investment Highlights
+      en: Investment Summary
+    required: true
+    description:
+      zh: Core investment thesis, rating, earnings forecast, target price (summary of the entire report's core conclusions)
+      en: Core investment thesis, rating, earnings forecast, target price
+      
+  - id: industry_overview
+    name:
+      zh: Industry Overview
+      en: Industry Overview
+    required: true
+    description:
+      zh: Industry definition, value chain position, development history, lifecycle stage, industry size (TAM/SAM/SOM)
+      en: Industry definition, value chain position, development history, lifecycle, TAM/SAM/SOM
+      
+  - id: market_size
+    name:
+      zh: Market Size & Growth
+      en: Market Size & Growth
+    required: false
+    description:
+      zh: Global/China market size, historical growth rate, future forecasts, driver decomposition, penetration analysis
+      en: Global/China market size, historical growth, forecasts, driver decomposition, penetration
+      
+  - id: competitive_landscape
+    name:
+      zh: Competitive Landscape
+      en: Competitive Landscape
+    required: true
+    description:
+      zh: Market concentration (CRn/HHI), key player shares, competitive barriers, Porter Five Forces, SWOT comparison
+      en: Market concentration (CRn/HHI), key player shares, barriers, Porter Five Forces, SWOT
+      
+  - id: value_chain
+    name:
+      zh: Value Chain Analysis
+      en: Value Chain Analysis
+    required: false
+    description:
+      zh: Upstream/downstream structure, profit distribution, bargaining power, core links, key suppliers/customers
+      en: Upstream/downstream structure, profit distribution, bargaining power, key nodes
+      
+  - id: growth_drivers
+    name:
+      zh: Growth Drivers
+      en: Growth Drivers
+    required: false
+    description:
+      zh: Demand drivers (policy/technology/consumption upgrade/domestic substitution), supply drivers, catalysts
+      en: Demand drivers (policy/tech/upgrade/substitution), supply drivers, catalysts
+      
+  - id: policy_environment
+    name:
+      zh: Policy & Regulation
+      en: Policy & Regulation
+    required: false
+    description:
+      zh: Relevant policy review, regulatory trends, industry support, tax incentives, compliance requirements, PEST analysis
+      en: Policy review, regulatory trends, industry support, tax incentives, PEST analysis
+      
+  - id: technology_trends
+    name:
+      zh: Technology Trends
+      en: Technology Trends
+    required: false
+    description:
+      zh: Technology roadmap evolution, R&D investment, patent analysis, technology barriers, innovation directions
+      en: Technology roadmap, R&D investment, patent analysis, tech barriers, innovation
+      
+  - id: company_analysis
+    name:
+      zh: Key Company Analysis
+      en: Key Company Analysis
+    required: false
+    description:
+      zh: Listed company business breakdown, financial analysis, competitive advantages, growth strategy, valuation comparison
+      en: Listed company business breakdown, financials, competitive advantage, valuation
+      
+  - id: financial_forecast
+    name:
+      zh: Earnings Forecast & Valuation
+      en: Financial Forecast & Valuation
+    required: false
+    description:
+      zh: Revenue/profit forecasts, key assumptions, DCF/PE/PB valuation, sensitivity analysis, comparable companies
+      en: Revenue/profit forecasts, key assumptions, DCF/PE/PB, sensitivity, comps
+      
+  - id: risk_analysis
+    name:
+      zh: Risk Analysis
+      en: Risk Analysis
+    required: true
+    description:
+      zh: Industry risks, company risks, policy risks, market risks, valuation risks, upside/downside scenarios
+      en: Industry/company/policy/market/valuation risks, upside/downside scenarios
+      
+  - id: rating_target
+    name:
+      zh: Rating & Target Price
+      en: Rating & Target Price
+    required: false
+    description:
+      zh: Investment rating, target price, rating rationale, catalysts, time horizon
+      en: Investment rating, target price, rationale, catalysts, time horizon
+      
+  - id: appendix
+    name:
+      zh: Appendix
+      en: Appendix
+    required: false
+    description:
+      zh: Financial data tables, peer valuation comparison table, research methodology description, disclaimer
+      en: Financial data tables, peer comparison, methodology, disclaimer

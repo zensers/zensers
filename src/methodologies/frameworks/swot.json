@@ -1,0 +1,7 @@
+{
+  "id": "swot",
+  "name": "SWOT分析",
+  "priority": 2,
+  "aspects": ["competitive_landscape", "strategy_evaluation"],
+  "content": "请按以下四个维度分析:\n1. 优势 (Strengths)\n2. 劣势 (Weaknesses)\n3. 机会 (Opportunities)\n4. 威胁 (Threats)"
+}

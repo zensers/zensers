@@ -1,0 +1,63 @@
+# Annual Report Analysis Template
+# Professional use: Comprehensive analysis of listed company annual performance
+
+id: annual_analysis_standard
+name: Annual Report Analysis
+description: Comprehensive analysis of listed company annual performance, including in-depth financial review, strategic assessment, and governance evaluation
+output_type: annual_analysis
+estimated_pages: 20-50 pages
+suitable_for:
+  - Annual Evaluation
+  - Long-term Investment
+  - Comprehensive Analysis
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: summary
+    name: Annual Report Overview
+    required: true
+    description: Full-year performance summary, key metrics, variance from expectations
+    
+  - id: business_review
+    name: Business Operations Analysis
+    required: true
+    description: Segment performance, market environment changes
+    
+  - id: financial_deep
+    name: In-depth Financial Analysis
+    required: true
+    description: Detailed analysis of three financial statements, financial ratios
+    
+  - id: cashflow_analysis
+    name: Cash Flow Analysis
+    required: true
+    description: Cash flow management, debt analysis
+    
+  - id: governance
+    name: Governance & Internal Controls
+    required: false
+    description: Governance structure, effectiveness of internal controls
+    
+  - id: strategy
+    name: Strategic Planning
+    required: true
+    description: Future development strategy, business plans
+    
+  - id: outlook
+    name: Outlook
+    required: true
+    description: Industry outlook, company development assessment
+    
+  - id: investment_view
+    name: Investment Assessment
+    required: true
+    description: Investment value evaluation, recommendations
+    
+  - id: risks
+    name: Risk Factors
+    required: true
+    description: Long-term risk factors

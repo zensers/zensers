@@ -1,0 +1,85 @@
+# MCP Configuration
+version: "1.0"
+
+# 并发设置
+concurrency:
+  max_concurrent_servers: 10
+  max_concurrent_tools: 10
+
+# 超时设置
+default_timeout:
+  connect: 5.0
+  request: 30.0
+  read: 60.0
+
+# 缓存设置
+cache:
+  enabled: true
+  ttl: 300
+  max_size: 1000
+
+# 日志设置
+logging:
+  level: INFO
+  log_requests: true
+
+# 安全设置
+security:
+  allow_stdio: true
+  allow_network: true
+
+# MCP 服务器
+servers:
+  - name: local_tools
+    transport: stdio
+    enabled: true
+    command: python
+    args: ["-m", "mcp_tools.server"]
+
+  - name: filesystem
+    transport: stdio
+    enabled: true
+    command: npx
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/workspace"]
+
+  - name: remote_api
+    transport: sse
+    enabled: false
+    url: https://api.example.com/mcp/sse
+
+# 工具配置
+tools:
+  - name: web_search
+    type: builtin
+    enabled: true
+    permissions: [network]
+
+  - name: knowledge_query
+    type: builtin
+    enabled: true
+    permissions: [knowledge_read]
+
+  - name: file_read
+    type: mcp
+    server: filesystem
+    enabled: true
+    permissions: [filesystem_read]
+
+  - name: file_write
+    type: mcp
+    server: filesystem
+    enabled: true
+    permissions: [filesystem_write]
+
+# 数据源
+data_sources:
+  - name: knowledge_base
+    type: sqlite
+    enabled: true
+    database: data/knowledge.db
+
+  - name: cache
+    type: redis
+    enabled: true
+    host: localhost
+    port: 6379

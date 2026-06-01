@@ -1,0 +1,47 @@
+# Industry Weekly Report Template
+# Professional use: Regularly updated industry dynamics tracking report
+
+id: industry_weekly_standard
+name: Industry Weekly
+description: Regularly updated industry dynamics tracking report, covering market performance, key developments, and investment views
+output_type: industry_weekly
+estimated_pages: 3-8 pages
+suitable_for:
+  - Regular Tracking
+  - Dynamic Updates
+  - Investment Reference
+supported_formats:
+  - docx
+  - pdf
+category_name: market-analysis
+
+sections:
+  - id: summary
+    name: Summary & Investment Views
+    required: true
+    description: This week's key industry changes and investment recommendations
+    
+  - id: market_performance
+    name: Market Performance Tracking
+    required: true
+    description: Industry index movements, constituent stock distribution, capital flows
+    
+  - id: core_updates
+    name: Key Developments Analysis
+    required: true
+    description: Important news, policy interpretation, major company updates
+    
+  - id: data_monitor
+    name: Data Monitoring
+    required: false
+    description: Industry data changes, key metric tracking
+    
+  - id: outlook
+    name: Next Week Outlook
+    required: true
+    description: Forward-looking assessment, key events to watch
+    
+  - id: risks
+    name: Risk Factors
+    required: true
+    description: Potential risk factors

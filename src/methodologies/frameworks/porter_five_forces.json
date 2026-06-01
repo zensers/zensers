@@ -1,0 +1,7 @@
+{
+  "id": "porter_five_forces",
+  "name": "波特五力分析",
+  "priority": 1,
+  "aspects": ["competitive_landscape", "market_structure", "industry_analysis"],
+  "content": "请按以下五个维度分析:\n1. 现有企业间的竞争强度\n2. 潜在进入者的威胁\n3. 替代品的威胁\n4. 供应商的议价能力\n5. 购买者的议价能力"
+}

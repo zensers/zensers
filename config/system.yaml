@@ -1,0 +1,105 @@
+# System Configuration
+# ⚠️ PRIORITY: settings.yaml > system.yaml > .env > defaults
+# Database config in settings.yaml takes precedence over values here.
+# To enable Postgres/Redis, change settings.yaml, NOT system.yaml.
+version: "1.0"
+
+# Database Configuration
+# NOTE: settings.yaml has postgres.enabled=false, redis.enabled=false
+# Values below are overridden by settings.yaml at runtime.
+database:
+  postgres:
+    enabled: false
+    host: localhost
+    port: 5432
+    name: zensers
+    user: ${DB_USER}
+    password: ${DB_PASSWORD}
+  redis:
+    enabled: false
+    host: localhost
+    port: 6379
+    password: ${REDIS_PASSWORD}
+  sqlite:
+    enabled: true
+    path: data/knowledge.db
+
+# System Settings
+system:
+  environment: development
+  debug: true
+  logging:
+    level: INFO
+    file: logs/zensers.log
+  paths:
+    data_dir: data
+    cache_dir: cache
+    temp_dir: tmp
+    report_output_dir: output/reports
+    template_dir: config/templates
+  concurrency:
+    max_concurrent_tasks: 10
+    task_timeout: 1800
+
+# Development Configuration
+development:
+  test_mode: true
+  mock_llm: false
+  mock_data_providers: true
+  verbose_output: true
+
+# Data Providers (Optional)
+data_providers:
+  akshare:
+    enabled: true
+    rate_limit: 100
+  public:
+    enabled: true
+
+# Third-Party Platforms (Optional)
+platforms:
+  dingtalk:
+    enabled: false
+  wecom:
+    enabled: false
+  email:
+    enabled: false
+
+# ============================================================
+# Quality Control Configuration
+# ============================================================
+quality:
+  # Quality thresholds (industry research must be high quality)
+  thresholds:
+    data_collection: 70    # Data collection threshold
+    analysis: 70           # Data analysis threshold
+    report: 80             # Overall report threshold (higher requirement for final output)
+
+  # Retry Configuration
+  max_retries: 3           # Maximum retry attempts
+
+  # Feedback Loop Strategy
+  retry_strategy:
+    data_collection:
+      - Expand search keywords
+      - Supplement official data sources
+      - Increase search depth
+    analysis:
+      - Adjust analysis strategy
+      - Require evidence support
+      - Deepen analysis depth
+    report:
+      - Regenerate report
+      - Supplement data source citations
+
+  # Degradation Handling
+  degradation:
+    enabled: true
+    min_data_volume: 3     # Minimum data volume, below this is considered no data
+    fallback_message: "Insufficient data, conclusion reliability reduced"
+
+  # Output Configuration
+  output:
+    include_quality_note: true       # Include quality annotation
+    include_attempt_history: true    # Include attempt history
+    save_quality_metadata: true      # Save quality metadata

@@ -1,0 +1,521 @@
+# Research Framework Configuration
+# Defines differentiated Agent behavior for different research types
+#
+# Design philosophy: pursue ultimate quality, dynamically adjust search depth,
+# ensure high-quality content is generated within the specified time
+
+# Industry Research Report Configuration
+industry_report:
+  name: Industry Research Report
+  description: Comprehensive industry analysis including market size, competitive landscape, and trend forecasts
+
+  # Agent Configuration
+  agent_config:
+    # Search configuration - no upper limit, pursuing quality
+    search:
+      max_queries_per_section: 10  # Search queries per section
+      max_results_per_query: 20    # More results per search
+      max_total_searches: 100      # Total search upper limit (prevents infinite loops)
+      priority_sources:           # Priority data sources
+        - Industry Association Reports
+        - Government Statistics
+        - Brokerage Research Reports
+        - Consulting Firm Reports
+        - Academic Papers
+        - Industry White Papers
+        - Listed Company Annual Reports
+        - News Reports
+
+    # Analysis configuration - deep analysis
+    analysis:
+      depth: ultra_deep           # Ultra-deep analysis
+      focus_areas:                # Key analysis areas
+        - Market Size and Growth
+        - Competitive Landscape and Share
+        - Development Trend Forecast
+        - Industry Chain Analysis
+        - Business Model Innovation
+        - Technology Roadmap Evolution
+        - Policy and Regulation Impact
+        - Investment and Financing Dynamics
+      metrics:                    # Key metrics
+        - TAM/SAM/SOM
+        - CAGR
+        - CR4/CR5/CR8
+        - Market Share
+        - Penetration Rate
+        - Growth Drivers
+
+    # Content requirements - high quality
+    content:
+      min_section_length: 2000    # Minimum word count per section (significantly increased)
+      require_data_points: true   # Must have data support
+      require_charts: true        # Must include charts
+      require_sources: true       # Must include source citations
+      require_multiple_sources: true  # Each data point requires multiple source verification
+
+  # Section weights (affect Agent resource allocation)
+  section_weights:
+    investment_summary: 0.5       # Investment highlights depend on other sections
+    industry_overview: 1.5
+    market_size: 2.0              # Key section
+    competitive_landscape: 2.0    # Key section
+    value_chain: 1.5
+    growth_drivers: 1.5
+    policy_environment: 1.2
+    technology_trends: 1.2
+    company_analysis: 2.0         # Key section
+    financial_forecast: 1.8
+    risk_analysis: 1.0
+    rating_target: 0.5
+    appendix: 0.3
+
+  # === Interaction Parameter Configuration ===
+  interaction_parameters:
+    region:
+      type: select
+      label:
+        zh: Research Region
+        en: Region
+      default: China
+      options:
+        - value: China
+          label: { zh: China, en: China }
+        - value: Global
+          label: { zh: Global, en: Global }
+        - value: United States
+          label: { zh: United States, en: United States }
+        - value: Europe
+          label: { zh: Europe, en: Europe }
+    time_range:
+      type: select
+      label:
+        zh: Time Range
+        en: Time Range
+      default: Last 3 Years
+      options:
+        - value: Last 1 Year
+          label: { zh: Last 1 Year, en: Last 1 Year }
+        - value: Last 3 Years
+          label: { zh: Last 3 Years, en: Last 3 Years }
+        - value: Last 5 Years
+          label: { zh: Last 5 Years, en: Last 5 Years }
+    depth:
+      type: select
+      label:
+        zh: Research Depth
+        en: Research Depth
+      default: Deep
+      options:
+        - value: Brief
+          label: { zh: Brief, en: Brief }
+        - value: Standard
+          label: { zh: Standard, en: Standard }
+        - value: Deep
+          label: { zh: Deep, en: Deep }
+
+
+# Company Research Report Configuration
+company_research:
+  name: Company Research Report
+  description: Comprehensive analysis of listed company investment value, including financial models and valuation analysis
+
+  agent_config:
+    search:
+      max_queries_per_section: 15  # Company research needs more searches
+      max_results_per_query: 25
+      max_total_searches: 150
+      priority_sources:
+        - Company Annual/Quarterly Reports
+        - Prospectus
+        - Investor Relations Records
+        - Brokerage In-depth Research Reports
+        - Industry Databases
+        - News Announcements
+        - Meeting Minutes
+        - Analyst Conference Calls
+
+    analysis:
+      depth: ultra_deep
+      focus_areas:
+        - Financial Analysis and Modeling
+        - Competitive Advantage Assessment
+        - Valuation and Forecasting
+        - Management Analysis
+        - Industry Position
+        - Growth Drivers
+      metrics:
+        - Revenue/Net Profit Growth Rate
+        - ROE/ROA/ROIC
+        - PE/PB/PS/PEG
+        - DCF Valuation
+        - Free Cash Flow
+        - Gross Margin/Net Margin
+
+    content:
+      min_section_length: 2500
+      require_data_points: true
+      require_charts: true
+      require_sources: true
+      require_multiple_sources: true
+
+  section_weights:
+    summary: 0.5
+    company_overview: 1.2
+    business_analysis: 1.8
+    industry_analysis: 1.5
+    competitive_advantage: 2.0    # Key
+    financial_analysis: 2.5       # Core section, highest weight
+    valuation: 2.5                # Core section
+    investment_logic: 1.5
+    risks: 1.2
+
+  # === Interaction Parameter Configuration ===
+  interaction_parameters:
+    company_name:
+      type: text
+      label:
+        zh: Company Name
+        en: Company Name
+      placeholder:
+        zh: Enter company name or ticker
+        en: Enter company name or ticker
+      required: true
+    market:
+      type: select
+      label:
+        zh: Listed Market
+        en: Listed Market
+      default: A-Share
+      options:
+        - value: A-Share
+          label: { zh: A-Share, en: A-Share }
+        - value: HK-Share
+          label: { zh: HK-Share, en: HK-Share }
+        - value: US-Share
+          label: { zh: US-Share, en: US-Share }
+    time_range:
+      type: select
+      label:
+        zh: Financial Period
+        en: Financial Period
+      default: Last 3 Years
+      options:
+        - value: Last 3 Years
+          label: { zh: Last 3 Years, en: Last 3 Years }
+        - value: Last 5 Years
+          label: { zh: Last 5 Years, en: Last 5 Years }
+
+
+# Competitor Analysis Report Configuration
+competitor_analysis:
+  name: Competitor Analysis Report
+  description: Compare and analyze competitor products, strategies, strengths, and weaknesses
+
+  agent_config:
+    search:
+      max_queries_per_section: 12
+      max_results_per_query: 20
+      max_total_searches: 100
+      priority_sources:
+        - Company Websites/Financial Reports
+        - Product Reviews
+        - User Reviews
+        - News Reports
+        - App Store Data
+        - Social Media
+
+    analysis:
+      depth: ultra_deep
+      focus_areas:
+        - Product Comparison
+        - Strategy Differences
+        - Strengths and Weaknesses Analysis
+        - Market Performance
+        - User Feedback
+      metrics:
+        - Product Feature Comparison
+        - Price Comparison
+        - Market Performance
+        - User Satisfaction
+
+    content:
+      min_section_length: 1500
+      require_data_points: true
+      require_charts: true
+      require_sources: true
+
+  section_weights:
+    overview: 1.0
+    product_comparison: 2.0
+    strategy_analysis: 1.8
+    swot_analysis: 1.5
+    conclusion: 1.0
+
+  # === Interaction Parameter Configuration ===
+  interaction_parameters:
+    primary_company:
+      type: text
+      label:
+        zh: Target Company
+        en: Target Company
+      placeholder:
+        zh: Enter target company name
+        en: Enter target company name
+    region:
+      type: select
+      label:
+        zh: Market
+        en: Market
+      default: China
+      options:
+        - value: China
+          label: { zh: China, en: China }
+        - value: Global
+          label: { zh: Global, en: Global }
+
+
+# Policy Brief Report Configuration
+policy_brief:
+  name: Policy Brief Report
+  description: In-depth interpretation of policy impact, analyzing industry opportunities and challenges
+
+  agent_config:
+    search:
+      max_queries_per_section: 10
+      max_results_per_query: 15
+      max_total_searches: 80
+      priority_sources:
+        - Government Official Documents
+        - Policy Interpretation Articles
+        - Expert Commentary
+        - Industry Impact Analysis
+        - Related Case Studies
+
+    analysis:
+      depth: ultra_deep
+      focus_areas:
+        - Policy Content Interpretation
+        - Industry Impact Analysis
+        - Response Strategy Recommendations
+        - International Comparison
+      metrics:
+        - Policy Strength Assessment
+        - Impact Scope
+        - Timeline
+
+    content:
+      min_section_length: 1500
+      require_data_points: true
+      require_charts: true
+      require_sources: true
+
+  section_weights:
+    summary: 0.5
+    policy_overview: 2.0
+    impact_analysis: 2.0
+    industry_response: 1.5
+    recommendations: 1.2
+
+  # === Interaction Parameter Configuration ===
+  interaction_parameters:
+    policy_name:
+      type: text
+      label:
+        zh: Policy Name
+        en: Policy Name
+      placeholder:
+        zh: Enter policy document name
+        en: Enter policy name
+      required: true
+    region:
+      type: select
+      label:
+        zh: Country/Region
+        en: Country/Region
+      default: China
+      options:
+        - value: China
+          label: { zh: China, en: China }
+        - value: United States
+          label: { zh: United States, en: United States }
+        - value: European Union
+          label: { zh: European Union, en: European Union }
+
+
+# Market Brief Report Configuration
+market_brief:
+  name: Market Brief Report
+  description: Quick overview of market conditions, concise but high quality
+
+  agent_config:
+    search:
+      max_queries_per_section: 5   # Brief also needs sufficient search
+      max_results_per_query: 15
+      max_total_searches: 30
+      priority_sources:
+        - Market News
+        - Data Flash Reports
+        - Industry Updates
+        - Latest Research Reports
+
+    analysis:
+      depth: deep                  # Brief also needs depth
+      focus_areas:
+        - Market Overview
+        - Core Data
+        - Key Trends
+      metrics:
+        - Market Size
+        - Growth Rate
+        - Major Players
+
+    content:
+      min_section_length: 800      # Brief also needs sufficient content
+      require_data_points: true
+      require_charts: true          # Brief also needs charts
+      require_sources: true
+
+  section_weights:
+    overview: 1.5
+    key_data: 2.0
+    highlights: 1.2
+
+  # === Interaction Parameter Configuration ===
+  interaction_parameters:
+    region:
+      type: select
+      label:
+        zh: Region
+        en: Region
+      default: China
+      options:
+        - value: China
+          label: { zh: China, en: China }
+        - value: Global
+          label: { zh: Global, en: Global }
+
+
+# Academic Research Report Configuration (papers, literature reviews, etc.)
+academic_paper:
+  name: Academic Research Report
+  description: Academic papers and literature reviews requiring strict citation format
+
+  agent_config:
+    search:
+      max_queries_per_section: 15
+      max_results_per_query: 30
+      max_total_searches: 200
+      priority_sources:
+        - Academic Papers
+        - CNKI/Wanfang
+        - Google Scholar
+        - Research Reports
+        - Government Statistics
+        - Authoritative Institutional Reports
+
+    analysis:
+      depth: ultra_deep
+      focus_areas:
+        - Literature Review
+        - Theoretical Framework
+        - Research Methodology
+        - Empirical Analysis
+        - Conclusions and Discussion
+      metrics:
+        - Sample Size
+        - Significance Level
+        - Confidence Interval
+        - Effect Size
+
+    content:
+      min_section_length: 3000
+      require_data_points: true
+      require_charts: true
+      require_sources: true
+      require_multiple_sources: true
+      require_inline_citations: true  # Academic reports need inline source citations
+
+  section_weights:
+    abstract: 0.5
+    literature_review: 2.0
+    methodology: 1.5
+    results: 2.0
+    discussion: 1.8
+    conclusion: 1.2
+    references: 0.5
+
+  # === Interaction Parameter Configuration ===
+  interaction_parameters: {}  # Academic reports do not need region/time parameters
+
+
+# Default Configuration (used when type does not match)
+default:
+  name: General Research Report
+  description: Standard research report configuration
+
+  agent_config:
+    search:
+      max_queries_per_section: 10
+      max_results_per_query: 20
+      max_total_searches: 100
+      priority_sources: []
+
+    analysis:
+      depth: ultra_deep
+      focus_areas: []
+      metrics: []
+
+    content:
+      min_section_length: 2000
+      require_data_points: true
+      require_charts: true
+      require_sources: true
+      require_multiple_sources: true
+      require_inline_citations: false  # Default no inline source citations
+
+  section_weights: {}
+
+  # === Interaction Parameter Configuration (degraded defaults) ===
+  interaction_parameters:
+    region:
+      type: select
+      label:
+        zh: Research Region
+        en: Region
+      default: China
+      options:
+        - value: China
+          label: { zh: China, en: China }
+        - value: Global
+          label: { zh: Global, en: Global }
+        - value: United States
+          label: { zh: United States, en: United States }
+        - value: Europe
+          label: { zh: Europe, en: Europe }
+    time_range:
+      type: select
+      label:
+        zh: Time Range
+        en: Time Range
+      default: Last 3 Years
+      options:
+        - value: Last 1 Year
+          label: { zh: Last 1 Year, en: Last 1 Year }
+        - value: Last 3 Years
+          label: { zh: Last 3 Years, en: Last 3 Years }
+        - value: Last 5 Years
+          label: { zh: Last 5 Years, en: Last 5 Years }
+    depth:
+      type: select
+      label:
+        zh: Research Depth
+        en: Research Depth
+      default: Deep
+      options:
+        - value: Brief
+          label: { zh: Brief, en: Brief }
+        - value: Standard
+          label: { zh: Standard, en: Standard }
+        - value: Deep
+          label: { zh: Deep, en: Deep }

@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <style>
+        /* 问卷样式定义 */
+        
+        @page {
+            size: A4;
+            margin: 2.54cm;
+        }
+
+        @media screen {
+            body {
+                padding: 20px 40px;
+            }
+            .cover, .overview, .questions, .stats, .footer {
+                max-width: 210mm;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        }
+        
+        body {
+            font-family: 'SimSun', 'Microsoft YaHei', serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #333333;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        /* 封面 */
+        .cover {
+            text-align: center;
+            padding-top: 100px;
+            page-break-after: always;
+        }
+        
+        .cover h1 {
+            color: #1A2744;
+            font-size: 24pt;
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        
+        .cover .subtitle {
+            color: #2C3E50;
+            font-size: 14pt;
+            margin-bottom: 60px;
+        }
+        
+        .cover .meta {
+            color: #666666;
+            font-size: 11pt;
+            margin-top: 80px;
+        }
+        
+        /* 问卷概述 */
+        .overview {
+            background: #F8F9FA;
+            border: 1px solid #E0E0E0;
+            padding: 15px 20px;
+            margin: 20px 0;
+            border-radius: 4px;
+        }
+        
+        .overview h2 {
+            color: #1A2744;
+            font-size: 14pt;
+            margin: 0 0 10px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #E0E0E0;
+        }
+        
+        .overview p {
+            margin: 8px 0;
+            text-indent: 0;
+        }
+        
+        /* 问题样式 */
+        .question {
+            margin: 20px 0;
+            padding: 15px;
+            background: #FFFFFF;
+            border: 1px solid #E8E8E8;
+            border-radius: 4px;
+        }
+        
+        .question-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .question-number {
+            background: #1A2744;
+            color: #FFFFFF;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 10pt;
+        }
+        
+        .question-type {
+            background: #E8F4F8;
+            color: #2980B9;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 10pt;
+        }
+        
+        .question-required {
+            background: #FDEDEC;
+            color: #E74C3C;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9pt;
+        }
+        
+        .question-text {
+            font-size: 12pt;
+            font-weight: bold;
+            color: #2C3E50;
+            margin: 10px 0;
+            line-height: 1.5;
+        }
+        
+        /* 选项样式 */
+        .options {
+            margin: 10px 0 10px 20px;
+        }
+        
+        .option {
+            display: flex;
+            align-items: center;
+            margin: 8px 0;
+            padding: 8px 12px;
+            background: #F8F9FA;
+            border-radius: 4px;
+        }
+        
+        .option-marker {
+            width: 20px;
+            height: 20px;
+            border: 2px solid #1A2744;
+            border-radius: 50%;
+            margin-right: 10px;
+            display: inline-block;
+        }
+        
+        .option-text {
+            flex: 1;
+        }
+        
+        .option-id {
+            color: #666666;
+            font-size: 10pt;
+            margin-right: 8px;
+        }
+        
+        /* 统计信息 */
+        .stats {
+            text-align: center;
+            padding: 20px;
+            background: #F8F9FA;
+            border-top: 2px solid #1A2744;
+            margin-top: 30px;
+        }
+        
+        .stats-item {
+            display: inline-block;
+            margin: 0 20px;
+            text-align: center;
+        }
+        
+        .stats-value {
+            font-size: 24pt;
+            font-weight: bold;
+            color: #1A2744;
+        }
+        
+        .stats-label {
+            font-size: 10pt;
+            color: #666666;
+        }
+        
+        /* 页脚 */
+        .footer {
+            text-align: center;
+            font-size: 9pt;
+            color: #999999;
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #E0E0E0;
+        }
+    </style>
+</head>
+<body>
+
+<!-- 封面 -->
+<div class="cover">
+    <h1>{{ title }}</h1>
+    <div class="subtitle">调 研 问 卷</div>
+    <div class="meta">
+        <p>创建日期: {{ created_at }}</p>
+        <p>目标样本数: {{ target_count }} 份</p>
+        <p>问题数量: {{ total_questions }} 题</p>
+    </div>
+</div>
+
+<!-- 问卷概述 -->
+<div class="overview">
+    <h2>问卷概述</h2>
+    <p><strong>调研主题:</strong> {{ topic }}</p>
+    <p><strong>预计答题时间:</strong> 约 {{ estimated_minutes }} 分钟</p>
+    <p><strong>说明:</strong> 本问卷旨在收集相关信息，请您根据实际情况如实填写。所有数据仅用于研究分析，我们将严格保护您的隐私。</p>
+</div>
+
+<!-- 问题列表 -->
+<div class="questions">
+{% for question in questions %}
+    <div class="question">
+        <div class="question-header">
+            <div>
+                <span class="question-number">Q{{ question.index }}</span>
+                <span class="question-type">{{ question.type }}</span>
+            </div>
+            {% if question.required %}
+            <span class="question-required">必答</span>
+            {% else %}
+            <span class="question-required" style="background: #E8F8E8; color: #27AE60;">选答</span>
+            {% endif %}
+        </div>
+        
+        <div class="question-text">{{ question.text }}</div>
+        
+        {% if question.options %}
+        <div class="options">
+            {% for option in question.options %}
+            <div class="option">
+                <span class="option-id">{{ option.option_id }}.</span>
+                <span class="option-marker"></span>
+                <span class="option-text">{{ option.text }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+{% endfor %}
+</div>
+
+<!-- 统计信息 -->
+<div class="stats">
+    <div class="stats-item">
+        <div class="stats-value">{{ total_questions }}</div>
+        <div class="stats-label">问题总数</div>
+    </div>
+    <div class="stats-item">
+        <div class="stats-value">{{ required_count }}</div>
+        <div class="stats-label">必答题数</div>
+    </div>
+    <div class="stats-item">
+        <div class="stats-value">{{ estimated_minutes }}</div>
+        <div class="stats-label">预计用时(分钟)</div>
+    </div>
+</div>
+
+<!-- 页脚 -->
+<div class="footer">
+    <p>本问卷由 OpenResearch 系统自动生成</p>
+    <p>问卷ID: {{ survey_id }} | 生成时间: {{ generated_at }}</p>
+</div>
+
+</body>
+</html>

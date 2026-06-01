@@ -1,0 +1,451 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>{{ title }}</title>
+    <style>
+        /* ============================================
+           国际出版物标准报告模板 v3.0
+           International Publication Standard Template
+           
+           配色方案：墨蓝 + 暖金 + 暖灰（专业出版物风格）
+           字体方案：黑体(标题) / 宋体(正文) / Times New Roman(数字)
+           字号方案：五号 10.5pt 为基准（中文出版物标准）
+           版心方案：A4 标准天头地脚
+           ============================================ */
+
+        /* --- 页面布局 --- */
+        @page {
+            size: A4;
+            margin: 2.5cm 2.5cm 3cm 2.5cm;
+        }
+
+        body {
+            font-family: 'SimSun', 'Noto Serif CJK SC', 'Source Han Serif SC', serif;
+            font-size: 11pt;
+            line-height: 1.8;
+            color: #2C2C2C;
+            margin: 0;
+            padding: 0;
+            text-align: justify;
+            orphans: 2;
+            widows: 2;
+        }
+
+        @media screen {
+            body {
+                padding: 0 40px;
+            }
+            article.document {
+                max-width: 210mm;
+                margin: 0 auto;
+            }
+            .cover-page, .toc {
+                max-width: 210mm;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        }
+
+        /* ============================================
+           封面页
+           ============================================ */
+        .cover-page {
+            text-align: center;
+            padding-top: 200px;
+            page-break-after: always;
+        }
+
+        .cover-page .cover-badge {
+            font-family: 'Times New Roman', serif;
+            font-size: 10pt;
+            color: #B8975A;
+            letter-spacing: 8pt;
+            text-transform: uppercase;
+            margin-bottom: 48px;
+        }
+
+        .cover-page h1 {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 28pt;
+            font-weight: bold;
+            color: #1C2B36;
+            margin: 0 auto 24px;
+            max-width: 80%;
+            line-height: 1.35;
+        }
+
+        .cover-page .subtitle {
+            font-family: 'SimSun', 'Noto Serif CJK SC', serif;
+            font-size: 14pt;
+            color: #2C4A5A;
+            margin-bottom: 60px;
+            line-height: 1.6;
+            text-align: center;
+        }
+
+        .cover-page .meta {
+            font-family: 'SimSun', serif;
+            font-size: 11pt;
+            color: #888888;
+            margin-top: 120px;
+            line-height: 2;
+            text-align: center;
+        }
+
+        .cover-page .meta-separator {
+            width: 60px;
+            height: 2px;
+            background: #B8975A;
+            margin: 0 auto 40px;
+            border: none;
+        }
+
+        /* ============================================
+           目录页
+           ============================================ */
+        .toc {
+            page-break-after: always;
+        }
+
+        .toc h2 {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1C2B36;
+            text-align: center;
+            letter-spacing: 12pt;
+            margin-bottom: 48px;
+        }
+
+        .toc-item {
+            font-family: 'SimSun', serif;
+            font-size: 12pt;
+            color: #2C2C2C;
+            padding: 10pt 0;
+            border-bottom: 1px dotted #D6D2C9;
+        }
+
+        .toc-item a {
+            color: #2C2C2C;
+            text-decoration: none;
+        }
+
+        /* ============================================
+           正文 - 章标题（一级）
+           ============================================ */
+        h1.chapter-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1C2B36;
+            margin-top: 30pt;
+            margin-bottom: 16pt;
+            padding-bottom: 10pt;
+            border-bottom: 2px solid #B8975A;
+        }
+
+        /* ============================================
+           正文 - 节标题（二级）
+           ============================================ */
+        h2.section-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 14pt;
+            font-weight: bold;
+            color: #2C4A5A;
+            margin-top: 22pt;
+            margin-bottom: 10pt;
+        }
+
+        /* ============================================
+           正文 - 小节标题（三级）
+           ============================================ */
+        h3.subsection-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 12pt;
+            font-weight: bold;
+            color: #1C2B36;
+            margin-top: 16pt;
+            margin-bottom: 8pt;
+        }
+
+        /* ============================================
+            正文段落
+            ============================================ */
+        .section-content p {
+            font-family: 'SimSun', 'Noto Serif CJK SC', serif;
+            font-size: 11pt;
+            line-height: 1.8;
+            color: #2C2C2C;
+            text-align: justify;
+            text-indent: 2em;
+            margin-bottom: 0;
+            orphans: 2;
+            widows: 2;
+        }
+
+        /* 段落间间距 */
+        .section-content p + p {
+            margin-top: 0.5em;
+        }
+
+        /* ============================================
+            列表
+            ============================================ */
+        ul, ol {
+            font-family: 'SimSun', serif;
+            font-size: 10.5pt;
+            line-height: 1.8;
+            color: #2C2C2C;
+            margin: 8pt 0;
+            padding-left: 2.5em;
+        }
+
+        li {
+            margin-bottom: 2pt;
+        }
+
+        /* 嵌套列表缩进 */
+        ul ul, ol ol, ul ol, ol ul {
+            margin: 4pt 0;
+            padding-left: 2em;
+        }
+
+        /* ============================================
+            图片
+            ============================================ */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 12pt auto;
+        }
+
+        .section-content img {
+            max-width: 90%;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* ============================================
+           表格
+           ============================================ */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16pt 0;
+            font-size: 10pt;
+        }
+
+        caption.table-caption {
+            font-family: 'SimHei', sans-serif;
+            font-size: 10pt;
+            font-weight: bold;
+            color: #1C2B36;
+            text-align: center;
+            margin-bottom: 8pt;
+        }
+
+        thead th {
+            background: #1C2B36;
+            color: #FFFFFF;
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 10pt;
+            font-weight: bold;
+            padding: 8pt 10pt;
+            text-align: left;
+            border: none;
+        }
+
+        tbody td {
+            padding: 6pt 10pt;
+            border-bottom: 1px solid #D6D2C9;
+            color: #2C2C2C;
+            font-size: 10pt;
+        }
+
+        tbody tr:nth-child(even) td {
+            background: #F5F3EF;
+        }
+
+        /* ============================================
+            关键发现 / 引用框
+            ============================================ */
+        .key-findings {
+            background: #F8F7F4;
+            border: 1px solid #E8E4DC;
+            border-radius: 6px;
+            padding: 20pt 24pt;
+            margin: 20pt 0;
+        }
+
+        .key-findings h2 {
+            font-family: 'SimHei', sans-serif;
+            font-size: 14pt;
+            color: #1C2B36;
+            margin-top: 0;
+            margin-bottom: 12pt;
+            padding-bottom: 8pt;
+            border-bottom: 2px solid #B8975A;
+        }
+
+        .key-findings ul {
+            margin: 0;
+            padding-left: 1.5em;
+        }
+
+        .key-findings li {
+            margin-bottom: 8pt;
+            line-height: 1.7;
+        }
+
+        .highlight-box {
+            background: #F8F7F4;
+            border-left: 4px solid #B8975A;
+            padding: 14pt 18pt;
+            margin: 16pt 0;
+            font-size: 10.5pt;
+            line-height: 1.7;
+            color: #2C2C2C;
+        }
+
+        .highlight-box strong {
+            color: #1C2B36;
+            font-family: 'SimHei', sans-serif;
+        }
+
+        .quote-block {
+            background: #F8F7F4;
+            border-left: 4px solid #2C4A5A;
+            padding: 12pt 16pt;
+            margin: 12pt 0;
+            font-style: italic;
+            color: #2C4A5A;
+        }
+
+        /* ============================================
+           图表说明
+           ============================================ */
+        .figure-caption {
+            font-size: 10pt;
+            color: #888888;
+            text-align: center;
+            margin-top: 6pt;
+        }
+
+        /* ============================================
+           Logo
+           ============================================ */
+        .logo {
+            width: 90px;
+            height: auto;
+            margin-bottom: 10px;
+            opacity: 0.85;
+        }
+
+        /* ============================================
+           水印（可选）
+           ============================================ */
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 48pt;
+            color: rgba(153, 153, 153, 0.15);
+            pointer-events: none;
+            z-index: -1;
+            font-family: 'Times New Roman', serif;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ============================================
+     封面页
+     ============================================ -->
+    <div class="cover-page">
+        <img class="logo" src="{{ logo_path }}" alt="" onerror="this.style.display='none'">
+        <h1>{{ title }}</h1>
+        {% if subtitle %}
+        <p class="subtitle">{{ subtitle }}</p>
+        {% endif %}
+        <div class="meta-separator"></div>
+        <p class="meta">{{ author }}<br>{{ date }}</p>
+        {% if watermark %}
+        <div class="watermark">{{ watermark }}</div>
+        {% endif %}
+    </div>
+
+<!-- ============================================
+     Table of Contents
+     ============================================ -->
+<div class="toc">
+    <h2>{{ labels.toc }}</h2>
+    {% for section in sections %}
+    <div class="toc-item">
+        <a href="#{{ section.id }}">{{ section.title }}</a>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- ============================================
+     正文内容
+     ============================================ -->
+<article class="document">
+    
+    {% for section in sections %}
+    <section id="{{ section.id }}">
+        <h1 class="chapter-title">{{ section.title }}</h1>
+        
+        {% if section.subsections %}
+        {% for subsection in section.subsections %}
+        <div id="{{ subsection.id }}">
+            <h2 class="section-title">{{ subsection.title }}</h2>
+            <div>{{ subsection.content }}</div>
+        </div>
+        {% endfor %}
+        {% else %}
+        <div class="section-content">
+            {{ section.content }}
+        </div>
+        {% endif %}
+        
+        {% for chart in section.charts %}
+        <figure class="chart-container">
+          <img src="{{ chart.path }}" alt="{{ chart.caption }}" style="max-width:100%">
+          <figcaption class="figure-caption">{{ chart.caption }}</figcaption>
+        </figure>
+        {% endfor %}
+        
+        {% if section.tables %}
+        {% for table in section.tables %}
+        <table>
+            <caption class="table-caption">{{ table.caption }}</caption>
+            <thead>
+                <tr>
+                    {% for header in table.headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in table.rows %}
+                <tr>
+                    {% for cell in row %}
+                    <td>{{ cell }}</td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% endfor %}
+        {% endif %}
+        
+    </section>
+    {% endfor %}
+
+</article>
+
+</body>
+</html>
