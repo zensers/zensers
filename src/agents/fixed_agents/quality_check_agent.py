@@ -874,6 +874,7 @@ class QualityCheckAgent(FixedAgent):
                                  session_id: str = "",
                                  research_id: str = "") -> Dict:
         """分章节质检"""
+        import re
         section_results = {}
         
         for section in sections:
@@ -910,6 +911,13 @@ class QualityCheckAgent(FixedAgent):
             
             section_score = self._calculate_section_score(section_content, issues)
             
+            from src.core.quality.quality_state import generate_issue_id
+            for issue in issues:
+                issue["id"] = generate_issue_id(section_name, issue.get("type", ""), issue.get("message", ""))
+                issue["section"] = section_name
+                if "state" not in issue:
+                    issue["state"] = "open"
+            
             section_results[section_name] = {
                 "score": section_score,
                 "status": "passed" if section_score >= 60 else "warning",
@@ -944,6 +952,15 @@ class QualityCheckAgent(FixedAgent):
         full_content = "\n".join(s.get("content", "") for s in sections)
         placeholder_issues = self._check_placeholders(full_content)
         overall_issues.extend(placeholder_issues)
+        
+        from src.core.quality.quality_state import generate_issue_id
+        for issue in overall_issues:
+            if "id" not in issue:
+                issue["id"] = generate_issue_id("overall", issue.get("type", ""), issue.get("message", ""))
+            if "section" not in issue:
+                issue["section"] = "overall"
+            if "state" not in issue:
+                issue["state"] = "open"
         
         section_scores = []
         for r in section_results.values():

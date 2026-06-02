@@ -19,12 +19,16 @@ class QualityIssue(BaseModel):
     severity: Literal["high", "medium", "low"]
     message: str
     section: str
-    state: Literal["open", "dismissed", "revising", "resolved", "max_retries_reached"] = "open"
+    state: Literal["open", "dismissed", "revising", "resolved", "max_retries_reached", "accepted"] = "open"
+    revision_count: int = 0
+
+
+QUALITY_PASS_THRESHOLD = 60
 
 
 class SectionScore(BaseModel):
     score: float = 0.0
-    status: Literal["passed", "warning"] = "warning"
+    status: Literal["passed", "warning", "empty"] = "warning"
     issues: List[QualityIssue] = Field(default_factory=list)
 
 
@@ -83,7 +87,18 @@ def merge_issues_on_recheck(
         final_issues: List[QualityIssue] = []
         for iid, raw in new_issues_by_id.items():
             if iid in existing_issue_map:
-                final_issues.append(existing_issue_map[iid])
+                existing = existing_issue_map[iid]
+                if existing.state == "revising":
+                    existing = QualityIssue(
+                        id=existing.id,
+                        type=existing.type,
+                        severity=existing.severity,
+                        message=existing.message,
+                        section=existing.section,
+                        state="open",
+                        revision_count=existing.revision_count,
+                    )
+                final_issues.append(existing)
             else:
                 final_issues.append(QualityIssue(**raw))
 

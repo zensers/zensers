@@ -48,7 +48,6 @@ from src.core.preview.preview_generator import PreviewGenerator
 from src.core.preview_storage import PreviewStorage
 from src.core.prompt_manager import PromptManager
 from src.core.research_framework_manager import get_framework_config
-from src.core.semantic_intent import SemanticIntentAnalyzer
 from src.core.session_manager import SessionManager
 
 
@@ -59,10 +58,10 @@ class ConversationToolSet:
     """ConversationToolSet"""
 
     TOOL_DEFINITIONS = [
-        {"name": "get_current_datetime", "description": "Get current date and time", "parameters": {}},
-        {"name": "web_search", "description": "Search the internet for real-time information", "parameters": {"query": "str", "max_results": "int", "recency_days": "int"}},
-        {"name": "news_search", "description": "Search latest news", "parameters": {"query": "str", "max_results": "int", "recency_days": "int"}},
-        {"name": "scrape_url", "description": "Scrape main content from a given URL", "parameters": {"url": "str", "max_chars": "int"}},
+        {"name": "get_current_datetime", "description": "Get current date and time", "parameters": {"type": "object", "properties": {}, "required": []}},
+        {"name": "web_search", "description": "Search the internet for real-time information", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "Search query keywords"}, "max_results": {"type": "integer", "description": "Maximum number of results to return", "default": 5}, "recency_days": {"type": "integer", "description": "How recent the results should be in days (e.g. 7 for past week, 30 for past month)", "default": 30}}, "required": ["query"]}},
+        {"name": "news_search", "description": "Search latest news", "parameters": {"type": "object", "properties": {"query": {"type": "string", "description": "News search query keywords"}, "max_results": {"type": "integer", "description": "Maximum number of news results to return", "default": 5}, "recency_days": {"type": "integer", "description": "How recent the news should be in days (e.g. 7 for past week, 30 for past month)", "default": 30}}, "required": ["query"]}},
+        {"name": "scrape_url", "description": "Scrape main content from a given URL", "parameters": {"type": "object", "properties": {"url": {"type": "string", "description": "The URL to scrape"}, "max_chars": {"type": "integer", "description": "Maximum characters to extract", "default": 5000}}, "required": ["url"]}},
     ]
 
     TOOL_TIMEOUTS = {"get_current_datetime": 5, "web_search": 30, "news_search": 30, "scrape_url": 20}
@@ -79,7 +78,7 @@ class ConversationToolSet:
         weekdays = ('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday')
         return {'success': True, 'data': {'iso_format': now.isoformat(), 'date': now.strftime('%Y-%m-%d'), 'weekday': weekdays[now.weekday()], 'time': now.strftime('%H:%M'), 'year': now.year, 'month': now.month, 'day': now.day, 'hour': now.hour, 'minute': now.minute}}
 
-    def web_search(self, query, max_results, recency_days):
+    async def web_search(self, query, max_results=5, recency_days=30):
         """Search the internet for real-time information"""
         try:
             if not self._search_skill:
@@ -96,7 +95,7 @@ class ConversationToolSet:
                         kwargs['time_range'] = 'm'
                     else:
                         kwargs['time_range'] = 'y'
-            result = self._search_skill.execute(**kwargs)
+            result = await self._search_skill.execute(**kwargs)
             if result.get('success'):
                 return {'success': True, 'data': result.get('results', [])}
             return {'success': False, 'error': result.get('error', 'Search failed')}
@@ -104,7 +103,7 @@ class ConversationToolSet:
             logger.warning(f"web_search failed: {e}")
             return {'success': False, 'error': str(e)}
 
-    def news_search(self, query, max_results, recency_days):
+    async def news_search(self, query, max_results=5, recency_days=30):
         """Search latest news"""
         try:
             if not self._news_skill:
@@ -121,7 +120,7 @@ class ConversationToolSet:
                         kwargs['time_range'] = 'm'
                     else:
                         kwargs['time_range'] = 'y'
-            result = self._news_skill.execute(**kwargs)
+            result = await self._news_skill.execute(**kwargs)
             if result.get('success'):
                 return {'success': True, 'data': result.get('results', [])}
             return {'success': False, 'error': result.get('error', 'News search failed')}
@@ -156,7 +155,7 @@ class ConversationToolSet:
             timeout = self.TOOL_TIMEOUTS.get(tool_name, 30)
             result = handler(**arguments)
             if hasattr(result, '__await__'):
-                return await result
+                result = await asyncio.wait_for(result, timeout=timeout)
             return result
         except asyncio.TimeoutError:
             logger.warning(f"Tool {tool_name} timed out after {timeout}s")
@@ -199,7 +198,6 @@ class ResearchAPI:
             self._preview_generator = preview_generator
         else:
             self._preview_generator = PreviewGenerator(cache_dir=str(PreviewStorage.NEW_DIR))
-        self._intent_analyzer = SemanticIntentAnalyzer(use_llm=True, fallback_to_keyword=True)
         self._tool_set = ConversationToolSet()
         self._revision_locks = {}
         self._revision_task = None
@@ -257,7 +255,7 @@ class ResearchAPI:
         session_id = f"""ses_{uuid.uuid4().hex[:8]}"""
         state_machine = ConversationStateMachine(research_id=session_id)
         detected_lang = detect_language(user_input).value
-        session_manager.create(session_id, {'user_input': user_input, 'user_id': user_id, 'state_machine': state_machine, 'clarifier': SmartClarifier(), 'created_at': datetime.now(), 'current_step': 0, 'mode': 'chat', 'llm_config': llm_config, 'language': detected_lang, 'conversation_history': [], 'research_context': {'topic': None, 'directions': [], 'framework': None, 'details': {}}})
+        session_manager.create(session_id, {'user_input': user_input, 'user_id': user_id, 'state_machine': state_machine, 'clarifier': SmartClarifier(), 'created_at': datetime.now(), 'current_step': 0, 'mode': 'chat', 'llm_config': llm_config, 'language': detected_lang, '_session_id': session_id, 'conversation_history': [], 'research_context': {'topic': None, 'directions': [], 'framework': None, 'details': {}}})
         set_global_language(Language(detected_lang))
         return await self._handle_user_message(session_id, user_input)
 
@@ -322,6 +320,15 @@ class ResearchAPI:
             return await self._handle_chat_mode(session_id, user_input, skip_lang_detect)
 
         if mode == 'research':
+            input_lower = user_input.strip().lower()
+            cancel_keywords = ('取消研究', 'cancel research', '停止研究', 'stop research', '终止研究', 'abort research')
+            pause_keywords = ('暂停', 'pause', '暂停研究', 'pause research')
+            if any(kw in input_lower for kw in cancel_keywords):
+                logger.info(f"Keyword cancel detected in research mode for {session_id}")
+                return await self.cancel_research(session_id)
+            if any(kw in input_lower for kw in pause_keywords):
+                logger.info(f"Keyword pause detected in research mode for {session_id}")
+                return await self.pause_research(session_id)
             return await self._handle_research_msg(session_id, user_input, session)
 
         return {'error': f"Unknown mode: {mode}", 'error_code': 'UNKNOWN_MODE'}
@@ -704,7 +711,7 @@ class ResearchAPI:
             report = session['research_result'].get('report', {})
             sections = report.get('sections', [])
             if sections:
-                sl = '\n'.join(f"- {s}" for s in sections)
+                sl = '\n'.join(f"- {s.get('title', s.get('id', str(s)))}" if isinstance(s, dict) else f"- {s}" for s in sections)
                 sections_context = f"\n## Existing Report Sections\n{sl}\nUse these exact section names in aspects when the user requests revision.\n"
             rs = session['research_result'].get('status', 'unknown')
             rst = session['research_result'].get('stages_completed', 0)
@@ -1860,7 +1867,7 @@ class ResearchAPI:
         return await self._handle_v2_revision(task_id, conv_result)
 
     async def pause_research(self, task_id):
-        """Pause research task — set flag + notify frontend. No Task.cancel()."""
+        """Pause research task — save snapshot + set flag + notify frontend. No Task.cancel()."""
         session = session_manager.get(task_id)
         if not session:
             return {'error': 'Session not found', 'error_code': 'SESSION_NOT_FOUND'}
@@ -1873,12 +1880,22 @@ class ResearchAPI:
                 state_machine.transition(ConversationState.PAUSED)
             except Exception as e:
                 logger.warning(f"State transition to PAUSED failed: {e}")
+        await self._save_cancel_snapshot(task_id, session)
         cm.pause(task_id)
+        try:
+            from src.core.task_persistence import TaskPersistenceManager
+            tp = TaskPersistenceManager()
+            task = tp.load_task(task_id)
+            if task:
+                task.pause('Paused by user')
+                tp.save_task(task)
+        except Exception as e:
+            logger.warning(f"Failed to persist pause state: {e}")
         ProgressStreamer.pause_task(task_id, 'Task paused by user')
         return {'task_id': task_id, 'status': 'paused', 'message': 'Research task paused'}
 
     async def resume_research(self, task_id):
-        """Resume research task — clear flag + wake Engine. No snapshot recovery in Phase 1."""
+        """Resume research task — clear flag + wake Engine. With snapshot recovery Path B."""
         session = session_manager.get(task_id)
         if not session:
             return {'error': 'Session not found', 'error_code': 'SESSION_NOT_FOUND'}
@@ -1891,7 +1908,10 @@ class ResearchAPI:
         if session.get('status') == 'cancelled' or cm.is_cancelled(task_id):
             return {'task_id': task_id, 'status': 'cancelled', 'message': 'Research was cancelled, cannot resume'}
         if task_id not in self._executor_tasks or self._executor_tasks[task_id].done():
-            logger.warning(f"Resume called but engine already dead for {task_id}")
+            logger.warning(f"Resume called but engine already dead for {task_id}, attempting snapshot recovery")
+            snapshot = await self._load_cancel_snapshot(task_id)
+            if snapshot and snapshot.get('pending_sections'):
+                return await self._resume_from_snapshot(task_id, session, snapshot)
             return {'task_id': task_id, 'status': 'failed', 'message': 'Research engine has stopped, please start a new task'}
         cm.resume(task_id)
         state_machine = session.get('state_machine')
@@ -1902,6 +1922,59 @@ class ResearchAPI:
                 logger.warning(f"State transition to EXECUTING failed: {e}")
         ProgressStreamer.resume_task(task_id, 'Task resumed by user')
         return {'task_id': task_id, 'status': 'resumed', 'message': 'Research task resumed'}
+
+    async def _resume_from_snapshot(self, task_id, session, snapshot):
+        """Resume research from a saved cancel snapshot when the engine is dead.
+
+        Rebuilds the research plan with only pending sections and starts a new executor.
+        """
+        from src.api.research_executor import get_executor
+        pending_sections = snapshot.get('pending_sections', [])
+        completed_sections = snapshot.get('completed_sections', [])
+        context = snapshot.get('research_context', {})
+        framework = context.get('framework', {})
+        framework['sections'] = completed_sections + pending_sections
+        context['framework'] = framework
+        session['research_context'] = context
+        from src.core.intelligent_routing_adapter import IntelligentRoutingAdapter
+        topic = context.get('topic', '')
+        try:
+            adapter = IntelligentRoutingAdapter(use_llm=True, fallback_to_keyword=True)
+            routing_result = adapter.analyze_incremental(
+                user_request=f"Resume research for pending sections",
+                requirement={'topic': topic, 'aspects': pending_sections},
+                completed_aspects=completed_sections,
+                topic=topic)
+            new_plan = {}
+            if hasattr(routing_result, 'execution_plan'):
+                plan = routing_result.execution_plan
+                if hasattr(plan, 'to_dict'):
+                    new_plan = plan.to_dict()
+            new_plan['topic'] = topic
+            new_plan['output_type'] = framework.get('output_type', 'industry_report')
+            new_plan['skip_phases'] = getattr(routing_result, 'skip_phases', [])
+        except Exception as e:
+            logger.warning(f"Routing failed during snapshot resume for {task_id}: {e}")
+            new_plan = session.get('final_plan', {})
+        session['final_plan'] = new_plan
+        session['mode'] = 'research'
+        session['status'] = 'running'
+        from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
+        get_cancel_manager().resume(task_id)
+        state_machine = session.get('state_machine')
+        if state_machine and state_machine.can_transition_to(ConversationState.EXECUTING):
+            try:
+                state_machine.transition(ConversationState.EXECUTING)
+            except Exception as e:
+                logger.warning(f"State transition to EXECUTING failed during snapshot resume: {e}")
+        executor = get_executor()
+        resume_task = asyncio.create_task(executor.execute(task_id, new_plan, session_manager))
+        self._executor_tasks[task_id] = resume_task
+        resume_task.add_done_callback(lambda _: self._executor_tasks.pop(task_id, None))
+        from src.core.progress_streamer import ProgressStreamer
+        ProgressStreamer.resume_task(task_id, 'Resumed from snapshot')
+        logger.info(f"Resumed research from snapshot for {task_id}: {len(pending_sections)} pending sections")
+        return {'task_id': task_id, 'status': 'resumed', 'message': f"Research resumed from snapshot. {len(pending_sections)} sections remaining."}
 
     async def _generate_documents_from_cache(self, session_id, research_result_data, output_dir, session):
         """Generate preview + document from cached research result, skipping orchestrator."""
@@ -1937,8 +2010,62 @@ class ResearchAPI:
             fail_task(session_id, str(e))
             return
 
+    async def _save_cancel_snapshot(self, task_id, session):
+        """Save a snapshot of current research state before cancel/pause for recovery.
+
+        Persists completed sections and pending sections to a JSON file so that
+        resume_from_snapshot can reconstruct the research state if the engine dies.
+        """
+        output_dir = Path('data') / task_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_path = output_dir / 'cancel_snapshot.json'
+        research_result = session.get('research_result', {})
+        context = session.get('research_context', {})
+        framework = context.get('framework', {})
+        all_sections = list(framework.get('sections', []))
+        completed_sections = []
+        cache_path = output_dir / 'research_result_cache.json'
+        if cache_path.exists():
+            try:
+                cache_data = json.loads(cache_path.read_text(encoding='utf-8'))
+                completed_sections = [s.get('title', s.get('id', '')) for s in cache_data.get('sections', [])]
+            except Exception as e:
+                logger.warning(f"Failed to read cache for snapshot: {e}")
+        pending_sections = [s for s in all_sections if s not in completed_sections]
+        snapshot = {
+            'task_id': task_id,
+            'timestamp': datetime.now().isoformat(),
+            'status': session.get('status', 'unknown'),
+            'mode': session.get('mode', 'unknown'),
+            'current_step': session.get('current_step', 0),
+            'all_sections': all_sections,
+            'completed_sections': completed_sections,
+            'pending_sections': pending_sections,
+            'research_result_status': research_result.get('status') if isinstance(research_result, dict) else None,
+            'final_plan': session.get('final_plan'),
+            'research_context': context,
+        }
+        try:
+            snapshot_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding='utf-8')
+            logger.info(f"Cancel snapshot saved for {task_id}: {len(completed_sections)} completed, {len(pending_sections)} pending")
+        except Exception as e:
+            logger.error(f"Failed to save cancel snapshot for {task_id}: {e}")
+
+    async def _load_cancel_snapshot(self, task_id):
+        """Load a previously saved cancel snapshot. Returns None if not found."""
+        snapshot_path = Path('data') / task_id / 'cancel_snapshot.json'
+        if not snapshot_path.exists():
+            return None
+        try:
+            data = json.loads(snapshot_path.read_text(encoding='utf-8'))
+            logger.info(f"Cancel snapshot loaded for {task_id}: {len(data.get('completed_sections', []))} completed, {len(data.get('pending_sections', []))} pending")
+            return data
+        except Exception as e:
+            logger.warning(f"Failed to load cancel snapshot for {task_id}: {e}")
+            return None
+
     async def cancel_research(self, task_id):
-        """Cancel research task — set flag + update session + notify frontend."""
+        """Cancel research task — cascade cancel + save snapshot + update session + notify frontend."""
         session = session_manager.get(task_id)
         if not session:
             return {'error': 'Session not found', 'error_code': 'SESSION_NOT_FOUND'}
@@ -1948,7 +2075,13 @@ class ResearchAPI:
         state_machine = session.get('state_machine')
         if state_machine and state_machine.can_transition_to(ConversationState.CANCELLED):
             state_machine.transition(ConversationState.CANCELLED)
+        await self._save_cancel_snapshot(task_id, session)
         cm.cancel(task_id)
+        exec_task = self._executor_tasks.get(task_id)
+        if exec_task and not exec_task.done():
+            exec_task.cancel()
+            logger.info(f"Cancelled executor task for {task_id}")
+        self._background_tasks.pop(task_id, None)
         session['status'] = 'cancelled'
         session['mode'] = 'chat'
         session['current_step'] = 0
@@ -1962,6 +2095,7 @@ class ResearchAPI:
                 tp.save_task(task)
         except Exception as e:
             logger.warning(f"Failed to persist cancel state: {e}")
+        cm.cleanup(task_id)
         return {'task_id': task_id, 'status': 'cancelled', 'message': 'Research task cancelled'}
 
     def _on_sse_disconnect(self, task_id):
@@ -2190,10 +2324,76 @@ class ResearchAPI:
 
     async def _handle_v2_revision(self, session_id, conv_result):
         """v2 修订入口：LLM 返回 revise_report 时调用"""
+        MAX_TOTAL_REVISIONS = 10
         session = session_manager.get(session_id)
         if not session:
             return {'error': 'Session not found', 'error_code': 'SESSION_NOT_FOUND'}
+        
         adjustment = conv_result.get('adjustment') or conv_result.get('user_input', '')
+        
+        quality_lock = self._get_quality_lock(session_id)
+        async with quality_lock:
+            quality_state_data = session.get("quality_state", {})
+            if quality_state_data:
+                import copy
+                quality_state_data = copy.deepcopy(quality_state_data)
+                if quality_state_data.get("phase") in ("reviewing", "revising"):
+                    quality_state_data["phase"] = "revising"
+                session["quality_state"] = quality_state_data
+                
+                version_id = f"v{int(time.time())}"
+                html_path = str(PreviewStorage.path(session_id))
+                md_path = str(Path('data') / session_id / 'report.md')
+                report_content = session.get("research_result", {}).get("report", {})
+                if not report_content:
+                    quality_state_data["phase"] = "reviewing"
+                    session["quality_state"] = quality_state_data
+                    return self._chat_response(session_id)
+                
+                version_n = len(quality_state_data.get("version_stack", []))
+                snapshot_copy = copy.deepcopy({k: v for k, v in quality_state_data.items() if k != "version_stack"})
+                quality_state_data.setdefault("version_stack", []).append({
+                    "id": version_id,
+                    "created_at": datetime.now().isoformat(),
+                    "html_path": f"data/snapshots/{session_id}/{version_id}.html",
+                    "md_path": f"data/snapshots/{session_id}/{version_id}.md",
+                    "quality_state_snapshot": snapshot_copy,
+                    "overall_score": quality_state_data.get("overall_score", 0),
+                    "label": f"修订前快照 v{version_n}",
+                })
+                
+                session['quality_state_snapshot'] = quality_state_data
+                session["quality_state"] = quality_state_data
+            
+            MAX_ISSUE_REVISIONS = 3
+            modified_sections = []
+            aspects = conv_result.get("aspects", [])
+            if aspects:
+                modified_sections = aspects
+            else:
+                flow_pending = session.get("_pending_v2_revision")
+                if flow_pending:
+                    for task in getattr(flow_pending.get("flow", {}), 'tasks', []):
+                        if getattr(task, 'section_name', None):
+                            modified_sections.append(task.section_name)
+            
+            if not modified_sections:
+                pending_input = session.get("_pending_revision_input")
+                if pending_input and isinstance(pending_input, dict):
+                    sn = pending_input.get("sectionName")
+                    if sn:
+                        modified_sections.append(sn)
+            
+            for sec_name, sec_data in quality_state_data.get("section_scores", {}).items():
+                for issue in sec_data.get("issues", []):
+                    if issue.get("state") == "open" and (not modified_sections or issue.get("section") in modified_sections):
+                        if issue.get("revision_count", 0) >= MAX_ISSUE_REVISIONS:
+                            issue["state"] = "max_retries_reached"
+                        else:
+                            issue["state"] = "revising"
+                            issue["revision_count"] = issue.get("revision_count", 0) + 1
+            session["quality_state"] = quality_state_data
+        
         current_task = asyncio.current_task()
         old_task = self._revision_task
         self._revision_task = current_task
@@ -2217,11 +2417,17 @@ class ResearchAPI:
             logger.info(f"""[BP3-FIX] SSE cancelled, revision continues in background for {session_id}""")
             session['_pending_revision_task'] = revision_task
             return {'session_id': session_id, 'status': 'executing', 'message': '修订正在后台继续执行...'}
+        except Exception as rev_err:
+            logger.warning(f"Revision execution failed: {rev_err}")
+            self._rollback_revising_issues(session)
+            return self._chat_response(session_id, f"修订执行失败: {rev_err}")
         if flow.status == ExecutionStatus.LIGHTWEIGHT_DONE:
             if flow.tasks:
                 action = flow.tasks[0].action
                 self._apply_lightweight(session, action)
                 self._sync_lightweight_to_preview(session_id, session, action)
+            if quality_state_data:
+                await self._post_revision_recheck(session)
             return self._chat_response(session_id)
         if flow.current_index < len(flow.tasks):
             has_pending = (flow.tasks[flow.current_index].status == TaskStatus.CONFIRMING)
@@ -2237,15 +2443,23 @@ class ResearchAPI:
             msg += '请确认修改(y)或拒绝(n)'
             return self._chat_response(session_id, msg)
         if flow.status == ExecutionStatus.ABORTED:
+            self._rollback_revising_issues(session)
+            if quality_state_data:
+                await self._post_revision_recheck(session)
             return self._chat_response(session_id)
         if flow.status == ExecutionStatus.CLARIFICATION_FAILED:
+            self._rollback_revising_issues(session)
             user_msg = '未能理解您的修订意图。请重新描述要修改的内容，例如："修改第三节的市场规模数据"。'
             if flow.error:
                 user_msg += f"""\n({flow.error})"""
             return self._chat_response(session_id, user_msg)
         if flow.status == ExecutionStatus.ROLLED_BACK:
+            self._rollback_revising_issues(session)
+            if quality_state_data:
+                await self._post_revision_recheck(session)
             return self._chat_response(session_id)
         if flow.status == ExecutionStatus.FULL_RESEARCH_NEEDED:
+            self._rollback_revising_issues(session)
             routing_result = getattr(flow, '_routing_result', None)
             if routing_result:
                 session['mode'] = 'research'
@@ -2262,52 +2476,60 @@ class ResearchAPI:
         session = session_manager.get(session_id)
         if not session:
             return self._chat_response(session_id)
-        pending = session.pop('_pending_v2_revision', None)
-        if not pending:
-            return self._chat_response(session_id)
-        flow = pending['flow']
-        adapter = pending['adapter']
-        snapshot_id = flow.snapshot_id
-        from src.core.adjustment.snapshot_manager import SnapshotManager
-        sm = SnapshotManager.get_instance()
-        checkpoint_ids = []
-        for t in flow.tasks:
-            if hasattr(t, 'checkpoint_id') and t.checkpoint_id:
-                checkpoint_ids.append(t.checkpoint_id)
-        all_snapshot_ids = [snapshot_id] + checkpoint_ids
-        try:
-            if accept:
-                from src.core.adjustment.version_manager import VersionManager
-                if flow.preview:
-                    await VersionManager.get_instance().commit_revision(
-                        report=adapter.to_dict(), plan=flow.plan,
-                        snapshot_id=snapshot_id,
-                        message=flow.preview.commit_message or '')
-                pp = Path('data') / session_id
-                await self._generate_documents_from_cache(session_id, session.get('research_result', {}), pp, session)
+        quality_lock = self._get_quality_lock(session_id)
+        async with quality_lock:
+            pending = session.pop('_pending_v2_revision', None)
+            if not pending:
+                return self._chat_response(session_id)
+            flow = pending['flow']
+            adapter = pending['adapter']
+            snapshot_id = flow.snapshot_id
+            from src.core.adjustment.snapshot_manager import SnapshotManager
+            sm = SnapshotManager.get_instance()
+            checkpoint_ids = []
+            for t in flow.tasks:
+                if hasattr(t, 'checkpoint_id') and t.checkpoint_id:
+                    checkpoint_ids.append(t.checkpoint_id)
+            all_snapshot_ids = [snapshot_id] + checkpoint_ids
+            try:
+                if accept:
+                    from src.core.adjustment.version_manager import VersionManager
+                    if flow.preview:
+                        await VersionManager.get_instance().commit_revision(
+                            report=adapter.to_dict(), plan=flow.plan,
+                            snapshot_id=snapshot_id,
+                            message=flow.preview.commit_message or '')
+                    pp = Path('data') / session_id
+                    await self._generate_documents_from_cache(session_id, session.get('research_result', {}), pp, session)
+                    await sm.delete_snapshots(all_snapshot_ids)
+                else:
+                    restored = await sm.restore_snapshot(snapshot_id)
+                    if restored and isinstance(restored, dict):
+                        adapter.restore_from_dict(restored)
+                    self._rollback_revising_issues(session)
+                    await sm.delete_snapshots(all_snapshot_ids)
+                    from src.core.session_streamer import SessionStreamer
+                    SessionStreamer.push_quality_result(session_id, session.get("quality_state", {}))
+            except Exception as e:
+                logger.warning(f"Revision confirm failed: {e}")
                 await sm.delete_snapshots(all_snapshot_ids)
-            else:
-                restored = await sm.restore_snapshot(snapshot_id)
-                if restored and isinstance(restored, dict):
-                    adapter.restore_from_dict(restored)
-                await sm.delete_snapshots(all_snapshot_ids)
-            return self._chat_response(session_id)
-        except Exception as e:
-            logger.warning(f"Revision confirm failed: {e}")
-            await sm.delete_snapshots(all_snapshot_ids)
-            return self._chat_response(session_id)
+                return self._chat_response(session_id)
+        if accept and session.get("quality_state"):
+            await self._post_revision_recheck(session)
+        return self._chat_response(session_id)
 
     async def _handle_task_confirmation(self, session_id, flow, pending, user_input):
         """处理用户在修订任务确认中的选择"""
         session = session_manager.get(session_id)
         if not session:
             return self._chat_response(session_id)
-        from src.core.adjustment.revision_executor import RevisionExecutor, parse_choice_extended
+        from src.core.adjustment.revision_executor import RevisionExecutor, ProgressNotifier, parse_choice_extended
         from src.core.adjustment.structural_analyzer import StructuralAnalyzer
         from src.core.adjustment.revision_types import ExecutionStatus
         choice = parse_choice_extended(user_input)
         adapter = pending['adapter']
-        executor = RevisionExecutor(self._v2_lock_manager)
+        notifier = ProgressNotifier()
+        executor = RevisionExecutor(lock_manager=self._v2_lock_manager, notifier=notifier)
         analyzer = StructuralAnalyzer()
         analyzer.begin_session(adapter)
         report_tree = analyzer.analyze_tree(adapter)
@@ -2450,12 +2672,14 @@ class ResearchAPI:
         current_sections = list(framework.get('sections', []))
         if not framework.get('sections'):
             logger.warning(f"modify_research with no framework sections for {session_id}, switching to framework mode")
+            await self._save_cancel_snapshot(session_id, session)
             self._cancel_existing_task(session_id)
             session['mode'] = 'chat'
             return self._enter_framework_mode(session_id, adjustment)
-        self._cancel_existing_task(session_id)
         from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
         get_cancel_manager().pause(session_id)
+        await self._save_cancel_snapshot(session_id, session)
+        self._cancel_existing_task(session_id)
         output_dir = Path('data') / session_id
         cache_path = output_dir / 'research_result_cache.json'
         completed_aspects = []
@@ -2496,7 +2720,15 @@ class ResearchAPI:
         session['final_plan'] = new_plan
         from src.core.session_streamer import SessionStreamer
         SessionStreamer.push_agent_message(session_id, {'agent_id': 'modify', 'agent_name': 'Plan Modification', 'action': 'completed', 'content': f"""Plan updated. Added: {add_aspects}, Removed: {remove_aspects}. Resuming..."""})
-        asyncio.create_task(self._resume_after_modify(session_id, new_plan))
+        task = asyncio.create_task(self._resume_after_modify(session_id, new_plan))
+        self._executor_tasks[session_id] = task
+        task.add_done_callback(lambda t: self._executor_tasks.pop(session_id, None))
+        def _log_resume_error(t):
+            if not t.cancelled():
+                exc = t.exception()
+                if exc:
+                    logger.error(f"_resume_after_modify failed: {exc}")
+        task.add_done_callback(_log_resume_error)
         return {'session_id': session_id, 'step': 6, 'mode': 'research', 'status': 'processing', 'message': f"""Research plan updated. Added: {add_aspects}, Removed: {remove_aspects}. Continuing...""", 'next_step': 'resume_execution'}
 
 
@@ -2513,6 +2745,87 @@ class ResearchAPI:
         await executor.execute(session_id, new_plan, session_manager)
         return
 
+    def _rollback_revising_issues(self, session):
+        """Roll back all revising issues to open state after revision failure"""
+        import copy
+        quality_data = copy.deepcopy(session.get("quality_state", {}))
+        if not quality_data:
+            return
+        changed = False
+        for sec_name, sec_data in quality_data.get("section_scores", {}).items():
+            for issue in sec_data.get("issues", []):
+                if issue.get("state") == "revising":
+                    issue["state"] = "open"
+                    issue["revision_count"] = max(0, issue.get("revision_count", 0) - 1)
+                    changed = True
+        if changed:
+            quality_data["phase"] = "reviewing"
+            session["quality_state"] = quality_data
+            session_id = session.get("_session_id", "")
+            from src.core.session_streamer import SessionStreamer
+            SessionStreamer.push_quality_result(session_id, quality_data)
+
+    def _get_quality_lock(self, session_id: str):
+        """Get or create quality-specific lock for thread-safe operations"""
+        key = f"_quality_{session_id}"
+        if key not in self._session_locks:
+            self._session_locks[key] = asyncio.Lock()
+        return self._session_locks[key]
+
+    async def handle_quality_action(self, request) -> dict:
+        """Handle quality review action"""
+        session_id = getattr(request, 'session_id', None)
+        action = getattr(request, 'action', None)
+        if not session_id:
+            return {"error": "Missing session_id", "error_code": "MISSING_SESSION_ID"}
+        
+        lock = self._get_quality_lock(session_id)
+        
+        async with lock:
+            session = session_manager.get(session_id)
+            if not session:
+                return {"error": "Session not found", "error_code": "SESSION_NOT_FOUND"}
+        
+            self._expire_stale_revising_issues(session)
+        
+            quality_lock = self._get_quality_lock(session_id)
+            async with quality_lock:
+                quality_data = session.get("quality_state", {})
+                if not quality_data:
+                    return
+                
+                sections = session.get("research_result", {}).get("report", {}).get("sections", [])
+                if not sections:
+                    return
+                
+                await self._recheck_quality(session, sections, push_preview=True)
+                
+                quality_data = session.get("quality_state", {})
+                quality_data["phase"] = "reviewing"
+                session["quality_state"] = quality_data
+                
+                from src.core.session_streamer import SessionStreamer
+                SessionStreamer.push_quality_result(session_id, quality_data)
+                
+                from src.core.quality.preview_health import check_preview_health
+                html_path = str(PreviewStorage.path(session_id))
+                old_html_length = 0
+                if quality_data.get("version_stack"):
+                    last_version = quality_data["version_stack"][-1]
+                    old_snap_html = Path(last_version.get("html_path", ""))
+                    if old_snap_html.exists():
+                        old_html_length = len(old_snap_html.read_text(encoding="utf-8"))
+                
+                health = check_preview_health(html_path, old_html_length)
+                if not health["healthy"]:
+                    from src.core.session_streamer import SessionStreamer
+                    SessionStreamer.push_agent_message(session_id, {
+                        "agent_id": "system",
+                        "agent_name": "系统",
+                        "action": "warning",
+                        "content": f"修订完成但预览可能存在排版问题: {', '.join(i['message'] for i in health['issues'])}。可在质量面板中使用版本回滚恢复。",
+                    })
+
 
 
 # Create default instance
@@ -2527,25 +2840,6 @@ class QualityActionRequest:
         self.session_id = kwargs.get('session_id')
         self.action = kwargs.get('action')
         self.data = kwargs.get('data', {})
-
-
-async def handle_quality_action(request):
-    """Handle quality review action"""
-    session_id = getattr(request, 'session_id', None)
-    action = getattr(request, 'action', None)
-    if action == 'approve':
-        session = session_manager.get(session_id) if session_id else None
-        if session:
-            session['quality_status'] = 'approved'
-    return {'status': 'ok', 'action': action}
-
-
-async def get_quality_state(session_id):
-    """Get quality review state for a session"""
-    session = session_manager.get(session_id) if session_id else None
-    if not session:
-        return {'status': 'unknown', 'session_id': session_id}
-    return {
-        'session_id': session_id,
-        'quality_status': session.get('quality_status', 'pending'),
-    }
+        self.issue_id = kwargs.get('issue_id')
+        self.version_id = kwargs.get('version_id')
+        self.section_name = kwargs.get('section_name')

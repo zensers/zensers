@@ -16,6 +16,8 @@ import type {
   AgentMessageEvent,
   ResearchResult,
   ResearchFramework,
+  QualityStateData,
+  PendingInputData,
 } from '@/types/api';
 
 export interface SessionCache {
@@ -41,6 +43,8 @@ export interface SessionCache {
   interrupted: boolean;
   language: string;
   mode: string;
+  qualityState: QualityStateData | null;
+  pendingInput: PendingInputData | null;
 }
 
 interface SessionRegistry {
@@ -177,6 +181,8 @@ function emptyCache(id: string, title?: string): SessionCache {
     interrupted: false,
     language: 'zh',
     mode: 'chat',
+    qualityState: null,
+    pendingInput: null,
   };
 }
 
@@ -250,6 +256,8 @@ export const useSessionStore = create<SessionRegistry>()(
               ...v,
               result: undefined,
               agentMessages: undefined,
+              qualityState: undefined,
+              pendingInput: undefined,
             }])
         ),
       }),
@@ -258,8 +266,11 @@ export const useSessionStore = create<SessionRegistry>()(
         ...(persisted as object),
         sessions: Object.fromEntries(
           Object.entries((persisted as any).sessions || {}).map(([k, v]: [string, any]) => [k, {
+            ...emptyCache(k, v?.title),
             ...(current.sessions[k] || {}),
             ...v,
+            qualityState: v?.qualityState ?? null,
+            pendingInput: v?.pendingInput ?? null,
           }])
         ),
       }),

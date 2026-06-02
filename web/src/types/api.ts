@@ -200,8 +200,8 @@ export interface Phase {
 // ============ SSE Types ============
 
 export interface SSEMessage {
-  event: 'progress' | 'phase_start' | 'phase_complete' | 'error' | 'complete' | 'chat_response' | 'agent_message' | 'heartbeat' | 'connected' | 'message' | 'cancelled';
-  data: ProgressData | PhaseData | ErrorData | CompleteData | ChatResponseData | AgentMessageData;
+  event: 'progress' | 'phase_start' | 'phase_complete' | 'error' | 'complete' | 'chat_response' | 'agent_message' | 'heartbeat' | 'connected' | 'message' | 'cancelled' | 'quality_result' | 'section_quality' | 'preview_refresh' | 'quality_confirmed';
+  data: ProgressData | PhaseData | ErrorData | CompleteData | ChatResponseData | AgentMessageData | QualityResultEventData | SectionQualityEventData | PreviewRefreshEventData | QualityConfirmedEventData;
 }
 
 export interface AgentMessageData {
@@ -221,6 +221,78 @@ export interface ChatResponseData {
   directions?: string[];
   suggestions?: Array<{ id: string; label: string; example: string }>;
   timestamp: string;
+}
+
+export interface QualityIssueData {
+  id: string;
+  section: string;
+  type: string;
+  message: string;
+  severity: 'high' | 'medium' | 'low';
+  state: 'open' | 'dismissed' | 'revising' | 'resolved' | 'max_retries_reached' | 'accepted';
+  revision_count?: number;
+}
+
+export interface SectionScoreData {
+  score: number;
+  status: 'passed' | 'warning' | 'empty';
+  issues: QualityIssueData[];
+}
+
+export interface QualityResultEventData {
+  session_id: string;
+  overall_score: number;
+  overall_status: 'passed' | 'warning';
+  section_scores: Record<string, SectionScoreData>;
+  phase: 'reviewing' | 'revising' | 'confirmed';
+  version_stack?: Array<{
+    id: string;
+    created_at: string;
+    html_path: string;
+    overall_score: number;
+    label: string;
+  }>;
+  current_version?: string;
+}
+
+export interface SectionQualityEventData {
+  session_id: string;
+  section_name: string;
+  data: SectionScoreData;
+}
+
+export interface PreviewRefreshEventData {
+  session_id: string;
+  preview_url: string;
+  version_id: string;
+  timestamp: string;
+}
+
+export interface QualityConfirmedEventData {
+  session_id: string;
+  final_document_path: string;
+  timestamp: string;
+}
+
+export interface QualityStateData {
+  overall_score: number;
+  overall_status: 'passed' | 'warning';
+  section_scores: Record<string, SectionScoreData>;
+  phase: 'reviewing' | 'revising' | 'confirmed';
+  version_stack: Array<{
+    id: string;
+    created_at: string;
+    html_path: string;
+    overall_score: number;
+    label: string;
+  }>;
+  current_version?: string;
+}
+
+export interface PendingInputData {
+  text: string;
+  issueId?: string;
+  sectionName?: string;
 }
 
 export interface ProgressData {

@@ -410,6 +410,29 @@ export function ChatPanel() {
     try { await confirmResearch(confirmed); } catch (error) { console.error('Failed to confirm research:', error); }
   };
 
+  const pendingInputData = useSessionStore((s) => {
+    const sid = s.activeId;
+    return sid ? s.sessions[sid]?.pendingInput : null;
+  });
+  const pendingInputText = pendingInputData?.text || undefined;
+
+  const pendingInputConsumedRef = useRef<string | null>(null);
+  const pendingInputTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (pendingInputData && pendingInputConsumedRef.current !== pendingInputData.text) {
+      pendingInputConsumedRef.current = pendingInputData.text;
+      if (pendingInputTimerRef.current) clearTimeout(pendingInputTimerRef.current);
+      pendingInputTimerRef.current = setTimeout(() => {
+        useSessionStore.getState().syncActive({ pendingInput: null });
+        pendingInputConsumedRef.current = null;
+        pendingInputTimerRef.current = null;
+      }, 100);
+    }
+    return () => {
+      if (pendingInputTimerRef.current) clearTimeout(pendingInputTimerRef.current);
+    };
+  }, [pendingInputData]);
+
   return (
     <div className="flex h-full flex-col bg-background">
       {/* Search/retrieval in-progress indicator (Issue 3) */}
@@ -485,6 +508,7 @@ export function ChatPanel() {
           isNetworkBusy={isNetworkBusy}
           isWaitingForReply={isWaitingForReply}
           isRunning={status === 'running'}
+          pendingInput={pendingInputText}
           placeholder="Describe research needs or /template &lt;name&gt;"
         />
       </div>

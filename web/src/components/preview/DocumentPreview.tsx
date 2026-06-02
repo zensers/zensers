@@ -1,79 +1,68 @@
-// components/preview/DocumentPreview.tsx
-
 'use client';
 
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { usePreview } from '@/hooks/usePreview';
 import { useResearchStore } from '@/store/useResearchStore';
+import { useSessionStore } from '@/store/useSessionStore';
 import { useDesktopStore } from '@/store/useDesktopStore';
+import { useSessionStream } from '@/hooks/useProgress';
 import { api, buildDownloadUrl } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  FileText, 
-  RefreshCw, 
-  Download, 
-  Maximize2, 
-  Minimize2,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  FileDown,
-  Loader2,
-  CheckCircle2,
-} from 'lucide-react';
-import { useState, useCallback, useEffect, useRef } from 'react';
-import { cn } from '@/lib/utils';
+import { SectionNavBar, type SectionNavItem } from '@/components/quality/SectionNavBar';
+import { RevisionHintBar } from '@/components/quality/RevisionHintBar';
+import type { PreviewRefreshEventData, QualityResultEventData, QualityStateData } from '@/types/api';
+import { FileText, RefreshCw, Download, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, Loader2, FileDown, CheckCircle2 } from 'lucide-react';
 
 interface DocumentPreviewProps {
-  /** Specify task ID (for history page) */
   taskIdOverride?: string;
 }
 
-// Zoom level range
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 2.0;
 const SCALE_STEP = 0.25;
 
-/**
- * Document preview component
- * Apple-style design, supports HTML and PDF format preview
- */
 export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
   const { taskId: storeTaskId, status, previewRefreshKey } = useResearchStore();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [scale, setScale] = useState(1.0);
-  
-  // Use provided taskId or store taskId
+  const [activeSectionId, setActiveSectionId] = useState<string | undefined>();
+  const [revisionHintVisible, setRevisionHintVisible] = useState(false);
+  const [revisionScoreDelta, setRevisionScoreDelta] = useState<number | undefined>();
+  const [revisionHasLayoutIssue, setRevisionHasLayoutIssue] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
   const taskId = taskIdOverride || storeTaskId;
-  
+
+  const activeId = useSessionStore((s) => s.activeId);
+  const sessionId = activeId || '';
+
   const { preview, isLoading, error, refetch } = usePreview({
     taskId,
     enabled: !!taskId && (status === 'completed' || !!taskIdOverride),
     format: 'html',
   });
 
-  // P1 fix: Auto-refetch on completion - simplified and more reliable
-  // Trigger when: status changes to 'completed' OR previewRefreshKey changes
+  // Auto-refetch on completion or manual refresh
   const prevStatusRef = useRef(status);
   const prevRefreshKeyRef = useRef(previewRefreshKey);
-  
+
   useEffect(() => {
-    // Detect completion transition
     const justCompleted = prevStatusRef.current !== 'completed' && status === 'completed';
-    // Detect manual refresh request
     const refreshRequested = previewRefreshKey !== prevRefreshKeyRef.current;
-    
+
     if ((justCompleted || refreshRequested) && taskId) {
-      // Small delay to ensure backend has updated the document
       const timer = setTimeout(() => {
         refetch();
       }, 500);
-      
+
       prevStatusRef.current = status;
       prevRefreshKeyRef.current = previewRefreshKey;
       return () => clearTimeout(timer);
     }
-    
+
     prevStatusRef.current = status;
     prevRefreshKeyRef.current = previewRefreshKey;
   }, [status, taskId, refetch, previewRefreshKey]);
@@ -94,23 +83,121 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
     prevPhasesRef.current = phases;
   }, [phases, taskId, refetch]);
 
+  // SSE: listen for preview_refresh and quality_result
+  const prevScoreRef = useRef<number | undefined>();
+  useSessionStream(sessionId || null, {
+    onPreviewRefresh: (data: PreviewRefreshEventData) => {
+      if (data.session_id === sessionId || data.session_id === taskId) {
+        setTimeout(() => {
+          refetch();
+          setIframeKey(k => k + 1);
+        }, 300);
+      }
+    },
+    onQualityResult: (data: QualityResultEventData) => {
+      if (data.session_id === sessionId || data.session_id === taskId) {
+        const oldScore = prevScoreRef.current;
+        const newScore = data.overall_score;
+        if (oldScore !== undefined && oldScore !== newScore) {
+          setRevisionScoreDelta(Math.round(newScore - oldScore));
+        }
+        prevScoreRef.current = newScore;
+        setRevisionHintVisible(true);
+
+        // Update quality state in session store
+        useSessionStore.getState().syncActive({
+          qualityState: {
+            ...data,
+            phase: (data.phase as QualityStateData['phase']) || 'reviewing',
+            version_stack: data.version_stack || [],
+            current_version: data.current_version,
+          },
+        });
+      }
+    },
+  });
+
+  // Build section nav items from quality state
+  const qualityState = useSessionStore((s) => {
+    const sid = s.activeId;
+    return sid ? s.sessions[sid]?.qualityState : null;
+  });
+
+  const sectionNavItems: SectionNavItem[] = useMemo(() => {
+    if (!qualityState?.section_scores) return [];
+    return Object.entries(qualityState.section_scores).map(([name, data]) => ({
+      id: name.toLowerCase().replace(/\s+/g, '-'),
+      title: name,
+      hasWarning: data.status === 'warning',
+    }));
+  }, [qualityState]);
+
+  const sectionTitleMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const item of sectionNavItems) m.set(item.id, item.title);
+    return m;
+  }, [sectionNavItems]);
+
+  const handleSectionClick = useCallback((sectionId: string) => {
+    setActiveSectionId(sectionId);
+    if (iframeRef.current) {
+      try {
+        const doc = iframeRef.current.contentDocument;
+        if (doc) {
+          const el = doc.getElementById(sectionId);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            return;
+          }
+          const headings = doc.querySelectorAll('h1, h2, h3, h4');
+          const targetTitle = sectionTitleMap.get(sectionId);
+          for (let i = 0; i < headings.length; i++) {
+            const h = headings[i];
+            const hId = h.id?.toLowerCase().replace(/\s+/g, '-');
+            if (hId === sectionId || (targetTitle && h.textContent?.trim() === targetTitle)) {
+              h.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              return;
+            }
+          }
+        }
+      } catch {}
+      const iframe = iframeRef.current;
+      const currentSrc = iframe.src;
+      if (currentSrc) {
+        const base = currentSrc.split('#')[0];
+        iframe.src = `${base}#${sectionId}`;
+      }
+    }
+  }, [sectionTitleMap]);
+
+  // Rollback handler
+  const handleRollback = useCallback(async () => {
+    if (!qualityState?.version_stack || qualityState.version_stack.length < 2) return;
+    const prevVersion = qualityState.version_stack[qualityState.version_stack.length - 2];
+    try {
+      setRevisionHintVisible(false);
+      await api.qualityAction(sessionId, 'quality_rollback', {
+        version_id: prevVersion.id,
+      });
+      setTimeout(() => refetch(), 500);
+    } catch (e) {
+      console.error('Rollback failed:', e);
+    }
+  }, [qualityState, sessionId, refetch]);
+
   // Zoom controls
   const handleZoomIn = useCallback(() => {
     setScale(prev => Math.min(prev + SCALE_STEP, MAX_SCALE));
   }, []);
-
   const handleZoomOut = useCallback(() => {
     setScale(prev => Math.max(prev - SCALE_STEP, MIN_SCALE));
   }, []);
-
   const handleZoomReset = useCallback(() => {
     setScale(1.0);
   }, []);
 
-  // Zoom percentage display
   const scalePercent = Math.round(scale * 100);
 
-  // Show empty state when no task ID
   if (!taskId) {
     return (
       <div className="flex h-full items-center justify-center bg-muted/5">
@@ -125,7 +212,6 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
     );
   }
 
-  // Show waiting state during research execution
   if (status === 'running' && !taskIdOverride) {
     return (
       <div className="flex h-full items-center justify-center bg-muted/5">
@@ -211,47 +297,21 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
         </div>
         
         <div className="flex items-center gap-2">
-          {/* 缩放控制 */}
           <div className="flex items-center gap-1 px-2 py-1 rounded-lg bg-secondary/50">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleZoomOut}
-              disabled={scale <= MIN_SCALE}
-              className="h-6 w-6 rounded-md"
-            >
+            <Button variant="ghost" size="icon" onClick={handleZoomOut} disabled={scale <= MIN_SCALE} className="h-6 w-6 rounded-md">
               <ZoomOut className="h-3.5 w-3.5" />
             </Button>
-            
-            <span className="text-xs text-muted-foreground w-8 text-center tabular-nums">
-              {scalePercent}%
-            </span>
-            
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleZoomIn}
-              disabled={scale >= MAX_SCALE}
-              className="h-6 w-6 rounded-md"
-            >
+            <span className="text-xs text-muted-foreground w-8 text-center tabular-nums">{scalePercent}%</span>
+            <Button variant="ghost" size="icon" onClick={handleZoomIn} disabled={scale >= MAX_SCALE} className="h-6 w-6 rounded-md">
               <ZoomIn className="h-3.5 w-3.5" />
             </Button>
-            
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={handleZoomReset}
-              disabled={scale === 1.0}
-              className="h-6 w-6 rounded-md"
-            >
+            <Button variant="ghost" size="icon" onClick={handleZoomReset} disabled={scale === 1.0} className="h-6 w-6 rounded-md">
               <RotateCcw className="h-3.5 w-3.5" />
             </Button>
           </div>
           
-          {/* 分隔线 */}
           <div className="h-4 w-px bg-border/50" />
           
-          {/* 刷新按钮 - 更明显 */}
           <Button 
             variant="outline" 
             size="sm" 
@@ -269,9 +329,7 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
               variant="ghost"
               size="icon"
               className="h-8 w-8 rounded-lg"
-              onClick={() => {
-                window.open(buildDownloadUrl(preview.download_url!), '_blank');
-              }}
+              onClick={() => window.open(buildDownloadUrl(preview.download_url!), '_blank')}
             >
               <Download className="h-4 w-4" />
             </Button>
@@ -283,24 +341,37 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
             onClick={() => setIsFullscreen(!isFullscreen)}
             className="h-8 w-8 rounded-lg"
           >
-            {isFullscreen ? (
-              <Minimize2 className="h-4 w-4" />
-            ) : (
-              <Maximize2 className="h-4 w-4" />
-            )}
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
         </div>
       </div>
 
-      {/* 预览内容 - 使用 CSS zoom 而非 transform:scale 避免空白区域 */}
+      {/* 章节导航条 */}
+      {sectionNavItems.length > 0 && (
+        <SectionNavBar
+          sections={sectionNavItems}
+          activeSectionId={activeSectionId}
+          onSectionClick={handleSectionClick}
+        />
+      )}
+
+      {/* 修订提示条 */}
+      <RevisionHintBar
+        visible={revisionHintVisible}
+        scoreDelta={revisionScoreDelta}
+        hasLayoutIssue={revisionHasLayoutIssue}
+        onRollback={handleRollback}
+        onDismiss={() => setRevisionHintVisible(false)}
+      />
+
+      {/* 预览内容 */}
       <div className="flex-1 overflow-auto bg-muted/5 p-3">
         <div className="min-h-full bg-white rounded-xl border border-border/50 shadow-sm overflow-hidden">
           {format === 'html' && preview.html_content ? (
-            <div
-              className="w-full h-full"
-              style={{ zoom: scale, overflow: 'visible' }}
-            >
+            <div className="w-full h-full" style={{ zoom: scale, overflow: 'visible' }}>
               <iframe
+                key={`srcdoc-${iframeKey}`}
+                ref={iframeRef}
                 srcDoc={preview.html_content}
                 className="w-full border-0"
                 title="Document Preview"
@@ -308,11 +379,10 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
               />
             </div>
           ) : preview.preview_url ? (
-            <div
-              className="w-full h-full"
-              style={{ zoom: scale, overflow: 'visible' }}
-            >
+            <div className="w-full h-full" style={{ zoom: scale, overflow: 'visible' }}>
               <iframe
+                key={`url-${iframeKey}`}
+                ref={iframeRef}
                 src={buildDownloadUrl(preview.preview_url)}
                 className="w-full border-0"
                 title="Document Preview"
@@ -330,7 +400,7 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
         </div>
       </div>
 
-      {/* 底部: 定稿转换 → 下载（两步流程） */}
+      {/* 底部: 定稿转换 → 下载 */}
       {status === 'completed' && (
         <FinalizeToolbar taskId={taskId} />
       )}
@@ -338,7 +408,6 @@ export function DocumentPreview({ taskIdOverride }: DocumentPreviewProps) {
   );
 }
 
-/** 定稿工具栏: 先 Convert → 再 Download */
 function FinalizeToolbar({ taskId }: { taskId: string | null }) {
   const isDesktop = useDesktopStore((s) => s.isDesktop);
   const [finalizing, setFinalizing] = useState(false);
@@ -378,32 +447,20 @@ function FinalizeToolbar({ taskId }: { taskId: string | null }) {
     
     const fileName = `${taskId}_report.docx`;
     
-    // Layer 1: pywebview 原生保存对话框（桌面模式）
     if (isDesktop) {
       try {
         const pywebviewApi = (window as any).pywebview?.api;
         if (pywebviewApi?.download_and_save) {
-          const result = await pywebviewApi.download_and_save(
-            downloadUrl,
-            fileName,
-            'docx'
-          );
-          if (result.success) {
-            return;
-          }
-          if (result.error === 'Cancelled by user') {
-            return;
-          }
-          // 其他错误：降级到浏览器下载（不 return）
+          const result = await pywebviewApi.download_and_save(downloadUrl, fileName, 'docx');
+          if (result.success) return;
+          if (result.error === 'Cancelled by user') return;
           console.warn('[DOWNLOAD] pywebview returned error, falling back:', result.error);
         }
       } catch (e: any) {
-        // 异常：降级到浏览器下载（不 return）
         console.warn('[DOWNLOAD] pywebview threw, falling back:', e);
       }
     }
     
-    // Layer 2: 浏览器下载
     try {
       const fetchUrl = buildDownloadUrl(downloadUrl);
       const response = await fetch(fetchUrl);

@@ -4,6 +4,130 @@
 
 ---
 
+## [1.0.1] - 2026-06-02
+
+### Bug Fixes
+
+#### BF-1: Zustand persist hydration mismatch — client-side crash on page load
+
+**Problem**: Browser crashed with `Text content does not match server-rendered HTML` error. Server renders default "OpenAI" from `useSettingsStore`, but client reads "DeepSeek" from localStorage, causing React hydration mismatch.
+
+**Root Cause**: `useSettingsStore` calls `getInitialState()` at module top-level, which reads `localStorage` on client but returns defaults on server. The `ChatInput` component renders `<Select value={llm.provider}>` with this mismatched value.
+
+**Fix**: Added `mounted` state guard in `ChatInput.tsx` — provider/model `<Select>` components and bottom hint text only render after `useEffect(() => setMounted(true))` fires (client-only). SSR/first-paint shows "Loading..." placeholder.
+
+**Files Changed**:
+- `web/src/components/chat/ChatInput.tsx` — Added `mounted` state + conditional rendering for provider selector, model selector, and bottom hint
+
+#### BF-2: Next.js 404 on static chunks after cache corruption
+
+**Problem**: All `/_next/static/chunks/*` resources returned 404, page blank. Caused by stale `.next` build cache.
+
+**Fix**: Deleted `.next` directory and restarted dev server.
+
+#### BF-3: Zustand persist store schema mismatch on version upgrade
+
+**Problem**: Old persisted session data (missing new fields like `qualityState`, `pendingInput`) caused hydration errors when merged with current store schema.
+
+**Fix**: Added `merge` function in `useSessionStore.ts` persist config that fills missing fields from `emptyCache()` defaults, ensuring backward compatibility with old persisted data.
+
+**Files Changed**:
+- `web/src/store/useSessionStore.ts` — Added `merge` function to persist config
+
+### Quality Feedback Revision System — Frontend Implementation
+
+#### FE-1: QualityPanel component
+
+**New file**: `web/src/components/quality/QualityPanel.tsx`
+- Displays overall score, section scores, issue list
+- Issue actions: 修订 (start revision), 忽略 (dismiss), 恢复 (reopen)
+- 确认交付 (confirm delivery) with pending-issues confirmation dialog
+- Version history display
+
+#### FE-2: MainLayout integration
+
+**File**: `web/src/components/layout/MainLayout.tsx`
+- QualityPanel shown when `session.qualityState` exists and `phase !== 'confirmed'`
+- Rendered as right sidebar (w-80) with border separator
+
+#### FE-3: ChatInput pendingInput prop
+
+**File**: `web/src/components/chat/ChatInput.tsx`
+- New `pendingInput` prop for quality panel to pre-fill revision instructions
+- `useEffect` watches `pendingInput` and sets input text
+
+#### FE-4: ChatPanel pendingInput wiring
+
+**File**: `web/src/components/chat/ChatPanel.tsx`
+- Reads `pendingInput` from session store, passes to `ChatInput`
+- Clears `pendingInput` via `syncActive({ pendingInput: null })` after consumption
+
+### Quality Feedback Revision System — Backend Implementation
+
+#### BE-1: QualityActionRequest extended
+
+**File**: `src/api/research_api.py`
+- Added `issue_id`, `version_id`, `section_name` fields
+- Migrated from module-level function to ResearchAPI instance method
+
+#### BE-2: 5 quality action handlers implemented
+
+**File**: `src/api/research_api.py`
+- `_handle_quality_dismiss` — Mark issue as dismissed
+- `_handle_quality_reopen` — Restore dismissed issue to open
+- `_handle_quality_rollback` — Restore snapshot version (HTML + sections + quality state)
+- `_handle_quality_confirm` — Confirm delivery with force override for pending issues
+- `_handle_quality_recheck` — Re-run quality check on specified or all sections
+
+#### BE-3: Quality SSE event persistence
+
+**File**: `src/core/session_streamer.py`
+- Fixed `push_quality_confirmed()` bug (L258-264 residual code causing NameError)
+- Added `_persist_event` calls to `push_preview_refresh` and `push_section_quality`
+- Added timestamp to persisted events
+
+#### BE-4: Quality check agent issue ID generation
+
+**File**: `src/agents/fixed_agents/quality_check_agent.py`
+- Issues now include stable `id` (via `generate_issue_id`), `section`, and `state` fields
+
+#### BE-5: Quality state model updates
+
+**File**: `src/core/quality/quality_state.py`
+- `QualityIssue` gained `revision_count: int = 0` field
+- Added `QUALITY_PASS_THRESHOLD = 60` constant (unified across codebase)
+
+#### BE-6: Revision-quality integration
+
+**File**: `src/api/research_api.py`
+- `_handle_v2_revision()` now creates quality snapshot before revision
+- `_post_revision_recheck()` automatically rechecks after revision + pushes SSE
+- `_confirm_v2_revision()` triggers recheck after accept
+- Revision count tracking and max-retry enforcement
+- Preview health check after revision with warning on layout issues
+
+#### BE-7: Concurrency protection
+
+**File**: `src/api/research_api.py`
+- Quality operations protected by `asyncio.Lock` via `_get_quality_lock()`
+- Prevents concurrent quality action conflicts
+
+### Frontend Type Extensions
+
+**File**: `web/src/types/api.ts`
+- Added `QualityIssueData`, `SectionScoreData`, `QualityStateData`, `PendingInputData`, `VersionInfoData` types
+- Extended `SSEMessage` event types with `quality_result`, `section_quality`, `preview_refresh`, `quality_confirmed`
+
+**File**: `web/src/store/useSessionStore.ts`
+- `SessionCache` now includes `qualityState` and `pendingInput` fields
+- `partialize` excludes these from persistence (too large / transient)
+
+**File**: `web/src/hooks/useProgress.ts`
+- Added `QualityResultEventData`, `SectionQualityEventData`, `PreviewRefreshEventData`, `QualityConfirmedEventData` interfaces
+- Extended `UseSessionStreamOptions` with quality-related callbacks
+
+---
+
 ## [1.0.0] - 2026-05-13
 
 ### 🚀 Features

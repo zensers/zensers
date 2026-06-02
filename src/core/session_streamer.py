@@ -231,37 +231,39 @@ class SessionStreamer:
     @classmethod
     def push_section_quality(cls, session_id: str, section_name: str, quality_data: dict):
         """Push a section quality check result to session subscribers"""
-        cls._notify_subscribers(session_id, SessionSSEEventType.SECTION_QUALITY, {
+        event_data = {
             "session_id": session_id,
             "section_name": section_name,
             "data": quality_data,
-        })
+        }
+        cls._notify_subscribers(session_id, SessionSSEEventType.SECTION_QUALITY, event_data)
+        cls._persist_event(session_id, SessionSSEEventType.SECTION_QUALITY.value, event_data)
+        logger.debug(f"Session stream section_quality pushed: {session_id}/{section_name}")
 
     @classmethod
     def push_preview_refresh(cls, session_id: str, preview_url: str, version_id: str):
         """Push a preview refresh event to session subscribers"""
-        from datetime import datetime
-        cls._notify_subscribers(session_id, SessionSSEEventType.PREVIEW_REFRESH, {
+        event_data = {
             "session_id": session_id,
             "preview_url": preview_url,
             "version_id": version_id,
             "timestamp": datetime.now().isoformat(),
-        })
+        }
+        cls._notify_subscribers(session_id, SessionSSEEventType.PREVIEW_REFRESH, event_data)
+        cls._persist_event(session_id, SessionSSEEventType.PREVIEW_REFRESH.value, event_data)
+        logger.info(f"Session stream preview_refresh pushed: {session_id}")
 
     @classmethod
     def push_quality_confirmed(cls, session_id: str, final_document_path: str):
         """Push a quality confirmed event to session subscribers"""
-        cls._notify_subscribers(session_id, SessionSSEEventType.QUALITY_CONFIRMED, {
+        event_data = {
             "session_id": session_id,
             "final_document_path": final_document_path,
-        })
-        cls._persist_event(session_id, SessionSSEEventType.SECTION_QUALITY.value, {
-            "session_id": session_id,
-            "section_name": section_name,
-            "score": quality_data.get("score", 0),
-            "status": quality_data.get("status", "unknown"),
-        })
-        logger.debug(f"Session stream section_quality pushed: {session_id}/{section_name}")
+            "timestamp": datetime.now().isoformat(),
+        }
+        cls._notify_subscribers(session_id, SessionSSEEventType.QUALITY_CONFIRMED, event_data)
+        cls._persist_event(session_id, SessionSSEEventType.QUALITY_CONFIRMED.value, event_data)
+        logger.info(f"Session stream quality_confirmed pushed: {session_id}")
 
     # ---- Instance methods for SSE generator ----
 

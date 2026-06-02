@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useResearchStore } from '@/store/useResearchStore';
 import { sseManager } from '@/lib/sse';
 import { api } from '@/lib/api';
-import type { SSEMessage, ProgressData, PhaseData, CompleteData, Phase, ChatResponseData, AgentMessageData } from '@/types/api';
+import type { SSEMessage, ProgressData, PhaseData, CompleteData, Phase, ChatResponseData, AgentMessageData, QualityResultEventData, SectionQualityEventData, PreviewRefreshEventData, QualityConfirmedEventData } from '@/types/api';
 
 export interface UseProgressOptions {
   onChatResponse?: (data: ChatResponseData) => void;
@@ -219,32 +219,51 @@ export function useProgress(taskId: string | null, options?: UseProgressOptions)
 export interface UseSessionStreamOptions {
   onChatResponse?: (data: ChatResponseData) => void;
   onAgentMessage?: (data: AgentMessageData) => void;
+  onQualityResult?: (data: QualityResultEventData) => void;
+  onSectionQuality?: (data: SectionQualityEventData) => void;
+  onPreviewRefresh?: (data: PreviewRefreshEventData) => void;
+  onQualityConfirmed?: (data: QualityConfirmedEventData) => void;
 }
 
 export function useSessionStream(
   sessionId: string | null,
   options?: UseSessionStreamOptions | ((data: ChatResponseData) => void),
 ) {
-  // Backward compat: allow direct callback instead of options object
   const onChatResponse = typeof options === 'function' ? options : options?.onChatResponse;
   const onAgentMessage = typeof options === 'function' ? undefined : options?.onAgentMessage;
+  const onQualityResult = typeof options === 'function' ? undefined : options?.onQualityResult;
+  const onSectionQuality = typeof options === 'function' ? undefined : options?.onSectionQuality;
+  const onPreviewRefresh = typeof options === 'function' ? undefined : options?.onPreviewRefresh;
+  const onQualityConfirmed = typeof options === 'function' ? undefined : options?.onQualityConfirmed;
 
   const onChatResponseRef = useRef(onChatResponse);
   onChatResponseRef.current = onChatResponse;
   const onAgentMessageRef = useRef(onAgentMessage);
   onAgentMessageRef.current = onAgentMessage;
+  const onQualityResultRef = useRef(onQualityResult);
+  onQualityResultRef.current = onQualityResult;
+  const onSectionQualityRef = useRef(onSectionQuality);
+  onSectionQualityRef.current = onSectionQuality;
+  const onPreviewRefreshRef = useRef(onPreviewRefresh);
+  onPreviewRefreshRef.current = onPreviewRefresh;
+  const onQualityConfirmedRef = useRef(onQualityConfirmed);
+  onQualityConfirmedRef.current = onQualityConfirmed;
 
   useEffect(() => {
     if (!sessionId) return;
 
-    const unsubscribe = sseManager.subscribeSession(
+    const unsub = sseManager.subscribeSession(
       sessionId,
       (data) => { if (onChatResponseRef.current) onChatResponseRef.current(data); },
-      (data) => { if (onAgentMessageRef.current) onAgentMessageRef.current(data); },
+      onAgentMessage ? (data) => { if (onAgentMessageRef.current) onAgentMessageRef.current(data); } : undefined,
+      onQualityResult ? (data) => { if (onQualityResultRef.current) onQualityResultRef.current(data); } : undefined,
+      onSectionQuality ? (data) => { if (onSectionQualityRef.current) onSectionQualityRef.current(data); } : undefined,
+      onPreviewRefresh ? (data) => { if (onPreviewRefreshRef.current) onPreviewRefreshRef.current(data); } : undefined,
+      onQualityConfirmed ? (data) => { if (onQualityConfirmedRef.current) onQualityConfirmedRef.current(data); } : undefined,
     );
 
     return () => {
-      unsubscribe();
+      unsub();
     };
   }, [sessionId]);
 }

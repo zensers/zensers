@@ -2,7 +2,7 @@
 
 'use client';
 
-import { useState, useRef, KeyboardEvent } from 'react';
+import { useState, useRef, KeyboardEvent, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -30,6 +30,8 @@ interface ChatInputProps {
   isWaitingForReply?: boolean;
   /** Show stop button without blocking send (e.g. during research) */
   isRunning?: boolean;
+  /** Pre-filled input from quality panel issue action */
+  pendingInput?: string;
 }
 
 /**
@@ -45,9 +47,22 @@ export function ChatInput({
   isNetworkBusy = false,
   isWaitingForReply = false,
   isRunning = false,
+  pendingInput,
 }: ChatInputProps) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<File[]>([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    if (pendingInput !== undefined && pendingInput !== null && pendingInput !== '') {
+      setText(pendingInput);
+    }
+  }, [pendingInput]);
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  
   const [isFocused, setIsFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -177,60 +192,68 @@ export function ChatInput({
 
           <div className="h-4 w-px bg-border" />
 
-          {/* Provider selection */}
-          <Select
-            value={llm.provider}
-            onValueChange={handleProviderChange}
-            disabled={disabled}
-          >
-            <SelectTrigger className="h-8 w-auto min-w-[100px] max-w-[140px] border-0 bg-transparent shadow-none text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {providers.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <div className="h-4 w-px bg-border" />
-
-          {/* Model selection - synced with settings */}
-          {llm.provider === 'custom' ? (
-            <input
-              type="text"
-              value={llm.model}
-              onChange={(e) => updateLLMConfig({ model: e.target.value })}
-              placeholder="Model name"
-              disabled={disabled}
-              className="h-8 w-auto min-w-[120px] max-w-[180px] border-0 bg-transparent text-xs px-2 focus:outline-none"
-            />
-          ) : availableModels.length > 0 ? (
+          {/* Provider selection — delayed to avoid hydration mismatch */}
+          {mounted ? (
             <Select
-              value={llm.model}
-              onValueChange={handleModelChange}
+              value={llm.provider}
+              onValueChange={handleProviderChange}
               disabled={disabled}
             >
-              <SelectTrigger className="h-8 w-auto min-w-[120px] max-w-[180px] border-0 bg-transparent shadow-none text-xs gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
-                <SelectValue placeholder="Select model" />
+              <SelectTrigger className="h-8 w-auto min-w-[100px] max-w-[140px] border-0 bg-transparent shadow-none text-xs">
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {availableModels.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
-                    <div className="flex items-center justify-between w-full gap-2">
-                      <span>{model.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {Math.floor(model.maxTokens / 1000)}k
-                      </span>
-                    </div>
+                {providers.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-          ) : null}
+          ) : (
+            <span className="h-8 px-2 text-xs text-muted-foreground flex items-center">Loading...</span>
+          )}
+
+          <div className="h-4 w-px bg-border" />
+
+          {/* Model selection - synced with settings — delayed to avoid hydration mismatch */}
+          {mounted ? (
+            llm.provider === 'custom' ? (
+              <input
+                type="text"
+                value={llm.model}
+                onChange={(e) => updateLLMConfig({ model: e.target.value })}
+                placeholder="Model name"
+                disabled={disabled}
+                className="h-8 w-auto min-w-[120px] max-w-[180px] border-0 bg-transparent text-xs px-2 focus:outline-none"
+              />
+            ) : availableModels.length > 0 ? (
+              <Select
+                value={llm.model}
+                onValueChange={handleModelChange}
+                disabled={disabled}
+              >
+                <SelectTrigger className="h-8 w-auto min-w-[120px] max-w-[180px] border-0 bg-transparent shadow-none text-xs gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-primary shrink-0" />
+                  <SelectValue placeholder="Select model" />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableModels.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      <div className="flex items-center justify-between w-full gap-2">
+                        <span>{model.name}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {Math.floor(model.maxTokens / 1000)}k
+                        </span>
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : null
+          ) : (
+            <span className="h-8 px-2 text-xs text-muted-foreground flex items-center">Loading...</span>
+          )}
 
           {/* Quick settings link */}
           <Link href="/settings" className="ml-auto">
@@ -286,9 +309,13 @@ export function ChatInput({
 
       {/* Bottom hint */}
       <div className="flex items-center justify-between px-1 gap-3 text-[11px] text-muted-foreground">
-        <span className="truncate">
-          {currentProviderName} · {currentModelName} · <kbd className="px-1.5 py-0.5 bg-muted rounded-md text-[10px]">Enter</kbd> to send
-        </span>
+        {mounted ? (
+          <span className="truncate">
+            {currentProviderName} · {currentModelName} · <kbd className="px-1.5 py-0.5 bg-muted rounded-md text-[10px]">Enter</kbd> to send
+          </span>
+        ) : (
+          <span className="truncate">Loading...</span>
+        )}
         {text.length > 0 && (
           <span className="shrink-0 tabular-nums">{text.length} chars</span>
         )}

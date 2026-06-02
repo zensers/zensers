@@ -6,15 +6,46 @@ import { useState, useCallback } from 'react';
 import { Header } from './Header';
 import { ChatPanel } from '@/components/chat/ChatPanel';
 import { DocumentPreview } from '@/components/preview/DocumentPreview';
+import { QualityPanel } from '@/components/quality/QualityPanel';
 import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useSessionStore } from '@/store/useSessionStore';
+import { useSessionStream } from '@/hooks/useProgress';
+import type { QualityResultEventData, QualityConfirmedEventData, QualityStateData } from '@/types/api';
 
-/**
- * Main layout component
- * Top navigation + left chat panel + right preview panel (toggleable)
- */
 export function MainLayout() {
   const [previewVisible, setPreviewVisible] = useState(true);
+
+  const activeId = useSessionStore((s) => s.activeId);
+  const session = useSessionStore((s) => activeId ? s.sessions[activeId] : null);
+  const showQualityPanel = !!session?.qualityState && session.qualityState.phase !== 'confirmed';
+
+  // Always subscribe to quality_result SSE so qualityState updates
+  // even when DocumentPreview is not mounted (preview hidden)
+  useSessionStream(activeId, {
+    onQualityResult: (data: QualityResultEventData) => {
+      if (data.session_id === activeId) {
+        useSessionStore.getState().syncActive({
+          qualityState: {
+            ...data,
+            phase: (data.phase as QualityStateData['phase']) || 'reviewing',
+            version_stack: data.version_stack || [],
+            current_version: data.current_version,
+          },
+        });
+      }
+    },
+    onQualityConfirmed: (data: QualityConfirmedEventData) => {
+      if (data.session_id === activeId) {
+        const current = useSessionStore.getState().sessions[activeId!]?.qualityState;
+        if (current) {
+          useSessionStore.getState().syncActive({
+            qualityState: { ...current, phase: 'confirmed' },
+          });
+        }
+      }
+    },
+  });
 
   const onTogglePreview = useCallback(() => {
     setPreviewVisible(v => !v);
@@ -24,17 +55,13 @@ export function MainLayout() {
     <div className="flex flex-1 flex-col bg-background overflow-hidden min-h-0">
       <Header onTogglePreview={onTogglePreview} previewVisible={previewVisible} />
 
-      {/* 主内容区 */}
       <div className="flex flex-1 min-h-0">
-        {/* 左侧：聊天面板 */}
         <div className={`${previewVisible ? '' : 'flex-1'} min-w-0 overflow-hidden ${previewVisible ? 'flex-1 w-1/2' : ''}`}>
           <ChatPanel />
         </div>
 
-        {/* 静态分隔线 */}
         {previewVisible && <div className="w-px bg-border shrink-0" />}
 
-        {/* 右侧：预览面板 */}
         {previewVisible && (
           <div className="flex-1 w-1/2 min-w-0 overflow-hidden relative">
             <DocumentPreview />
@@ -49,6 +76,9 @@ export function MainLayout() {
             </Button>
           </div>
         )}
+
+        {showQualityPanel && <div className="w-px bg-border shrink-0" />}
+        {showQualityPanel && <QualityPanel />}
       </div>
     </div>
   );
