@@ -1150,9 +1150,11 @@ class ExecutionEngine:
                                 f"[批次{batch_index + 1}] Agent {agent_id} aspect '{agent_aspect}' "
                                 f"cached, skipping execution ({len(content)} chars)"
                             )
+                            section_id = self._get_section_id_from_agent(agent)
                             completed_results.append({
                                 "success": True,
                                 "agent_id": agent_id,
+                                "section_id": section_id,
                                 "content": content[:50000],
                                 "data_points": cached_result.get("data_points", []),
                                 "sources": cached_result.get("sources", []),
@@ -1222,6 +1224,11 @@ class ExecutionEngine:
                                         batch_agent_originals, requirement, all_results,
                                         scheduler, f"batch_{batch_index+1}_cache_rerun"
                                     )
+                                    for agent_result in batch_results:
+                                        agent_id = agent_result.get("agent_id", "")
+                                        agent = scheduler.get_agent_by_id(agent_id)
+                                        section_id = self._get_section_id_from_agent(agent) if agent else self._get_section_id_from_agent_id(agent_id)
+                                        agent_result["section_id"] = section_id
                         continue
                     logger.warning(f"[批次{batch_index + 1}] 没有有效的Agent，跳过")
                     result.stage_results[f"batch_{batch_index + 1}"] = []

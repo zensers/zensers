@@ -737,8 +737,11 @@ class ResearchOrchestrator:
                     requirement, intent_result, task_id,
                     research_type="market_research")
             logger.info(f"[{task_id}] Created {len(agents)} Agents")
-
-            # 4.3 Get Session Registry (for Agent execution state tracking)
+            agent_section_map: Dict[str, str] = {}
+            for _agent in agents:
+                _sid = getattr(_agent, 'section_id', None) or ''
+                if _sid:
+                    agent_section_map[_agent.agent_id] = _sid
             session_registry = self._agent_factory.get_registry(task_id)
             if session_registry:
                 logger.info(
@@ -837,6 +840,8 @@ class ResearchOrchestrator:
                         section_id = result.get("section_id", "") or ""
                         if section_id:
                             key = section_id
+                        elif agent_id in agent_section_map:
+                            key = agent_section_map[agent_id]
                         else:
                             # Fallback: 解析 agent_id（旧格式 research_市场规模_2）
                             aspect = None
@@ -1639,6 +1644,16 @@ class ResearchOrchestrator:
                 )
                 logger.info(f"[{task_id}] Created {len(agents)} Agents via intelligent routing")
 
+            # Build agent_id → section_id mapping for deterministic aggregation key assignment.
+            # This is the authoritative source: the agent's section_id was set during creation
+            # from spec.output_keys (which carries routing section_ids). Using this map
+            # avoids relying on engine-side section_id injection which may be incomplete.
+            agent_section_map: Dict[str, str] = {}
+            for _agent in agents:
+                _sid = getattr(_agent, 'section_id', None) or ''
+                if _sid:
+                    agent_section_map[_agent.agent_id] = _sid
+
             # Update progress: Agent creation complete
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.3, message="Agent creation complete, starting execution"
@@ -1754,6 +1769,8 @@ class ResearchOrchestrator:
                         section_id = result.get("section_id", "") or ""
                         if section_id:
                             key = section_id
+                        elif agent_id in agent_section_map:
+                            key = agent_section_map[agent_id]
                         else:
                             # Fallback: 解析 agent_id
                             aspect = None
