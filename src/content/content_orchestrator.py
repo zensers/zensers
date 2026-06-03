@@ -251,14 +251,17 @@ class ContentOrchestrator:
                     section_tables = raw_section["tables"]
                 # If section has data_points, convert to tables format
                 elif raw_section.get("data_points"):
-                    section_tables = [{
-                        "caption": raw_section.get("title", "Data Table"),
-                        "headers": ["Metric", "Value", "Unit"],
-                        "rows": [
-                            [dp.get("metric", ""), dp.get("value", ""), dp.get("unit", "")]
-                            for dp in raw_section["data_points"]
-                        ]
-                    }]
+                    rows = [
+                        [dp.get("metric", ""), dp.get("value", ""), dp.get("unit", "")]
+                        for dp in raw_section["data_points"]
+                    ]
+                    non_empty_rows = [r for r in rows if any(cell.strip() for cell in r)]
+                    if non_empty_rows:
+                        section_tables = [{
+                            "caption": raw_section.get("title", "Data Table"),
+                            "headers": ["Metric", "Value", "Unit"],
+                            "rows": non_empty_rows,
+                        }]
             
             section_dict = {
                 "id": section.id,
@@ -606,23 +609,25 @@ class ContentOrchestrator:
         
         # Data points
         if data_points:
-            html_parts.append('<section class="data-points" id="data-points">')
-            html_parts.append('<h2>Key Data</h2>')
-            html_parts.append('<table class="data-table">')
-            html_parts.append('<thead><tr><th>Metric</th><th>Value</th><th>Unit</th></tr></thead>')
-            html_parts.append('<tbody>')
-            for dp in data_points:
-                metric = dp.get("metric", "")
-                value = dp.get("value", "")
-                unit = dp.get("unit", "")
-                html_parts.append(f'<tr>')
-                html_parts.append(f'<td>{html.escape(metric)}</td>')
-                html_parts.append(f'<td>{html.escape(value)}</td>')
-                html_parts.append(f'<td>{html.escape(unit)}</td>')
-                html_parts.append('</tr>')
-            html_parts.append('</tbody>')
-            html_parts.append('</table>')
-            html_parts.append('</section>')
+            non_empty_dps = [dp for dp in data_points if any(str(dp.get(k, "")).strip() for k in ("metric", "value", "unit"))]
+            if non_empty_dps:
+                html_parts.append('<section class="data-points" id="data-points">')
+                html_parts.append('<h2>Key Data</h2>')
+                html_parts.append('<table class="data-table">')
+                html_parts.append('<thead><tr><th>Metric</th><th>Value</th><th>Unit</th></tr></thead>')
+                html_parts.append('<tbody>')
+                for dp in non_empty_dps:
+                    metric = dp.get("metric", "")
+                    value = dp.get("value", "")
+                    unit = dp.get("unit", "")
+                    html_parts.append(f'<tr>')
+                    html_parts.append(f'<td>{html.escape(metric)}</td>')
+                    html_parts.append(f'<td>{html.escape(value)}</td>')
+                    html_parts.append(f'<td>{html.escape(unit)}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody>')
+                html_parts.append('</table>')
+                html_parts.append('</section>')
         
         # Document end
         html_parts.append('</article>')

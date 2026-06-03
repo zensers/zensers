@@ -1838,11 +1838,7 @@ class ResearchAPI:
         html_content = None
         if preview_path.exists():
             preview_url = PreviewStorage.url(task_id)
-            file_size = preview_path.stat().st_size
-            if file_size < 10240:
-                html_content = preview_path.read_text(encoding='utf-8')
-            else:
-                logger.debug(f"Preview HTML too large ({file_size} bytes), omitting html_content, using preview_url instead")
+            html_content = preview_path.read_text(encoding='utf-8')
         download_url = None
         for candidate_dir in [Path('data/reports') / task_id, Path('data') / task_id]:
             if candidate_dir.exists():
