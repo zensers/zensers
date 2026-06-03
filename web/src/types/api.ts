@@ -80,7 +80,7 @@ export interface InteractResponse {
   parameters?: ParameterConfig;
   summary?: ResearchSummary;
   final_plan?: ResearchPlan;
-  status?: 'executing' | 'cancelled';
+  status?: 'running' | 'executing' | 'cancelled' | 'processing';
 }
 
 /** Suggestion option (chat mode) */

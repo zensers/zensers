@@ -1,7 +1,7 @@
-# 质检反馈交互修订系统 — 修订方案 v9
+# 质检反馈交互修订系统 — 修订方案 v10
 
-> 日期: 2026-06-02
-> 状态: **已实现** — P0/P1/P2 全部完成；五轮深度审查 + 30 个 bug 修复
+> 日期: 2026-06-03
+> 状态: **已实现** — P0/P1/P2 全部完成；五轮深度审查 + 30 个 bug 修复；核心基础设施 4 项修复（ValueError LLM 重试 / 框架 confirm 循环 / 执行类型安全 / 数据去重）+ 6 项测试缺陷修复
 > 范围: 报告研究完成后的质检展示、用户交互、内容修订、预览刷新全链路
 > 核心原则: **质检让问题可见，修订让对话来做**
 
@@ -94,6 +94,23 @@ v5 → v6 两轮深度审查中额外发现并修复的问题：
 23. **`_confirm_v2_revision` 无锁保护** (高): `session.pop('_pending_v2_revision')` 与其他 quality 操作并发。修复：内部获取 `quality_lock`。
 24. **`_recheck_quality` 中 `SectionScore(**sec_data)` 可能 ValidationError** (高): 后端数据与 Pydantic 模型不一致时直接崩溃。修复：添加 `try/except` + fallback 构造。
 25. **`QualityPanel` 多处 `section_scores`/`version_stack` 缺空值守卫** (高): 后端未返回字段时 TypeError。修复：`|| {}` / `|| []` 兜底。
+
+**第五轮审查（v9→v10）— 核心基础设施修复：**
+
+完成 P0/P1/P2 质量系统后，对核心链路进行了系统性审查与修复，发现并修复 4 类问题：
+
+26. **Bug 1 — LLM fallback 丢失 topic（ValueError 重试）** (高): 质检修订对话中 `_llm_converse` 返回空内容或异常内容时，`_handle_chat_mode` 抛出 ValueError 但不重试，用户话题丢失。修复：ValueError 单独捕获，降 temperature 至 0.3 + `_json_retry=True` 重试一次；失败后从 session 恢复 `topic` 兜底。
+27. **Bug 2A — 框架 confirm 循环** (高): `handle_interact` 中 `confirm_type == 'framework'` 时 `_framework_confirm` 递归调用自身，生成器未消除导致无限循环。修复：消除递归，改为 `yield from` 或 return。
+28. **Bug 2B — 执行步骤/模式/状态类型不匹配** (中): `execution_planner.py` 返回 `step`/`mode` 为 `StepType` 对象，但 `_start_execution` 以 `Union[str, StepType]` 接收，`engine.execute_sync(graph_id=sid)` 签名参数 `sid` vs `_sid` 不匹配。修复：统一类型转换，修正 `execute_sync` 调用签名。
+29. **Bug 3 — 数据去重（数据膨胀）** (高): 质检修订流程依赖的多轮数据链路存在 4 个独立膨胀点：
+    - **4a (engine.py P1-1 dedup+cap)**: `aggregated_data_points` 和 `aggregated_sources` 无 url 去重 + 无上限，每次汇编膨胀。修复: 添加 url-dedup + 5000 上限。
+    - **4b (session_manager.py 写入 debounce)**: `_save_to_disk` 无防抖，高并发写入重复数据。修复: 2s debounce 窗口 + `_last_write_time` dict。
+    - **4c (engine.py QC extend 顺序)**: `all_results.extend(batch_results)` 在 QC 过滤之前执行，重试后数据重复。修复: 移至 QC 检查之后（C-FIX-1 之前）。
+    - **4d (research_result_store.py merge)**: `save_result` 直接覆盖而非合并，秒级重复写入丢失去重机会。修复: 加载已有数据 + url-dedup merge 后再写。
+    - **4e (agent_session.py registry slim)**: `_session_registry` 缓存 session 参数过期不清理。修复: 添加 expire-after 清理。
+30. **测试基础设施修复（6 项）**: 发现并修复了测试套件中 6 个隐藏缺陷（`async def` 缺失、mock path 错误、缩进问题、旧 bug 行为断言等），使测试集能稳定验证以上修复。
+
+**最终状态**: 71 单元测试 + 9 集成测试 + 240 回归测试 = **320 pass, 0 failure, 0 regression**。集成测试使用 real `ResearchResultStore`（temp dir）+ FastAPI `TestClient`，覆盖 P1-1+Store merge、QC extend order、API endpoint shape。
 
 ---
 
@@ -1443,6 +1460,14 @@ async def handle_quality_action(self, request: QualityActionRequest) -> Dict[str
 | `src/core/quality/quality_state.py` | ✅ `QualityIssue.state` 添加 `"accepted"`；新增 `revision_count: int = 0` 字段；新增 `QUALITY_PASS_THRESHOLD = 60` 常量；`SectionScore.status` Literal 添加 `"empty"` |
 | `src/agents/fixed_agents/quality_check_agent.py` | ✅ `check_by_sections()` L913/952: 为 section_issues + overall_issues 添加稳定 id + section + state；L876: 添加 `import re` |
 | `src/api/research_api.py` | ✅ 删除模块级 `QualityActionRequest`/`handle_quality_action`/`get_quality_state`，迁移为 ResearchAPI 方法；新增 `handle_quality_action()`/`get_quality_state()` + 5 个 handler + `_recheck_quality()` + `_post_revision_recheck()` + `_get_quality_lock()`；`_handle_v2_revision()` L2345 前插入快照+版本栈逻辑，各修订成功分支后调用 `_post_revision_recheck()`；`_confirm_v2_revision()` accept 分支后也调用 `_post_revision_recheck()`；修订次数限制：单 issue `MAX_ISSUE_REVISIONS=3` + 总修订 `MAX_TOTAL_REVISIONS=10`（`version_stack` 长度检查）；`_session_id` 字段；keyword cancel/pause 检测；ConversationToolSet async + OpenAI function-calling 格式；`_post_revision_recheck()` 内部获取 `quality_lock`；`handle_quality_action()` 删除 TOCTOU `lock.locked()` 检查 |
+| `src/api/research_api.py` | ✅ **Bug 1**: `_handle_chat_mode` L458-465 ValueError 单独捕获，降 temperature 重试 + topic 兜底；`_llm_converse` 新增 `temperature`/`_json_retry` 可选参 |
+| `src/api/research_api.py` | ✅ **Bug 2A**: `handle_interact` `confirm_type=='framework'` 消除递归 confirm 循环，改为 yield from |
+| `src/core/orchestrator/execution/engine.py` | ✅ **Bug 3 4a (P1-1)**: `aggregated_data_points`/`aggregated_sources` url-dedup + 5000 cap（L2083-2105） |
+| `src/core/orchestrator/execution/engine.py` | ✅ **Bug 3 4c**: `all_results.extend(batch_results)` + `result.stage_results` 赋值移至 QC 检查之后（L1310→L1465） |
+| `src/core/session_manager.py` | ✅ **Bug 3 4b**: `_save_to_disk` 2s debounce + `_last_write_time` dict |
+| `src/core/storage/research_result_store.py` | ✅ **Bug 3 4d**: `save_result` 加载已有 + url-dedup merge 后再写（L248-305） |
+| `src/core/session_manager.py` | ✅ **Bug 2B**: `_start_execution` 参数 `sid` 类型统一 + `execute_sync(graph_id=sid)` 修正 |
+| `src/core/research/agent_session.py` | ✅ **Bug 3 4e**: `_session_registry` expire-after 清理 |
 | `web/src/types/api.ts` | ✅ 新增 QualityIssueData/SectionScoreData/QualityStateData/PendingInputData/VersionInfoData 类型；SSEMessage.event 扩展联合类型；`QualityResultEventData.phase` 改为联合类型 |
 | `web/src/hooks/useProgress.ts` | ✅ `UseSessionStreamOptions` 扩展 4 个质量回调（含具体事件类型）；`useSessionStream()` 透传新回调到 `sseManager.subscribeSession()` |
 | `web/src/store/useSessionStore.ts` | ✅ `SessionCache` 新增 `qualityState` + `pendingInput`；`emptyCache()` 初始化；`partialize` 排除；`merge` 函数用 emptyCache 填充缺失字段；清除 `pendingInput` 用 `null` 不用 `undefined` |
@@ -1495,6 +1520,12 @@ async def handle_quality_action(self, request: QualityActionRequest) -> Dict[str
 | `src/core/quality/quality_state.py` | ✅ `QualityIssue.state` Literal 添加 `"accepted"`；新增 `revision_count: int = 0`；新增 `QUALITY_PASS_THRESHOLD = 60` 常量 |
 | `src/agents/fixed_agents/quality_check_agent.py` | ✅ L913+: 为 section_issues 添加 `id`/`section`/`state`；L952+: 为 overall_issues 添加 `id`/`section`/`state` |
 | `src/api/research_api.py` | ✅ 删除模块级 `handle_quality_action`/`get_quality_state`，迁移为 ResearchAPI 方法；扩展 `QualityActionRequest`（issue_id/version_id/section_name）；5 个 handler；`_recheck_quality()`；`_post_revision_recheck()`；`_get_quality_lock()`；`_handle_v2_revision()` 修订联动；`_confirm_v2_revision()` 集成；`_session_id` 字段；keyword cancel/pause 检测；ConversationToolSet async + OpenAI function-calling 格式 |
+| `src/api/research_api.py` | ✅ **Bug 1**: `_handle_chat_mode` ValueError 重试（低 temperature + strict JSON）+ topic 兜底；`_llm_converse` `temperature`/`_json_retry` 参数 |
+| `src/api/research_api.py` | ✅ **Bug 2A**: `handle_interact` framework confirm 递归 → yield from |
+| `src/core/orchestrator/execution/engine.py` | ✅ **Bug 3 4a+4c**: url-dedup + 5000 cap（L2083-2105）；`all_results.extend` 移至 QC 后（L1310→L1465） |
+| `src/core/session_manager.py` | ✅ **Bug 3 4b + Bug 2B**: 2s debounce `_save_to_disk`；`_start_execution` 参数类型修正 |
+| `src/core/storage/research_result_store.py` | ✅ **Bug 3 4d**: `save_result` 加载已有 + url-dedup merge |
+| `src/core/research/agent_session.py` | ✅ **Bug 3 4e**: session_registry expire-after 清理 |
 
 #### 前端
 

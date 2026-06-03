@@ -271,17 +271,49 @@ class ResearchResultStore:
         task_dir = self._get_task_dir(task_id)
         task_dir.mkdir(parents=True, exist_ok=True)
         
-        # 保存研究结果内容
+        # Bug-3-4d: 合并 + 去重（非直接覆盖）
         result_path = task_dir / "result.json"
+        existing = self.load_result(task_id) if result_path.exists() else None
+        
+        new_dps = result.get("data_points", [])
+        new_srcs = result.get("sources", [])
+        
+        if existing:
+            exist_dps = existing.get("data_points", [])
+            exist_srcs = existing.get("sources", [])
+            
+            seen_urls = set()
+            merged_dps = []
+            for dp in exist_dps + new_dps:
+                url = dp.get("url", "") if isinstance(dp, dict) else ""
+                if url and url in seen_urls:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                merged_dps.append(dp)
+            
+            seen_urls = set()
+            merged_srcs = []
+            for src in exist_srcs + new_srcs:
+                url = src.get("url", "") if isinstance(src, dict) else ""
+                if url and url in seen_urls:
+                    continue
+                if url:
+                    seen_urls.add(url)
+                merged_srcs.append(src)
+        else:
+            merged_dps = new_dps
+            merged_srcs = new_srcs
+        
         result_data = {
             "task_id": task_id,
             "title": result.get("title", ""),
             "topic": result.get("topic", ""),
             "sections": result.get("sections", []),
             "key_findings": result.get("key_findings", []),
-            "data_points": result.get("data_points", []),
-            "sources": result.get("sources", []),       # A-1/A-2修复：持久化数据来源
-            "completed_agents": result.get("completed_agents", []),  # resume: agent完成状态追踪
+            "data_points": merged_dps,
+            "sources": merged_srcs,
+            "completed_agents": result.get("completed_agents", []),
             "saved_at": datetime.now().isoformat()
         }
         

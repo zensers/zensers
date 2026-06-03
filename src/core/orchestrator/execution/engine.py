@@ -1307,9 +1307,6 @@ class ExecutionEngine:
                         if content_lock is not None:
                             content_lock.mark_failed(section_id, agent_result.get("error", ""))
                 
-                all_results.extend(batch_results)
-                result.stage_results[f"batch_{batch_index + 1}"] = batch_results
-                
                 # S-FIX-2: auto-populate canonical registry from agent data_points
                 # Safety: only raw search snippets (data_points) are processed, not content (analysis text).
                 # ANALYSIS agents pass through DC data_points unchanged → registration is idempotent (key-dedup).
@@ -1462,6 +1459,10 @@ class ExecutionEngine:
                         break
                     else:
                         logger.warning(f"Batch {batch_index + 1} partial failure ({total_count - success_count}/{total_count}), continuing")
+            
+            # Bug-3-4c: extend all_results + stage_results AFTER QC (avoid failed-result accumulation)
+            all_results.extend(batch_results)
+            result.stage_results[f"batch_{batch_index + 1}"] = batch_results
             
             # C-FIX-1: execute newly unlocked agents at batch end
             if pending_unlocked and result.status != "failed":
@@ -2088,13 +2089,31 @@ class ExecutionEngine:
                                 result_store = ResearchResultStore(storage_path="data")
                                 saved = result_store.load_result(task_id_from_req)
                                 if saved:
-                                    saved_dps = saved.get("data_points")
-                                    saved_srcs = saved.get("sources")
-                                    if saved_dps is not None and len(saved_dps) > 0:
-                                        task["aggregated_data_points"] = saved_dps
+                                    saved_dps = saved.get("data_points", [])
+                                    saved_srcs = saved.get("sources", [])
+                                    if saved_dps and len(saved_dps) > 0:
+                                        seen_urls = set()
+                                        deduped = []
+                                        for dp in saved_dps:
+                                            url = dp.get("url", "") if isinstance(dp, dict) else ""
+                                            if url and url in seen_urls:
+                                                continue
+                                            if url:
+                                                seen_urls.add(url)
+                                            deduped.append(dp)
+                                        task["aggregated_data_points"] = deduped[:5000]
                                         injected_data = True
-                                    if saved_srcs is not None and len(saved_srcs) > 0:
-                                        task["aggregated_sources"] = saved_srcs
+                                    if saved_srcs and len(saved_srcs) > 0:
+                                        seen_urls = set()
+                                        deduped = []
+                                        for src in saved_srcs:
+                                            url = src.get("url", "") if isinstance(src, dict) else ""
+                                            if url and url in seen_urls:
+                                                continue
+                                            if url:
+                                                seen_urls.add(url)
+                                            deduped.append(src)
+                                        task["aggregated_sources"] = deduped[:5000]
                                         injected_data = True
                                     if injected_data:
                                         logger.info(

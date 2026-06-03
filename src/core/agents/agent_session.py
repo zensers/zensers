@@ -110,6 +110,15 @@ class AgentSession:
         Returns:
             包含所有属性的字典
         """
+        result_for_dict = self.result
+        if isinstance(result_for_dict, dict):
+            result_for_dict = dict(result_for_dict)
+            if "data_points" in result_for_dict:
+                dp = result_for_dict.pop("data_points")
+                result_for_dict["data_points_count"] = len(dp) if isinstance(dp, list) else 0
+            if "sources" in result_for_dict:
+                src = result_for_dict.pop("sources")
+                result_for_dict["sources_count"] = len(src) if isinstance(src, list) else 0
         return {
             "session_id": self.session_id,
             "agent_id": self.agent_id,
@@ -117,7 +126,7 @@ class AgentSession:
             "origin": self.origin.value,
             "status": self.status.value,
             "progress": self.progress,
-            "result": self.result,
+            "result": result_for_dict,
             "task": self.task,
             "context": self.context,
             "created_at": self.created_at.isoformat() if self.created_at else None,

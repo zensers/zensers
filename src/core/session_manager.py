@@ -164,6 +164,8 @@ class SessionManager:
                     instance._base_dir = Path("data/sessions")
                     instance._base_dir.mkdir(parents=True, exist_ok=True)
                     instance._history_compressor: Optional[Any] = None
+                    instance._last_write_time: Dict[str, float] = {}
+                    instance._debounce_ms = 2000
                     cls._instance = instance
         return cls._instance
 
@@ -214,10 +216,17 @@ class SessionManager:
     def _save_to_disk(self, session_id: str) -> None:
         """Persist single session to disk using atomic write (temp file + rename)."""
         import os as os_mod
+        import time as _time
 
         session = self._sessions.get(session_id)
         if session is None:
             return
+
+        now = _time.time()
+        last = self._last_write_time.get(session_id, 0)
+        if (now - last) * 1000 < self._debounce_ms:
+            return
+        self._last_write_time[session_id] = now
         try:
             path = self._get_path(session_id)
             # Optional: compress history before writing

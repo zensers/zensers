@@ -372,7 +372,7 @@ export function useResearch() {
     try {
       const data = await api.confirmResearch(sessionId, confirmed);
 
-      if (confirmed && data.step === 6 && data.status === 'executing') {
+      if (confirmed && data.step === 6 && data.status === 'running') {
         setTaskId(data.session_id);
         setStatus('running');
       }

@@ -457,6 +457,13 @@ class ResearchAPI:
 
         try:
             conv_result = await self._llm_converse(session_id, user_input, conv_machine.current_state)
+        except ValueError as e:
+            logger.warning(f"LLM conversation ValueError, retrying once with lower temp: {e}")
+            try:
+                conv_result = await self._llm_converse(session_id, user_input, conv_machine.current_state, temperature=0.3, _json_retry=True)
+            except Exception as e2:
+                logger.error(f"LLM conversation retry also failed: {e2}")
+                return self._fallback_response(session_id, context)
         except Exception as e:
             logger.error(f"LLM conversation failed: {e}")
             return self._fallback_response(session_id, context)
@@ -655,7 +662,7 @@ class ResearchAPI:
         inject_hint = f" (Pending injects: {len(pending)})" if pending else ''
         return f"\n## Research Executing\nTopic: {topic}\nSections: {sections_str}{inject_hint}\nRules for changes during research:\n- New section, supplement, cancellation → `inject_requirement` (lightweight, no pause)\n- User explicitly says pause/stop → `modify_research` (pause + re-plan)\n- User wants to stop entirely → `enter_framework`\n"
 
-    async def _llm_converse(self, session_id, user_input, conversation_state=None):
+    async def _llm_converse(self, session_id, user_input, conversation_state=None, temperature=None, _json_retry=False):
         """LLM driven dialogue with multi-turn tool loop (Phase 2)"""
         session = session_manager.get(session_id)
         if not session:
@@ -742,12 +749,17 @@ class ResearchAPI:
             if iteration == 0:
                 rrc = self._build_research_running_context(session)
                 user_prompt = self._build_initial_prompt(current_date, current_time, current_year, history_text, context_summary, dialogue_context, paused_context, sections_context, post_research_hint, tools_section, domain_guard, user_input, rrc)
+                if _json_retry:
+                    user_prompt = f"## CRITICAL: Your previous response contained errors.\nYou MUST respond with ONLY a valid JSON object. No markdown, no code fences, no explanation outside the JSON.\n\n{self._JSON_OUTPUT_SCHEMA}\n\n{user_prompt}"
             else:
                 user_prompt = self._build_followup_prompt(accumulated_context, tool_history, user_input, history_text, dialogue_context)
             try:
                 from src.config.settings import settings as app_settings
+                _execute_kwargs = dict(prompt=user_prompt, system_prompt=system_prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=2048)
+                if temperature is not None:
+                    _execute_kwargs['temperature'] = temperature
                 result = await asyncio.wait_for(
-                    llm_skill.execute(prompt=user_prompt, system_prompt=system_prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=2048),
+                    llm_skill.execute(**_execute_kwargs),
                     timeout=60)
             except asyncio.TimeoutError:
                 logger.warning(f"LLM call timed out (iteration {iteration}), using accumulated results")
@@ -1012,6 +1024,8 @@ class ResearchAPI:
         session = session_manager.get(session_id) if session_id else None
         lang = self._get_lang(session)
         existing_topic = context.get('topic')
+        if not existing_topic and session:
+            existing_topic = session.get('research_context', {}).get('topic')
         if existing_topic:
             return self._chat_response(session_id, self._l(f"抱歉，我临时遇到了问题。我们刚才在讨论 **{existing_topic}**，请再试一次。", f"Sorry, I encountered a temporary issue. We were discussing **{existing_topic}**, please try again.", lang))
         return self._chat_response(session_id, self._l('抱歉，我临时遇到了问题，请再试一次。你想研究什么？', 'Sorry, I encountered a temporary issue, please try again. What would you like to research?', lang))
@@ -1192,7 +1206,7 @@ class ResearchAPI:
         self._executor_tasks[session_id] = task
         task.add_done_callback(lambda _: self._executor_tasks.pop(session_id, None))
         ProgressStreamer.set_disconnect_callback(session_id, self._on_sse_disconnect)
-        return {'session_id': session_id, 'task_id': session_id, 'step': 'research', 'mode': 'executing', 'status': 'success', 'message': self._l(f"研究任务已启动！\n\n**研究主题**: {topic}\n\n正在执行研究，请耐心等待...", f"Research task has been started!\n\n**Research Topic**: {topic}\n\nExecuting research, please wait...", session.get('language', 'zh')), 'final_plan': final_plan, 'next_step': 'execute'}
+        return {'session_id': session_id, 'task_id': session_id, 'step': 6, 'mode': 'research', 'status': 'running', 'message': self._l(f"研究任务已启动！\n\n**研究主题**: {topic}\n\n正在执行研究，请耐心等待...", f"Research task has been started!\n\n**Research Topic**: {topic}\n\nExecuting research, please wait...", session.get('language', 'zh')), 'final_plan': final_plan, 'next_step': 'execute'}
 
     async def _start_execution_with_routing(self, session_id, routing_result):
         """Start execution using pre-computed IntelligentRoutingResult (BP1 fix)"""
@@ -1212,7 +1226,7 @@ class ResearchAPI:
         self._executor_tasks[session_id] = task
         task.add_done_callback(lambda _: self._executor_tasks.pop(session_id, None))
         ProgressStreamer.set_disconnect_callback(session_id, self._on_sse_disconnect)
-        return {'session_id': session_id, 'task_id': session_id, 'step': 'research', 'mode': 'executing', 'status': 'success', 'message': self._l(f"研究任务已启动！\n\n**研究主题**: {topic}\n\n正在执行研究，请耐心等待...", f"Research task has been started!\n\n**Research Topic**: {topic}\n\nExecuting research, please wait...", session.get('language', 'zh')), 'final_plan': final_plan, 'next_step': 'execute'}
+        return {'session_id': session_id, 'task_id': session_id, 'step': 6, 'mode': 'research', 'status': 'running', 'message': self._l(f"研究任务已启动！\n\n**研究主题**: {topic}\n\n正在执行研究，请耐心等待...", f"Research task has been started!\n\n**Research Topic**: {topic}\n\nExecuting research, please wait...", session.get('language', 'zh')), 'final_plan': final_plan, 'next_step': 'execute'}
 
     def _is_greeting_simple(self, user_input):
         """Determine if it's a pure greeting or irrelevant question"""
@@ -1560,9 +1574,14 @@ class ResearchAPI:
             skip_lang = False
             if suggestion_id:
                 suggestion_map = {'add_details': 'add some details', 'start_framework': 'form a framework'}
-                user_message = suggestion_map.get(suggestion_id, suggestion_id)
-                if not user_message:
-                    user_message = suggestion_id
+                if user_message:
+                    pass
+                else:
+                    mapped = suggestion_map.get(suggestion_id)
+                    if mapped:
+                        user_message = mapped
+                    else:
+                        user_message = suggestion_id
                 skip_lang = True
             if not user_message:
                 return {'error': 'Invalid response', 'error_code': 'INVALID_RESPONSE'}
@@ -1631,7 +1650,7 @@ class ResearchAPI:
             from src.api.research_executor import get_executor
             executor = get_executor()
             asyncio.create_task(executor.execute(session_id, final_plan, session_manager))
-            return {'session_id': session_id, 'task_id': session_id, 'step': 6, 'mode': 'research', 'status': 'executing', 'message': 'Research task started', 'final_plan': final_plan, 'next_step': 'execute'}
+            return {'session_id': session_id, 'task_id': session_id, 'step': 6, 'mode': 'research', 'status': 'running', 'message': 'Research task started', 'final_plan': final_plan, 'next_step': 'execute'}
         return {'error': 'Invalid step', 'error_code': 'INVALID_STEP'}
 
     async def quick_start(self, user_input, template_id, user_id=None, llm_config=None, custom_params=None, auto_confirm=False, template_context=None):
@@ -1667,7 +1686,7 @@ class ResearchAPI:
                 'output_type': output_type, 'aspects': aspects,
                 'selected_sections': selected_sections, 'section_details': section_details,
                 'final_plan': final_plan, 'params': params,
-                'current_step': 6, 'mode': 'research', 'status': 'executing',
+                'current_step': 6, 'mode': 'research', 'status': 'running',
                 'created_at': datetime.now()
             }
             session_manager.create(task_id, session_data)
@@ -1676,7 +1695,7 @@ class ResearchAPI:
             task = asyncio.create_task(executor.execute(task_id, final_plan, session_manager))
             task.add_done_callback(lambda _: self._executor_tasks.pop(task_id, None))
             self._executor_tasks[task_id] = task
-            return {'session_id': task_id, 'task_id': task_id, 'step': 6, 'status': 'executing',
+            return {'session_id': task_id, 'task_id': task_id, 'step': 6, 'mode': 'research', 'status': 'running',
                     'message': f"Starting research with template **{template_id}**.",
                     'plan': {'topic': user_input, 'output_type': output_type, 'aspects': aspects}}
         task_id = f"research_{uuid.uuid4().hex[:8]}"
