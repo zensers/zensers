@@ -100,7 +100,7 @@ function stateFromCache(c: SessionCache | undefined): Partial<ResearchState> {
   };
   return {
     taskId: c.taskId,
-    sessionId: c.id,
+    sessionId: c.id === '__pending__' ? null : c.id,
     progress: c.progress,
     phases: c.phases,
     status: c.status,

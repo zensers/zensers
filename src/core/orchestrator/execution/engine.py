@@ -1439,10 +1439,13 @@ class ExecutionEngine:
                                         batch_results = _retry_results
                                         break
                                 else:
-                                    # All retries exhausted
-                                    result.errors.append(error_msg)
-                                    result.status = "failed"
-                                    break
+                                    # All retries exhausted — quality is advisory, not blocking
+                                    # Continue with available results for revision workflow
+                                    # quality_issues already injected on agent results (L1397-1400)
+                                    logger.warning(
+                                        f"QC all retries exhausted for batch {batch_index+1}, "
+                                        f"continuing: {error_msg}"
+                                    )
                             else:
                                 logger.info(f"Quality check PASSED for batch {batch_index + 1}: score={quality_result.score:.1f}")
                     except Exception as qe:
