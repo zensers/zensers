@@ -364,7 +364,7 @@ class ResearchAPI:
             if action == 'modify_research':
                 return await self._handle_modify_research(session_id=session_id, modifications=conv_result.get('modifications', {}), adjustment=conv_result.get('adjustment', user_input))
             if action == 'regenerate_report':
-                return await self.resume_research(session_id)
+                return await self._regenerate_report(session_id)
             return await self._handle_chat_mode(session_id, user_input)
 
         logger.info(f"User message during research: {user_input}")
@@ -537,7 +537,7 @@ class ResearchAPI:
             return await self._enter_framework_mode(session_id, user_input)
         if action == 'regenerate_report':
             logger.info(f"LLM returned regenerate_report for {session_id}")
-            return await self.resume_research(session_id)
+            return await self._regenerate_report(session_id)
 
         return self._chat_response(session_id, conv_result.get('message', ''), conv_result.get('suggestions', []))
 
@@ -722,7 +722,7 @@ class ResearchAPI:
                 sections_context = f"\n## Existing Report Sections\n{sl}\nUse these exact section names in aspects when the user requests revision.\n"
             rs = session['research_result'].get('status', 'unknown')
             rst = session['research_result'].get('stages_completed', 0)
-            post_research_hint = f"\n## Previous Research Context\nStatus: {rs} | Stages: {rst}\nThe research has completed and a session record exists.\nIf the user asks to retry, regenerate, or modify the research, use `enter_framework`.\nIf the user asks to revise specific sections, use `revise_report`.\nDO NOT trigger revise_report if:\n- The user is asking ABOUT the revision/modification feature itself\n- The user is reporting a bug, issue, or problem with the report generation\n- The user mentions functionality is 'broken', 'not working', '有问题', '不工作'\n- The user is analyzing or evaluating the report output, not requesting changes\nThese should use `continue_chat` instead.\n"
+            post_research_hint = f"\n## Previous Research Context\nStatus: {rs} | Stages: {rst}\nThe research has completed and a session record exists.\nIf the user asks to retry or start a NEW research, use `enter_framework`.\nIf the user asks to regenerate or refresh the REPORT/DOCUMENT (e.g. 重新生成HTML, 重新生成报告, regenerate report), use `regenerate_report`.\nIf the user asks to revise specific sections, use `revise_report`.\nDO NOT trigger revise_report if:\n- The user is asking ABOUT the revision/modification feature itself\n- The user is reporting a bug, issue, or problem with the report generation\n- The user mentions functionality is 'broken', 'not working', '有问题', '不工作'\n- The user is analyzing or evaluating the report output, not requesting changes\nThese should use `continue_chat` instead.\n"
         dialogue_context = ''
         if conversation_state:
             dialogue_context = self._build_dialogue_context(conversation_state)
@@ -2024,6 +2024,83 @@ class ResearchAPI:
             session['mode'] = 'chat'
             fail_task(session_id, str(e))
             return
+
+    def _convert_session_to_cache_format(self, session_rr):
+        """Convert session['research_result'] to the format expected by _document_agent.
+
+        session format: sections under 'report.sections'
+        cache format:   sections at top-level 'sections'
+        """
+        converted = dict(session_rr)
+        if "report" in converted and "sections" not in converted:
+            report = converted.get("report", {})
+            converted["sections"] = report.get("sections", [])
+            converted["topic"] = converted.get("topic", report.get("topic", ""))
+            converted["title"] = converted.get("topic", "")
+            converted["aspects"] = converted.get("aspects", report.get("aspects", []))
+            converted["sources"] = converted.get("sources", report.get("sources", []))
+            converted["key_findings"] = converted.get("key_findings", report.get("key_findings", []))
+        return converted
+
+    async def _regenerate_report(self, session_id):
+        """Regenerate HTML preview from cached research result, without re-running research.
+
+        Loads research_result_cache.json (preferred) or converts session data,
+        then calls _generate_documents_from_cache() to produce new HTML.
+        """
+        session = session_manager.get(session_id)
+        if not session:
+            return {'error': 'Session not found', 'error_code': 'SESSION_NOT_FOUND'}
+
+        research_result = session.get('research_result', {})
+        if not research_result or research_result.get('status') not in ('completed', 'completed_with_warnings'):
+            return {'error': 'No completed research to regenerate from',
+                    'error_code': 'NO_COMPLETED_RESEARCH'}
+
+        task_id = research_result.get('task_id', session_id)
+        cache_path = Path('data') / task_id / 'research_result_cache.json'
+        if not cache_path.exists():
+            cache_path = Path('data') / session_id / 'research_result_cache.json'
+
+        if cache_path.exists():
+            try:
+                research_result_data = json.loads(cache_path.read_text(encoding='utf-8'))
+                logger.info(f"[{session_id}] Loaded research result from cache: {cache_path}")
+            except Exception as e:
+                logger.warning(f"[{session_id}] Failed to load cache: {e}, falling back to session data")
+                research_result_data = self._convert_session_to_cache_format(research_result)
+        else:
+            logger.info(f"[{session_id}] No cache file found, converting session data")
+            research_result_data = self._convert_session_to_cache_format(research_result)
+
+        if not research_result_data.get('sections'):
+            return {'error': 'No sections found in research result',
+                    'error_code': 'NO_SECTIONS'}
+
+        output_dir = Path('data') / session_id
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            await self._generate_documents_from_cache(
+                session_id, research_result_data, output_dir, session
+            )
+        except Exception as e:
+            logger.error(f"[{session_id}] Regenerate report failed: {e}", exc_info=True)
+            return {'error': str(e), 'error_code': 'REGENERATE_FAILED'}
+
+        try:
+            from src.core.session_streamer import SessionStreamer
+            from src.core.preview_storage import PreviewStorage
+            preview_url = PreviewStorage.url(session_id)
+            SessionStreamer.push_preview_refresh(session_id, preview_url, 'v1')
+        except Exception:
+            pass
+
+        return {
+            'session_id': session_id,
+            'status': 'completed',
+            'message': '文档已重新生成',
+        }
 
     async def _save_cancel_snapshot(self, task_id, session):
         """Save a snapshot of current research state before cancel/pause for recovery.
