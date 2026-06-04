@@ -80,8 +80,8 @@ class SemanticSearch:
         top_k: int = DEFAULT_TOP_K,
         similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
         boost_field: Optional[str] = None,
-        enable_synonym_expansion: bool = False,
-        enable_abbreviation_expansion: bool = False
+        enable_synonym_expansion: bool = True,
+        enable_abbreviation_expansion: bool = True
     ):
         """
         初始化语义检索器

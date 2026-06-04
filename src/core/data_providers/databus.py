@@ -720,11 +720,11 @@ class RateLimiter:
 
 
 # 便捷函数
-def create_databus_with_defaults() -> DataBusV2:
+def create_databus_with_defaults(cache_dir: Optional[str] = None) -> DataBusV2:
     """创建带有默认配置的DataBus."""
     cache = MultiLevelCache(
         memory_cache=MemoryCacheBackend(max_size=10000),
-        disk_cache=DiskCacheBackend(cache_dir=".cache/databus", max_size_mb=100),
+        disk_cache=DiskCacheBackend(cache_dir=cache_dir or ".cache/databus", max_size_mb=100),
     )
     
     return DataBusV2(

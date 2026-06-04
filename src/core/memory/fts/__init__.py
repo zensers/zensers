@@ -19,6 +19,7 @@ FTS5 全文索引模块
 __all__ = ["FTSIndexer", "FTSSearcher", "FTSManager"]
 
 import sqlite3
+import re
 import logging
 from typing import Optional, List, Dict, Any
 from pathlib import Path
@@ -654,14 +655,20 @@ class FTSSearcher:
         """
         构建 FTS5 查询字符串
         
-        Args:
-            query: 原始查询字符串
-        
-        Returns:
-            FTS5 格式的查询字符串
+        支持中文分词（使用 jieba）和英文搜索。
         """
         # 处理特殊字符
         query = query.replace('"', '""')
+        
+        # 检测中文，走 jieba 分词路径
+        if re.search(r'[\u4e00-\u9fff]', query):
+            try:
+                import jieba
+                tokens = [t for t in jieba.lcut(query) if t.strip()]
+                if tokens:
+                    return f'"{" ".join(tokens)}"'
+            except ImportError:
+                pass
         
         # 如果查询包含空格，使用短语搜索
         if ' ' in query:

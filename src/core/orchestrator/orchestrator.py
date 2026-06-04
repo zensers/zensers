@@ -5070,10 +5070,10 @@ class ResearchOrchestrator:
             requirement.topic, {"limit": 5}
         )
 
-        total = relevant.get("total_count", 0)
         entities = relevant.get("entities", [])
+        knowledge_available = len(entities) > 0
 
-        if total > 5:
+        if knowledge_available:
             requirement._routing_hints = {
                 "knowledge_depth": "rich",
                 "reduce_background": True,
@@ -5150,7 +5150,10 @@ class ResearchOrchestrator:
         KEYWORDS = [
             "趋势", "规律", "关键", "通常", "往往",
             "风险", "机会", "导致", "取决于", "驱动",
-            "意味着", "表明", "显著", "持续", "加速"
+            "意味着", "表明", "显著", "持续", "加速",
+            "trend", "pattern", "key", "usually", "often",
+            "risk", "opportunity", "lead to", "depends on", "driven by",
+            "means", "indicates", "significant", "continues", "accelerate"
         ]
 
         for content in texts:

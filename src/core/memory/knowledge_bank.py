@@ -147,6 +147,16 @@ class UserKnowledgeBank:
         learning_db_path = str(self.db_path).replace('.db', '_learning.db')
         self._learning_db_path = learning_db_path
         
+        # FTS5 全文索引（可选）
+        self._fts = None
+        try:
+            from .fts import FTSManager
+            fts = FTSManager(self.db)
+            fts.initialize()
+            self._fts = fts
+        except Exception:
+            logger.warning("FTS5 not available, falling back to LIKE search")
+        
         logger.info(f"用户知识银行初始化完成: user_id={user_id}, db_path={db_path}")
     
     def _init_schema(self):
@@ -298,8 +308,22 @@ class UserKnowledgeBank:
     
     # ===== 综合检索方法 =====
     
-    def search_all(self, query: str, limit: int = 100) -> Dict[str, List[Dict]]:
+    def search_all(self, query: str, limit: int = 100) -> Dict[str, Any]:
         """综合搜索所有知识"""
+        # FTS5 全文搜索（可用时），回退到 LIKE 搜索
+        if self._fts is not None and query:
+            try:
+                result = self._fts.search(query, limit=limit)
+                result["total_count"] = (
+                    len(result.get("entities", []))
+                    + len(result.get("relations", []))
+                    + len(result.get("data_points", []))
+                    + len(result.get("insights", []))
+                )
+                return result
+            except Exception:
+                logger.warning("FTS search failed, falling back to LIKE", exc_info=True)
+
         entities = self.entities.search_entities(query, limit=limit)
         relations = self.relations.search_relations(query, limit=limit)
         data_points = self.data_points.search_data_points(query, limit=limit)
@@ -307,7 +331,8 @@ class UserKnowledgeBank:
         return {
             "entities": entities,
             "relations": relations,
-            "data_points": data_points
+            "data_points": data_points,
+            "total_count": len(entities) + len(relations) + len(data_points),
         }
     
     def get_entities_summary(self) -> Dict[str, Any]:
@@ -600,6 +625,9 @@ class UserKnowledgeBank:
         
         return {
             "user_id": self.user_id,
+            "entity_count": base_stats["entities"],
+            "relation_count": base_stats["relations"],
+            "data_point_count": base_stats["data_points"],
             "base": base_stats,
             "temporal": temporal_stats,
             "provenance": provenance_stats

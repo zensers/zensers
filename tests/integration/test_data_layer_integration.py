@@ -247,9 +247,9 @@ class TestEndToEndDataFlow:
             bus = create_databus_with_defaults(cache_dir=tmpdir)
             
             # 2. 创建约束层组件
-            whitelist = SourceWhitelist(
-                trusted_sources={"akshare", "官方统计局"},
-            )
+            whitelist = SourceWhitelist()
+            whitelist.add_trusted_source("akshare", tier="tier1")
+            whitelist.add_trusted_source("官方统计局", tier="tier1")
             tracer = FactTracer()
             gate = QualityGate(min_confidence=0.7)
             

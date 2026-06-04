@@ -237,11 +237,19 @@ class CoreMemory:
         return None
     
     def _sort_and_limit_entities(self) -> None:
-        """排序并限制实体数量"""
-        # 按 mention_count 降序排序
-        self.top_entities.sort(key=lambda e: e.mention_count, reverse=True)
-        
-        # 限制数量
+        """排序并限制实体数量（时间衰减加权）"""
+        now = datetime.now()
+        max_days = 365
+        for e in self.top_entities:
+            try:
+                last = datetime.strptime(e.last_mentioned, "%Y-%m-%d") if e.last_mentioned else now
+            except (ValueError, TypeError):
+                last = now
+            days_ago = (now - last).days
+            decay = max(0.9, 1.0 - (days_ago / max_days) * 0.5)
+            e._score = e.mention_count * decay
+        self.top_entities.sort(key=lambda e: e._score, reverse=True)
+
         if len(self.top_entities) > self.MAX_TOP_ENTITIES:
             self.top_entities = self.top_entities[:self.MAX_TOP_ENTITIES]
     
@@ -575,17 +583,25 @@ class CoreMemory:
         # 确保目录存在
         self.storage_path.mkdir(parents=True, exist_ok=True)
         
-        # 检查大小限制
+        # 检查大小限制，超出时修剪
         self._calculate_size()
         if self.size_bytes > self.SIZE_LIMIT_BYTES:
-            logger.warning(f"CoreMemory exceeds size limit: {self.size_bytes} bytes > {self.SIZE_LIMIT_BYTES}")
-            # 触发修剪（后续实现）
-        
+            logger.warning(f"CoreMemory exceeds size limit: {self.size_bytes} bytes > {self.SIZE_LIMIT_BYTES}, trimming")
+            self._trim_to_fit()
+
         # 保存
         with open(self._file_path, 'w', encoding='utf-8') as f:
             f.write(self.to_json())
-        
+
         logger.debug(f"CoreMemory saved to {self._file_path}, size: {self.size_bytes} bytes")
+
+    def _trim_to_fit(self) -> None:
+        """修剪核心记忆至大小限制内"""
+        self._sort_and_limit_entities()
+        while self.top_entities and self.size_bytes > self.SIZE_LIMIT_BYTES:
+            removed = self.top_entities.pop()
+            logger.debug(f"Trimmed entity '{removed.name}' to stay within size limit")
+            self._calculate_size()
     
     def get_file_path(self) -> Path:
         """获取文件路径"""
