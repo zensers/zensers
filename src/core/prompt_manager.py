@@ -276,17 +276,40 @@ class PromptManager:
     
     # ─── Agent Profile Loading (prompt + skills + config unified management) ───
     
+    def _resolve_includes(self, text: str, _depth: int = 0) -> str:
+        """
+        Resolve {include:xxx} references in text recursively
+
+        Args:
+            text: Text containing {include:xxx} placeholders
+            _depth: Current recursion depth (internal)
+
+        Returns:
+            Text with includes resolved
+        """
+        if _depth > 5:
+            raise RuntimeError(f"Include recursion too deep")
+        return re.sub(
+            r'\{include:(\w+)\}',
+            lambda m: self._resolve_includes(self.load("_shared", m.group(1)), _depth + 1),
+            text
+        )
+
     def load_profile(self, name: str) -> AgentProfile:
         """
         Load Agent Profile = system_prompt + skills + config (with caching)
-        
+
+        Resolves {include:xxx} references so the returned profile's
+        system_prompt contains the actual included content.
+
         Args:
             name: Agent name (filename without extension)
-            
+
         Returns:
             AgentProfile object
         """
         raw = self.load("agents", name)  # With caching
+        raw = self._resolve_includes(raw)
         return AgentProfile.from_text(name, raw)
     
     def load_profile_system_prompt(self, name: str) -> str:

@@ -255,7 +255,7 @@ class SemanticIntentAnalyzer:
     def _load_intent_prompts(self):
         pm = PromptManager.get_instance()
         try:
-            return pm.load("agents", "intent_analysis_system"), pm.load("agents", "intent_analysis_user")
+            return pm.render("agents", "intent_analysis_system"), pm.render("agents", "intent_analysis_user")
         except FileNotFoundError:
             fallback_sys = "You are a professional market research requirement analysis expert."
             fallback_usr = 'Analyze intent: {user_request}\nRequirement: {requirement_json}\nOutput JSON.'

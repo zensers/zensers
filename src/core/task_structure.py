@@ -371,8 +371,8 @@ class TaskStructureAnalyzer:
         # Load section analysis prompt from PromptManager
         pm = PromptManager.get_instance()
         try:
-            system_prompt = pm.load("agents", "section_analysis_system")
-            user_template = pm.load("agents", "section_analysis_user")
+            system_prompt = pm.render("agents", "section_analysis_system")
+            user_template = pm.render("agents", "section_analysis_user")
         except FileNotFoundError:
             logger.warning("Section analysis prompt files not found, using fallback")
             system_prompt = "You are a professional report structure analysis expert. Please analyze the role and dependencies of report sections."

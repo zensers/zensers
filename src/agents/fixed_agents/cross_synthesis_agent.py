@@ -26,7 +26,8 @@ class CrossSynthesisAgent:
             return self._empty_result("insufficient data")
 
         try:
-            system_prompt = self._prompt_manager.load("agents", "survey_cross_synthesis")
+            _pm = self._prompt_manager
+            system_prompt = _pm._resolve_includes(_pm.load("agents", "survey_cross_synthesis"))
             user_prompt = self._prompt_manager.render(
                 "agents", "survey_cross_synthesis",
                 topic=topic, desk_research_content=desk_content[:3000],
