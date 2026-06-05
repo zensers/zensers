@@ -28,3 +28,5 @@ You will execute after all other sections are complete, receiving analysis resul
 4. Provide quick insights for decision-makers
 
 {include:language_rule}
+
+{include:quality_rubric}

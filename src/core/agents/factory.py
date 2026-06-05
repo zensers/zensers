@@ -144,8 +144,8 @@ class DynamicAgentFactory(AgentFactory):
             registered = self._skill_registry.register_core_skills()
             logger.info(f"DynamicAgentFactory: 自动注册了 {registered} 个核心 Skills")
         
-        self._message_bus = message_bus
-        self._shared_memory = shared_memory
+        self._message_bus = message_bus or MessageBus()
+        self._shared_memory = shared_memory or SharedMemory()
         self._persistence = persistence
         self._mcp_handler = mcp_handler
         self._agents: Dict[str, AgentType] = {}
@@ -422,7 +422,7 @@ class DynamicAgentFactory(AgentFactory):
         """
         清理指定父 Session 的 Registry
         
-        释放 Registry 及其所有子 Session，防止内存泄漏。
+        释放 Registry 及其所有子 Session，并清理 _agents 中对应的代理，防止内存泄漏。
         应在研究任务完成或取消后调用。
         
         Args:
@@ -432,10 +432,18 @@ class DynamicAgentFactory(AgentFactory):
             是否成功清理（False 表示 Registry 不存在）
         """
         if parent_session_id in self._session_registries:
-            # 清空 Registry 内的 Sessions
-            self._session_registries[parent_session_id].clear()
-            # 删除 Registry
+            registry = self._session_registries[parent_session_id]
+            agent_ids_to_remove = []
+            for agent_id, agent in list(self._agents.items()):
+                session = getattr(agent, '_session', None)
+                if session and getattr(session, 'parent_session_id', None) == parent_session_id:
+                    agent_ids_to_remove.append(agent_id)
+            for aid in agent_ids_to_remove:
+                del self._agents[aid]
+            registry.clear()
             del self._session_registries[parent_session_id]
+            if agent_ids_to_remove:
+                logger.debug(f"清理 {len(agent_ids_to_remove)} 个 agent: {agent_ids_to_remove}")
             return True
         return False
     

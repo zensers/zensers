@@ -28,3 +28,5 @@ You will execute after all sections (including executive summary) are complete.
 4. Future outlook
 
 {include:language_rule}
+
+{include:quality_rubric}

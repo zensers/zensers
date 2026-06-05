@@ -103,6 +103,9 @@ class AgentSession:
     checkpoint_data: Optional[Dict[str, Any]] = None
     last_checkpoint_at: Optional[datetime] = None
     
+    # Agent模板（用于hibernate恢复）
+    agent_template: Optional[Dict[str, Any]] = None
+    
     def to_dict(self) -> Dict[str, Any]:
         """
         转换为字典（用于序列化）
@@ -136,6 +139,7 @@ class AgentSession:
             "error": self.error,
             "checkpoint_data": self.checkpoint_data,
             "last_checkpoint_at": self.last_checkpoint_at.isoformat() if self.last_checkpoint_at else None,
+            "agent_template": self.agent_template,
         }
     
     @classmethod
@@ -177,6 +181,7 @@ class AgentSession:
             error=data.get("error"),
             checkpoint_data=data.get("checkpoint_data"),
             last_checkpoint_at=last_checkpoint_at,
+            agent_template=data.get("agent_template"),
         )
     
     def start(self) -> None:

@@ -28,3 +28,5 @@ config:
 - Strictly output in JSON format
 - Each section must include a role reasoning explanation
 - Dependency relationships must include clear reasons
+
+{include:quality_rubric}

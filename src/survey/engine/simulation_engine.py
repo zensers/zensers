@@ -254,7 +254,7 @@ class SimulationExecutor:
             respondent_id=persona.persona_id,
             answers=answers,
             completed_at=datetime.now(),
-            quality_score=1.0,
+            quality_score=50.0,
             is_valid=True,
         )
 

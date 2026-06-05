@@ -246,6 +246,13 @@ class GenericAgent(
                     
                     logger.info(f"GenericAgent {self.agent_id}: topic='{topic}', aspect='{aspect}', aspects={aspects}")
                     
+                    quality_feedback = self._context.get("quality_feedback", {})
+                    if quality_feedback:
+                        logger.info(f"GenericAgent {self.agent_id}: 带质量反馈重试(第{quality_feedback.get('previous_attempt', 0)+1}次, 上次得分{quality_feedback.get('score', '?')})")
+                        self._quality_feedback = quality_feedback
+                    else:
+                        self._quality_feedback = None
+                    
                     # === Knowledge enrichment (before any LLM analysis path) ===
                     knowledge_enrichment = {}
                     if "knowledge_query" in self._available_skills and skill_registry:
@@ -2906,6 +2913,22 @@ class GenericAgent(
         methodologies = enrichment.get("methodologies", [])
         if methodologies:
             base += f"\n\n## 分析框架\n{methodologies[0]['content'][:150]}\n"
+
+        quality_feedback = getattr(self, '_quality_feedback', {})
+        if quality_feedback:
+            fb_score = quality_feedback.get("score", "?")
+            fb_issues = quality_feedback.get("issues", [])
+            fb_attempt = quality_feedback.get("previous_attempt", 0)
+            issues_text = "\n".join(
+                f"  - {issue}" if isinstance(issue, str) else f"  - {issue.get('message', str(issue))}"
+                for issue in fb_issues[:3]
+            )
+            base += (
+                f"\n\n## 质量反馈（重试第{fb_attempt + 1}次）\n"
+                f"上次得分: {fb_score}\n"
+                f"需改进的问题:\n{issues_text}\n"
+                f"请针对以上问题改进分析质量。\n"
+            )
 
         return base
 

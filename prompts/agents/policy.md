@@ -68,3 +68,5 @@ Label ALL policy assertions:
 - **LOW**: Media speculation, political party platform, unconfirmed policy direction
 
 {include:language_rule}
+
+{include:quality_rubric}

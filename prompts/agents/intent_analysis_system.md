@@ -68,4 +68,6 @@ Always include these keys in "domain_context" when available:
       "orchestration_strategy": "hybrid",
       "domain_context": {"topic": "Pet cat market and consumer survey", "aspects": ["market size", "competition", "breed preference", "spending habits"]},
       "core_question": "What is the size and growth trend of China's pet cat market, and what are consumers' breed and spending preferences?"
-    }
+}
+
+{include:quality_rubric}

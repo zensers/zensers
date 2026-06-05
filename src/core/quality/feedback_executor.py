@@ -1,9 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-质量反馈执行器
-==============
+质量反馈执行器 [DEPRECATED]
+==========================
 
-提供质量反馈循环能力：
+.. deprecated::
+    本模块为死代码，全项目0调用者。S2重试反馈已由engine.py:1412-1427实现。
+    两者注入位置不同(_context vs task_dict)、格式不一致，若同时启用会产生冲突。
+    请勿使用本模块，将在v10.0移除。
+
+    替代方案: engine.py S2重试循环 (quality_feedback注入到agent._context)
+    参见: 03_Agent架构诊断.md 10.1节
+
+原设计功能：
 1. 执行任务并检查质量
 2. 不通过时重试（最多3次）
 3. 重试失败后选择最佳结果
@@ -12,24 +20,10 @@
 1. 行业研究必须高质量
 2. 重试3次后，有数据按最佳得分输出，无数据才降级
 3. 记录每次尝试的分数和结果
-
-使用示例:
-    executor = QualityFeedbackExecutor(max_retries=3)
-    
-    data, result = await executor.execute_with_retry(
-        stage="data_collection",
-        execute_func=my_execute_func,
-        checker=DataCollectionQualityChecker(threshold=70),
-        context={"query": "新能源汽车市场"},
-    )
-    
-    if result.passed:
-        print("质量检查通过")
-    else:
-        print(f"重试{executor.attempts}次后仍不达标，使用最佳结果")
 """
 
 import logging
+import warnings
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Dict, List, Any, Callable, Tuple, Optional
@@ -106,6 +100,13 @@ class QualityFeedbackExecutor:
             max_retries: 最大重试次数
             min_data_volume: 最小数据量阈值
         """
+        warnings.warn(
+            "QualityFeedbackExecutor is deprecated and unused. "
+            "Use engine.py S2 retry loop (quality_feedback injection) instead. "
+            "See engine.py:1412-1427.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.max_retries = max_retries
         self.min_data_volume = min_data_volume
         self.attempts: Dict[str, List[AttemptRecord]] = {}

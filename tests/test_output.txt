@@ -1,0 +1,42 @@
+﻿======================================================================
+AnalysisQualityChecker
+======================================================================
+A-cheat: struct=100.0 caliber=100.0 counter=100.0 quant=0.0 => score=90.0 passed=True
+B-typical: struct=100.0 caliber=0.0 counter=100.0 quant=100.0 => score=70.0 passed=True
+C-pro: struct=100.0 caliber=19.6 counter=100.0 quant=0.0 => score=65.9 passed=False
+D-poor: struct=0.0 caliber=0.0 counter=0.0 quant=0.0 => score=0.0 passed=False
+
+======================================================================
+DataCollectionQualityChecker
+======================================================================
+hardcode50: score=53.0 passed=False
+actual72: score=61.8 passed=False
+actual88: score=77.2 passed=True
+low50: score=41.0 passed=False
+
+======================================================================
+ReportQualityChecker
+======================================================================
+8sec-nofind: comp=80.0 cons=100.0 red=0.0 prov=80.0 => score=71.0
+3sec-poor:  comp=40.0 cons=100.0 red=0.0 prov=80.0 => score=67.0
+10empty:    comp=100.0 cons=100.0 red=100.0 prov=80.0 => score=93.0
+
+======================================================================
+Caliber Regex Bug
+======================================================================
+  A股口径: buggy=True fixed=True
+  港股口径: buggy=True fixed=True
+  美股口径: buggy=True fixed=True
+  A口径: buggy=True fixed=False <<< BUG!
+  G口径: buggy=True fixed=False <<< BUG!
+  |口径: buggy=True fixed=False <<< BUG!
+  IFRS口径: buggy=True fixed=True
+
+======================================================================
+Chinese Tokenize Bug
+======================================================================
+  text: 核心判断市场增长趋势明显
+  split() => ['核心判断市场增长趋势明显']
+  regex   => ['核心判断市场增长趋势明显']
+  split len>3 => ['核心判断市场增长趋势明显']
+  regex len>=2 => ['核心判断市场增长趋势明显']

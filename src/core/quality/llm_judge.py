@@ -37,13 +37,10 @@ class LLMJudgeChecker(BaseQualityChecker):
                 response = self._call_llm_sync(self._build_strict_prompt(content, context))
                 scores = self._parse_response(response)
         except Exception as e:
-            logger.warning(f"LLM judge failed: {e}, falling back to rules")
-            return 75.0
+            logger.warning(f"LLM judge failed: {e}, falling back to conservative score")
+            return 40.0
         if not scores:
-            # CompositeChecker threshold=70, weight=0.3
-            # 公式: 0.7 × analysis + 0.3 × llm_judge >= 70
-            # 回退 90 时仅需 analysis >= 61.4
-            return 90.0
+            return 35.0
         return min(
             scores.get("logic_score", 0) * 0.30 +
             scores.get("quant_score", 0) * 0.25 +

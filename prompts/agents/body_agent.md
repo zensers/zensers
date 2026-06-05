@@ -66,3 +66,5 @@ ${multi_source_requirement}
 - Data should be detailed, analysis thorough, conclusions persuasive
 
 {include:language_rule}
+
+{include:quality_rubric}

@@ -349,21 +349,53 @@ class AnalysisQualityChecker(BaseQualityChecker):
     Analysis Quality Checker (Q-FIX-1: rewritten from keyword counting to structure assessment)
     
     Check dimensions:
-    1. Structure completeness (40%): 5-segment framework present
+    1. Structure completeness (40%): 5-segment framework present with context validation
     2. Data caliber declaration rate (30%): numeric values carry caliber/source annotations
-    3. Counter-evidence completeness (20%): boundary conditions included
-    4. Quantified decomposition rate (10%): causal analysis includes numeric breakdown
+    3. Counter-evidence completeness (20%): gradient scoring for boundary conditions
+    4. Quantified decomposition rate (10%): gradient scoring for causal decomposition
     """
     
     STRUCTURE_MARKERS = {
-        "core_judgment": ["核心判断", "核心结论", "Core Judgment"],
-        "data_support": ["数据来源", "Source", "来源", "数据显示", "据"],
-        "causal_decomposition": ["贡献", "个百分点", "其中", "分解", "因为", "因此"],
-        "counter_evidence": ["如果", "若", "边界条件", "风险在于", "但需注意", "当"],
-        "implication": ["意味着", "含义", "对投资", "对决策", "建议"],
+        "core_judgment": {
+            "keywords": ["核心判断", "核心结论", "Core Judgment", "核心观点", "核心主张"],
+            "min_context_chars": 50,
+        },
+        "data_support": {
+            "keywords": ["数据来源", "Source", "来源", "数据显示", "据", "统计", "调研"],
+            "min_context_chars": 30,
+        },
+        "causal_decomposition": {
+            "keywords": ["贡献", "个百分点", "其中", "分解", "因为", "因此", "驱动", "拉动", "源于"],
+            "min_context_chars": 40,
+        },
+        "counter_evidence": {
+            "keywords": ["如果", "若", "边界条件", "风险在于", "但需注意", "当",
+                         "然而", "不过", "需要注意的是", "潜在风险", "不确定性",
+                         "风险", "限制", "假设"],
+            "min_context_chars": 30,
+            "exclude_trivial": True,
+        },
+        "implication": {
+            "keywords": ["意味着", "含义", "对投资", "对决策", "建议", "启示", "影响", "指向"],
+            "min_context_chars": 30,
+        },
     }
     
-    CALIBER_PATTERNS = [r"[A股|港股|美股|GAAP|IFRS]口径", r"含.*权益|不含.*权益", r"来源[：:].+"]
+    CALIBER_PATTERNS = [
+        r"(?:A股|港股|美股|GAAP|IFRS|纳斯达克|纽交所|深交所)口径",
+        r"含.*权益|不含.*权益",
+        r"来源[：:].+",
+        r"(?:同比|环比|年化|累计)(?:增长|变化|变动)",
+        r"(?:调整后|调整前|经调整)",
+    ]
+    
+    TRIVIAL_COUNTER_PATTERNS = [
+        r"如果[你我他她]",
+        r"如果需要",
+        r"如果.*可以",
+        r"若要",
+        r"当[你我他她]",
+    ]
     
     def __init__(self, threshold: float = 85.0):
         super().__init__(threshold)
@@ -384,35 +416,79 @@ class AnalysisQualityChecker(BaseQualityChecker):
         return min(structure_score + caliber_score + counter_score + quant_score, 100.0)
     
     def _check_structure(self, content: str) -> float:
-        """Check 5-segment structure completeness. Each missing segment: -20 pts."""
+        """Check 5-segment structure with context validation."""
         segments_found = 0
-        for section_name, markers in self.STRUCTURE_MARKERS.items():
-            if any(m in content for m in markers):
+        for section_name, config in self.STRUCTURE_MARKERS.items():
+            keywords = config["keywords"]
+            min_ctx = config.get("min_context_chars", 30)
+            found = False
+            for kw in keywords:
+                idx = content.find(kw)
+                while idx != -1:
+                    start = max(0, idx - 20)
+                    end = min(len(content), idx + len(kw) + min_ctx)
+                    context = content[start:end].strip()
+                    if len(context) >= min_ctx:
+                        if section_name == "counter_evidence" and config.get("exclude_trivial"):
+                            if self._is_trivial_counter(kw, context):
+                                idx = content.find(kw, idx + len(kw))
+                                continue
+                        found = True
+                        break
+                    idx = content.find(kw, idx + len(kw))
+            if found:
                 segments_found += 1
         return (segments_found / 5.0) * 100.0
+    
+    @staticmethod
+    def _is_trivial_counter(keyword: str, context: str) -> bool:
+        return any(re.search(p, context) for p in AnalysisQualityChecker.TRIVIAL_COUNTER_PATTERNS)
     
     def _check_caliber_coverage(self, content: str) -> float:
         """Check if numeric references carry caliber annotations."""
         numeric_refs = re.findall(r'\d+\.?\d*\s*(亿元|亿美元|%|万辆|GWh|万元|元)', content)
         caliber_refs = sum(1 for p in self.CALIBER_PATTERNS if re.search(p, content))
         if len(numeric_refs) == 0:
-            return 100.0
+            return 50.0
         ratio = caliber_refs / max(1, len(numeric_refs) * 0.3)
         return min(100.0, ratio * 100.0)
     
     def _check_counter_evidence(self, content: str) -> float:
-        """Check if counter-evidence or boundary conditions are present."""
-        for markers in self.STRUCTURE_MARKERS["counter_evidence"]:
-            if markers in content:
-                return 100.0
-        return 0.0
+        """Gradient scoring for counter-evidence and boundary conditions."""
+        counter_indicators = [
+            (r'(?:然而|不过|但是|但需注意|需要注意的是)[^。？！；…\n]{10,}', 1.0),
+            (r'(?:风险|不确定性|边界条件|限制|假设)[^。？！；…\n]{10,}', 0.8),
+            (r'(?:如果|若|当)[^。？！；…\n]{15,}(?:则|那么|可能|将|会)', 0.6),
+            (r'(?:如果|若)[^。？！；…\n]{5,}', 0.2),
+        ]
+        max_score = 0.0
+        for pattern, weight in counter_indicators:
+            matches = re.findall(pattern, content)
+            if matches:
+                score = min(len(matches) / 3.0, 1.0) * weight * 100
+                max_score = max(max_score, score)
+        return max_score
     
     def _check_quantified_decomposition(self, content: str) -> float:
-        """Check if causal analysis includes numeric breakdown."""
-        patterns = [r'其中.*贡献.*\d+', r'分解为.*\d+.*\d+', r'\d+.*个百分点.*源于']
-        for p in patterns:
+        """Gradient scoring for quantified causal decomposition."""
+        patterns_strong = [
+            r'其中[^。]*贡献[^。]*\d+',
+            r'分解为[^。]*\d+[^。]*\d+',
+            r'\d+[^。]*个百分点[^。]*源于',
+            r'(?:驱动|拉动|贡献)[^。]*\d+\.?\d*\s*(?:%|个百分点)',
+        ]
+        patterns_partial = [
+            r'(?:其中|分解)[^。]{5,}\d+',
+            r'(?:增长|下降|变化)[^。]{3,}\d+\.?\d*\s*%',
+        ]
+        for p in patterns_strong:
             if re.search(p, content):
                 return 100.0
+        partial_count = sum(1 for p in patterns_partial if re.search(p, content))
+        if partial_count >= 2:
+            return 70.0
+        if partial_count == 1:
+            return 40.0
         return 0.0
     
     def generate_suggestions(self, score: float, data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> List[str]:
@@ -532,21 +608,32 @@ class ReportQualityChecker(BaseQualityChecker):
     # ── 维度 1: Completeness ──────────────────────────
     
     def _check_completeness(self, sections: Any) -> float:
-        """Check completeness"""
+        """Check completeness with content validation (P1-3)."""
         if not sections:
             return 0.0
         
         if isinstance(sections, list):
-            if len(sections) >= 10:
-                return 100.0
-            elif len(sections) >= 7:
-                return 80.0
-            elif len(sections) >= 5:
-                return 60.0
-            elif len(sections) >= 3:
-                return 40.0
-            else:
-                return 20.0
+            count_score = 0
+            if len(sections) >= 10: count_score = 60
+            elif len(sections) >= 7: count_score = 50
+            elif len(sections) >= 5: count_score = 40
+            elif len(sections) >= 3: count_score = 30
+            else: count_score = 10
+            
+            content_score = 0
+            non_empty = 0
+            total_chars = 0
+            for s in sections:
+                text = s.get("content", "") if isinstance(s, dict) else str(s)
+                stripped = text.strip()
+                if stripped:
+                    non_empty += 1
+                    total_chars += len(stripped)
+            if len(sections) > 0:
+                content_ratio = non_empty / len(sections)
+                content_score = content_ratio * 40
+            
+            return min(count_score + content_score, 100.0)
         
         if isinstance(sections, str):
             text = sections
@@ -581,7 +668,7 @@ class ReportQualityChecker(BaseQualityChecker):
         Only compares entries with the same year AND caliber.
         """
         if not sections or len(sections) < 2:
-            return 100.0
+            return 70.0
         
         from collections import defaultdict
         
@@ -613,7 +700,7 @@ class ReportQualityChecker(BaseQualityChecker):
                         continue
         
         if not metric_values:
-            return 100.0
+            return 70.0
         
         contradictions = 0
         total = 0
@@ -645,7 +732,7 @@ class ReportQualityChecker(BaseQualityChecker):
         Check if the same data point appears in 2+ research chapters.
         """
         if not sections or len(sections) < 2:
-            return 100.0
+            return 70.0
         
         # Collect all numeric data points with their section roles
         data_points_by_section = []
@@ -660,7 +747,11 @@ class ReportQualityChecker(BaseQualityChecker):
             
             points = set()
             for match in self._DATA_POINT_RE.finditer(text):
-                points.add(f"{match.group(1)}|{match.group(2)}")
+                value = match.group(1)
+                unit = match.group(2)
+                prefix = text[max(0, match.start()-20):match.start()]
+                metric_hint = re.sub(r'[\s\d，。、：；]+$', '', prefix)[-10:] if prefix else ""
+                points.add(f"{metric_hint}|{value}|{unit}")
             data_points_by_section.append((points, role))
         
         if not data_points_by_section:
@@ -676,7 +767,7 @@ class ReportQualityChecker(BaseQualityChecker):
         # Only count redundancies in ANALYSIS/DATA_COLLECTION sections (not SYNTHESIS)
         research_points = Counter()
         for points, role in data_points_by_section:
-            if role in ("analysis", "data_collection", "ANALYSIS", "DATA_COLLECTION", ""):
+            if role in ("analysis", "data_collection", "ANALYSIS", "DATA_COLLECTION"):
                 for p in points:
                     research_points[p] += 1
         
@@ -707,8 +798,7 @@ class ReportQualityChecker(BaseQualityChecker):
         synthesis_ids = set(context.get("synthesis_section_ids", [])) if context else set()
         
         if not findings or not synthesis_ids:
-            # No findings data → skip this dimension (not an error if BUG 4 not deployed)
-            return 80.0
+            return 50.0
         
         # Collect all core claims from research findings
         research_claims = []
@@ -718,7 +808,7 @@ class ReportQualityChecker(BaseQualityChecker):
                     research_claims.extend(f.get("core_claims", []))
         
         if not research_claims:
-            return 100.0
+            return 50.0
         
         # Check if synthesis sections mention research claims
         synthesis_texts = []
@@ -732,13 +822,13 @@ class ReportQualityChecker(BaseQualityChecker):
                 synthesis_texts.append(text)
         
         if not synthesis_texts:
-            return 80.0  # No synthesis text to check
+            return 50.0
         
         combined_text = " ".join(synthesis_texts).lower()
         covered_count = 0
         for claim in research_claims:
             # Check if key terms from the claim appear in synthesis text
-            key_terms = [w for w in claim.split() if len(w) > 3]
+            key_terms = [w for w in re.split(r'[\s，。、：；！？]+', claim) if len(w) > 0]
             if not key_terms:
                 continue
             match_count = sum(1 for t in key_terms if t.lower() in combined_text)
@@ -809,7 +899,7 @@ class ReportQualityChecker(BaseQualityChecker):
             role_desc = section_roles[sid].lower()
             text_lower = text.lower()
             # Split on whitespace and Chinese punctuation
-            key_terms = [t for t in re.split(r'[\s，。、：；）)]+', role_desc) if len(t) > 2]
+            key_terms = [t for t in re.split(r'[\s，。、：；（）！？]+', role_desc) if len(t) > 0]
             matched_terms = sum(1 for t in key_terms if t in text_lower)
             if key_terms and matched_terms >= max(1, len(key_terms) * 0.3):
                 matched_count += 1
@@ -906,7 +996,6 @@ class NumericConsistencyGate(BaseQualityChecker):
             sections = [{"id": "content", "content": sections}]
         
         from collections import defaultdict
-        import re
         
         metric_values = defaultdict(list)
         METRIC_PATTERNS = [
@@ -964,6 +1053,7 @@ class CompositeChecker:
     """
     
     def __init__(self, checkers: List[BaseQualityChecker], weights: List[float]):
+        assert checkers and weights, "checkers and weights must be non-empty"
         assert len(checkers) == len(weights), "checkers and weights must match"
         t = sum(weights)
         self.checkers = checkers

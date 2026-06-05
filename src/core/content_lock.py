@@ -63,7 +63,7 @@ class SectionStatus:
     unlock_time: Optional[datetime] = None     # Unlock time
     start_time: Optional[datetime] = None      # Execution start time
     complete_time: Optional[datetime] = None   # Completion time
-    quality_score: float = 0.0                 # Quality score (0-1)
+    quality_score: float = 0.0                 # Quality score (0-100)
     retry_count: int = 0                       # Retry count
     error_message: str = ""                    # Error message
     output_data: Dict[str, Any] = field(default_factory=dict)  # Output data
@@ -116,7 +116,7 @@ class ContentLockManager:
         lock_manager.mark_running("section_1")
 
         # Mark section as completed
-        unlocked = lock_manager.mark_completed("section_1", quality_score=0.85)
+        unlocked = lock_manager.mark_completed("section_1", quality_score=85.0)
     """
 
     def __init__(
@@ -285,10 +285,13 @@ class ContentLockManager:
 
                 # Check quality threshold
                 if rule.lock_type in ("quality_threshold", "both"):
-                    if required_status.quality_score < rule.quality_threshold:
+                    threshold_100 = rule.quality_threshold
+                    if threshold_100 <= 1.0:
+                        threshold_100 = threshold_100 * 100.0
+                    if required_status.quality_score < threshold_100:
                         return False, (
                             f"Required section {required_id} quality "
-                            f"{required_status.quality_score:.2f} < threshold {rule.quality_threshold}"
+                            f"{required_status.quality_score:.2f} < threshold {threshold_100:.2f}"
                         )
 
         return True, "All conditions satisfied"
@@ -327,10 +330,13 @@ class ContentLockManager:
 
                 # Check quality threshold
                 if rule.lock_type in ("quality_threshold", "both"):
-                    if required_status.quality_score < rule.quality_threshold:
+                    threshold_100 = rule.quality_threshold
+                    if threshold_100 <= 1.0:
+                        threshold_100 = threshold_100 * 100.0
+                    if required_status.quality_score < threshold_100:
                         return False, (
                             f"Required section {required_id} quality "
-                            f"{required_status.quality_score:.2f} < threshold {rule.quality_threshold}"
+                            f"{required_status.quality_score:.2f} < threshold {threshold_100:.2f}"
                         )
 
         # All conditions satisfied, unlock
@@ -379,7 +385,7 @@ class ContentLockManager:
     def mark_completed(
         self,
         section_id: str,
-        quality_score: float = 1.0,
+        quality_score: float = 100.0,
         output_data: Optional[Dict[str, Any]] = None,
     ) -> List[str]:
         """
@@ -387,18 +393,14 @@ class ContentLockManager:
 
         Args:
             section_id: Section ID
-            quality_score: Quality score (0-1)
-            output_data: Output data
-
-        Returns:
-            List of unlocked section IDs
+            quality_score: Quality score (0-100)
 
         Raises:
-            ValueError: If quality_score is not in [0, 1] range
+            ValueError: If quality_score is not in [0, 100] range
         """
         # Validate quality_score range
-        if not 0.0 <= quality_score <= 1.0:
-            raise ValueError(f"quality_score must be between 0 and 1, got {quality_score}")
+        if not 0.0 <= quality_score <= 100.0:
+            raise ValueError(f"quality_score must be between 0 and 100, got {quality_score}")
         
         with self._lock:
             status = self._section_statuses.get(section_id)

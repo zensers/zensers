@@ -70,11 +70,11 @@ class TestFactoryInit:
     """测试 Factory 初始化"""
     
     def test_init_without_comm(self):
-        """测试无通信能力初始化"""
+        """测试无通信能力初始化——默认创建MessageBus和SharedMemory"""
         factory = DynamicAgentFactory()
         
-        assert factory._message_bus is None
-        assert factory._shared_memory is None
+        assert factory._message_bus is not None
+        assert factory._shared_memory is not None
         assert factory._session_registries == {}
     
     def test_init_with_message_bus(self, message_bus):
@@ -82,7 +82,7 @@ class TestFactoryInit:
         factory = DynamicAgentFactory(message_bus=message_bus)
         
         assert factory._message_bus == message_bus
-        assert factory._shared_memory is None
+        assert factory._shared_memory is not None
     
     def test_init_with_full_comm(self, message_bus, shared_memory):
         """测试完整通信能力初始化"""
@@ -194,9 +194,9 @@ class TestCreateAgentWithSession:
         assert agent is not None
         assert session is not None
         
-        # 通信能力为 None
-        assert agent._message_bus is None
-        assert agent._shared_memory is None
+        # 通信能力由factory默认提供
+        assert agent._message_bus is not None
+        assert agent._shared_memory is not None
     
     def test_context_passed_to_session(self, factory_with_comm, basic_capability):
         """测试 context 传递到 Session"""

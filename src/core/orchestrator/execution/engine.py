@@ -279,7 +279,6 @@ class ExecutionEngine:
         if enable_quality_control:
             from src.core.quality import (
                 QualityMetadataExtractor,
-                QualityFeedbackExecutor,
                 DataCollectionQualityChecker,
                 AnalysisQualityChecker,
                 ReportQualityChecker,
@@ -289,11 +288,8 @@ class ExecutionEngine:
             # 质量元数据提取器
             self.metadata_extractor = QualityMetadataExtractor()
             
-            # 反馈执行器
-            self.quality_executor = QualityFeedbackExecutor(
-                max_retries=settings.quality.max_retries,
-                min_data_volume=settings.quality.min_data_volume,
-            )
+            # 反馈执行器（已废弃，保留为None）
+            self.quality_executor = None
             
             # 三个检查器
             self.data_checker = DataCollectionQualityChecker(
@@ -1383,11 +1379,7 @@ class ExecutionEngine:
                                 "content": combined_content,
                                 "sources": all_sources,
                                 "data_points": all_data_points,
-                                "quality_metadata": {
-                                    "data_volume": len(all_data_points) or len(all_sources),
-                                    "sources": all_sources,
-                                    "quality_score": 50.0,
-                                },
+                                "quality_metadata": self._build_quality_metadata(batch_results, all_data_points, all_sources),
                             }
                             quality_result = checker.check(
                                 check_data,
@@ -1405,54 +1397,37 @@ class ExecutionEngine:
                                     if r.get("success"):
                                         r["quality_issues"] = quality_result.issues[:3]
                                         r["quality_score"] = quality_result.score
-                                # L-FIX-1: retry before failing (max 1 retry to avoid data accumulation)
+                                # Unified retry: handle infrastructure + quality failures
                                 _max_retries = getattr(self.config, 'max_retries', 1)
-                                _qc_retries = 0
-                                while _qc_retries < _max_retries:
-                                    _qc_retries += 1
-                                    logger.info(f"QC retry {_qc_retries}/{_max_retries} for batch {batch_index+1}")
-                                    for _a in batch_agents:
-                                        if hasattr(_a, 'reset'):
-                                            await _a.reset()
-                                        if hasattr(_a, '_context') and isinstance(_a._context, dict):
-                                            _a._context["retry_attempt"] = _qc_retries
-                                    _retry_results = await self._execute_agents_batch(
-                                        batch_agents, requirement, all_results, scheduler,
-                                        f"batch_{batch_index+1}_qc_retry{_qc_retries}"
-                                    )
-                                    _retry_combined = "\n\n".join([
-                                        r.get("content","") or r.get("result","")
-                                        for r in _retry_results if r.get("success")
-                                    ])
-                                    _retry_src = []
-                                    _retry_dp = []
-                                    for r in _retry_results:
-                                        if r.get("success"):
-                                            _retry_src.extend(r.get("sources",[]))
-                                            _retry_dp.extend(r.get("data_points",[]))
-                                    _retry_check = {
-                                        "content": _retry_combined,
-                                        "sources": _retry_src,
-                                        "data_points": _retry_dp,
-                                        "quality_metadata": {
-                                            "data_volume": len(_retry_dp) or len(_retry_src),
-                                            "sources": _retry_src,
-                                            "quality_score": 50.0,
-                                        },
-                                    }
-                                    _retry_qr = checker.check(_retry_check, quality_context)
-                                    if _retry_qr.passed:
-                                        logger.info(f"QC retry {_qc_retries} PASSED")
-                                        batch_results = _retry_results
+                                _retry_count = 0
+                                _current_batch = batch_results
+                                _current_agents = list(batch_agents)
+                                while _retry_count < _max_retries:
+                                    _retry_count += 1
+                                    _failed = self._identify_failed_agents(_current_batch, checker, _current_agents)
+                                    if not _failed:
                                         break
+                                    logger.info(
+                                        f"Unified retry {_retry_count}/{_max_retries} for batch {batch_index+1}: "
+                                        f"{len(_failed)} agents failed"
+                                    )
+                                    for _fa in _failed:
+                                        if hasattr(_fa["agent"], 'reset'):
+                                            await _fa["agent"].reset()
+                                    self._inject_retry_feedback(_failed, _retry_count)
+                                    _retry_agents = [_fa["agent"] for _fa in _failed]
+                                    _retry_results = await self._execute_agents_batch(
+                                        _retry_agents, requirement, all_results, scheduler,
+                                        f"batch_{batch_index+1}_retry{_retry_count}"
+                                    )
+                                    _current_batch = self._merge_retry_results(_current_batch, _retry_results)
                                 else:
-                                    # All retries exhausted — quality is advisory, not blocking
-                                    # Continue with available results for revision workflow
-                                    # quality_issues already injected on agent results (L1397-1400)
                                     logger.warning(
-                                        f"QC all retries exhausted for batch {batch_index+1}, "
+                                        f"Unified retry exhausted for batch {batch_index+1}, "
                                         f"continuing: {error_msg}"
                                     )
+                                # Always apply merged results whether retry succeeded or exhausted
+                                batch_results = _current_batch
                             else:
                                 logger.info(f"Quality check PASSED for batch {batch_index + 1}: score={quality_result.score:.1f}")
                     except Exception as qe:
@@ -2539,7 +2514,7 @@ class ExecutionEngine:
             agent_result: Agent 执行结果
             
         Returns:
-            质量分数 (0-1)
+            质量分数 (0-100)
         """
         # 尝试多种路径获取质量分数
         quality_score = agent_result.get("quality_score")
@@ -2555,13 +2530,112 @@ class ExecutionEngine:
             if isinstance(content_data, dict):
                 quality_score = content_data.get("quality_score")
         
-        # 默认满分
+        # 默认中等质量
         if quality_score is None:
-            quality_score = 1.0
+            quality_score = 50.0
         
-        # 确保在有效范围内
+        # 确保在有效范围内 (0-100)
         try:
             score = float(quality_score)
-            return max(0.0, min(1.0, score))
+            if 0.0 <= score < 1.0:
+                score = score * 100.0
+            return max(0.0, min(100.0, score))
         except (TypeError, ValueError):
-            return 1.0
+            return 50.0
+
+    def _identify_failed_agents(
+        self,
+        batch_results: List[Dict[str, Any]],
+        checker: Any,
+        batch_agents: List["IAgent"],
+    ) -> List[Dict[str, Any]]:
+        """区分 infrastructure 和 quality 失败，返回失败agent列表
+
+        Returns:
+            list of dict: [
+                {"type": "infrastructure", "reason": "timeout|exception",
+                 "error": str, "partial_output": ..., "agent": IAgent},
+                {"type": "quality", "score": float, "issues": List[str],
+                 "agent": IAgent},
+            ]
+        """
+        agent_map = {a.agent_id: a for a in batch_agents}
+        failed = []
+
+        for r in batch_results:
+            agent = agent_map.get(r.get("agent_id", ""))
+            if not agent:
+                continue
+
+            if not r.get("success"):
+                # infrastructure failure
+                failed.append({
+                    "type": "infrastructure",
+                    "reason": r.get("failure_type", "unknown"),
+                    "error": r.get("error", "Unknown error"),
+                    "partial_output": r.get("partial_output", {}),
+                    "agent": agent,
+                })
+            else:
+                # quality check on successful result
+                try:
+                    combined = r.get("content", "") or r.get("result", "")
+                    check_data = {
+                        "content": combined,
+                        "sources": r.get("sources", []),
+                        "data_points": r.get("data_points", []),
+                    }
+                    qr = checker.check(check_data, {})
+                    if not qr.passed:
+                        failed.append({
+                            "type": "quality",
+                            "score": qr.score,
+                            "issues": qr.issues,
+                            "agent": agent,
+                        })
+                except Exception:
+                    continue
+
+        return failed
+
+    def _inject_retry_feedback(
+        self,
+        failed_agents: List[Dict[str, Any]],
+        retry_count: int,
+    ) -> None:
+        """根据失败类型向 agent._context 注入 feedback"""
+        for fa in failed_agents:
+            agent = fa["agent"]
+            if not hasattr(agent, '_context') or not isinstance(agent._context, dict):
+                continue
+
+            agent._context["retry_attempt"] = retry_count
+
+            if fa["type"] == "infrastructure":
+                agent._context["retry_reason"] = fa["reason"]
+                agent._context["previous_error"] = fa.get("error", "")
+                agent._context["quality_feedback"] = {
+                    "score": 0,
+                    "issues": [f"Agent failed with {fa['reason']}: {fa.get('error', 'unknown')}"],
+                    "previous_attempt": retry_count - 1,
+                }
+            else:
+                agent._context["quality_feedback"] = {
+                    "score": fa["score"],
+                    "issues": fa["issues"][:5],
+                    "previous_attempt": retry_count - 1,
+                }
+
+    def _merge_retry_results(
+        self,
+        batch_results: List[Dict[str, Any]],
+        retry_results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """将重试结果替换到原始 batch 结果中对应位置"""
+        merged = list(batch_results)
+        for rr in retry_results:
+            for i, br in enumerate(merged):
+                if br.get("agent_id") == rr.get("agent_id"):
+                    merged[i] = rr
+                    break
+        return merged

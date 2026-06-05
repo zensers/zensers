@@ -29,7 +29,7 @@ class TestAgentSessionStatus:
     
     def test_status_count(self):
         """测试状态数量"""
-        assert len(AgentSessionStatus) == 5
+        assert len(AgentSessionStatus) == 7
 
 
 class TestSessionOrigin:

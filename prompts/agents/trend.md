@@ -90,3 +90,5 @@ Label ALL trend assertions:
 - **LOW**: Speculative, early weak signals, based on theory without empirical confirmation
 
 {include:language_rule}
+
+{include:quality_rubric}

@@ -213,3 +213,5 @@ When the request contains multiple independent subtasks, identify them and propo
 - "clarification_questions": string[] — questions to ask
 - "identified_aspects": string[] — aspects mentioned by the user
 - "is_composite": boolean — multiple independent subtasks
+
+{include:quality_rubric}

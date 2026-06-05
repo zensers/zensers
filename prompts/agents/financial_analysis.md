@@ -94,3 +94,5 @@ Label ALL financial assertions:
 - **LOW**: Projections beyond 2 years, unaudited supplementary data, industry rule-of-thumb
 
 {include:language_rule}
+
+{include:quality_rubric}

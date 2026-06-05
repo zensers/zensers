@@ -29,7 +29,7 @@ class ContentLockRule:
     target_section: str
     required_sections: List[str]
     lock_type: str = "completion"
-    quality_threshold: float = 0.75
+    quality_threshold: float = 75.0
     lock_reason: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
@@ -44,7 +44,7 @@ class AgentSpec:
     section_ids: List[str]
     priority: int = 0
     parallel_group: int = 0
-    quality_threshold: float = 0.7
+    quality_threshold: float = 75.0
     max_retries: int = 3
     config: Dict[str, Any] = field(default_factory=dict)
     system_prompt: str = ""
@@ -299,7 +299,7 @@ class DynamicPhaseOrchestrator:
                             target_section=sid,
                             required_sections=list(dict.fromkeys(dep_map[sid])),
                             lock_type="completion",
-                            quality_threshold=0.75,  # C-FIX-3: was 0.0, align with ContentDependency default
+                            quality_threshold=75.0,  # C-FIX-3: was 0.0, align with ContentDependency default
                             lock_reason=f"Depends on: {', '.join(dep_map[sid])}"
                         ))
                     # sid not in dep_map → no rules → auto-unlocked by ContentLockManager

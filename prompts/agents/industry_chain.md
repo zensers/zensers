@@ -71,3 +71,5 @@ Label ALL chain analysis assertions:
 - **LOW**: Anecdotal evidence, inferred from aggregate data, speculative projections
 
 {include:language_rule}
+
+{include:quality_rubric}

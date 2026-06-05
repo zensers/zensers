@@ -73,3 +73,5 @@ Label ALL enterprise analysis assertions:
 - **LOW**: Press speculation, anonymous sources, unverified management claims, forward projections beyond 2 years
 
 {include:language_rule}
+
+{include:quality_rubric}

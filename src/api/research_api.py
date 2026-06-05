@@ -28,6 +28,7 @@ import uuid
 import logging
 import os
 import re
+import time
 import traceback
 import shutil
 from datetime import datetime
@@ -2484,6 +2485,7 @@ class ResearchAPI:
                         else:
                             issue["state"] = "revising"
                             issue["revision_count"] = issue.get("revision_count", 0) + 1
+                            issue["revising_since"] = time.time()
             session["quality_state"] = quality_state_data
         
         current_task = asyncio.current_task()
@@ -2856,6 +2858,124 @@ class ResearchAPI:
             session_id = session.get("_session_id", "")
             from src.core.session_streamer import SessionStreamer
             SessionStreamer.push_quality_result(session_id, quality_data)
+
+    async def _post_revision_recheck(self, session):
+        """修订完成后重新质检，合并新旧issue状态"""
+        from src.core.quality.quality_state import merge_issues_on_recheck, QualityIssue, SectionScore
+        from src.core.session_streamer import SessionStreamer
+
+        session_id = session.get("_session_id", "")
+        quality_data = session.get("quality_state", {})
+        if not quality_data:
+            return
+
+        sections = session.get("research_result", {}).get("report", {}).get("sections", [])
+        if not sections:
+            return
+
+        try:
+            recheck_result = await self._recheck_quality(session, sections, push_preview=False)
+            if not recheck_result:
+                return
+
+            existing_sections = {}
+            for sec_name, sec_data in quality_data.get("section_scores", {}).items():
+                issues = []
+                for raw_issue in sec_data.get("issues", []):
+                    if isinstance(raw_issue, QualityIssue):
+                        issues.append(raw_issue)
+                    elif isinstance(raw_issue, dict):
+                        try:
+                            issues.append(QualityIssue(
+                                id=raw_issue.get("id", ""),
+                                type=raw_issue.get("type", "completeness"),
+                                severity=raw_issue.get("severity", "medium"),
+                                message=raw_issue.get("message", ""),
+                                section=raw_issue.get("section", sec_name),
+                                state=raw_issue.get("state", "open"),
+                                revision_count=raw_issue.get("revision_count", 0),
+                            ))
+                        except Exception:
+                            continue
+                existing_sections[sec_name] = SectionScore(
+                    score=sec_data.get("score", 0.0),
+                    status=sec_data.get("status", "warning"),
+                    issues=issues,
+                )
+
+            new_section_results = recheck_result.get("section_results", {})
+            merged = merge_issues_on_recheck(existing_sections, new_section_results)
+
+            merged_dict = {}
+            for sec_name, sec_score in merged.items():
+                merged_dict[sec_name] = {
+                    "score": sec_score.score,
+                    "status": sec_score.status,
+                    "issues": [iss.model_dump() for iss in sec_score.issues],
+                }
+
+            quality_data["section_scores"] = merged_dict
+            quality_data["overall_score"] = recheck_result.get("overall_score", quality_data.get("overall_score", 0))
+            quality_data["overall_status"] = recheck_result.get("overall_status", quality_data.get("overall_status", "warning"))
+            quality_data["phase"] = "reviewing"
+            session["quality_state"] = quality_data
+
+            SessionStreamer.push_quality_result(session_id, quality_data)
+        except Exception as e:
+            logger.warning(f"Post-revision recheck failed: {e}")
+
+    async def _recheck_quality(self, session, sections, push_preview=False):
+        """对指定sections重新执行质检，返回质检结果dict"""
+        from src.agents.fixed_agents.quality_check_agent import QualityCheckAgent
+        from src.core.session_streamer import SessionStreamer
+
+        session_id = session.get("_session_id", "")
+        try:
+            if not hasattr(self, '_quality_checker') or self._quality_checker is None:
+                self._quality_checker = QualityCheckAgent()
+            checker = self._quality_checker
+            check_input = {
+                "session_id": session_id,
+                "sections": sections,
+                "report": session.get("research_result", {}).get("report", {}),
+            }
+            result = await checker.execute(check_input)
+            if not result.get("success"):
+                logger.warning(f"Recheck quality failed: {result.get('error', 'unknown')}")
+                return None
+
+            if push_preview:
+                SessionStreamer.push_quality_result(session_id, result)
+
+            return result
+        except Exception as e:
+            logger.warning(f"Recheck quality exception: {e}")
+            return None
+
+    def _expire_stale_revising_issues(self, session):
+        """将长时间处于revising状态的issue标记为max_retries_reached"""
+        import time
+        quality_data = session.get("quality_state", {})
+        if not quality_data:
+            return
+
+        changed = False
+        now = time.time()
+        stale_threshold = 600
+
+        for sec_name, sec_data in quality_data.get("section_scores", {}).items():
+            for issue in sec_data.get("issues", []):
+                if issue.get("state") == "revising":
+                    revising_since = issue.get("revising_since", 0)
+                    if revising_since and (now - revising_since > stale_threshold):
+                        issue["state"] = "max_retries_reached"
+                        changed = True
+                    elif not revising_since:
+                        issue["state"] = "open"
+                        changed = True
+
+        if changed:
+            session["quality_state"] = quality_data
 
     def _get_quality_lock(self, session_id: str):
         """Get or create quality-specific lock for thread-safe operations"""

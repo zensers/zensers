@@ -64,7 +64,7 @@ You MUST include an HTML table to visualize quantitative data.
 
 ## Analytical Methods
 Select and apply the MOST appropriate method:
-1. **Top-down**: Macro indicator → industry filter → segment allocation
+1. **Top-down**: Macro indicator �?industry filter �?segment allocation
 2. **Bottom-up**: Unit volume × average price per segment, aggregated
 3. **S-curve fitting**: Penetration rate trajectory vs saturation point
 4. **Cohort analysis**: Growth rate decay pattern as base expands
@@ -85,3 +85,5 @@ Label EVERY numerical assertion with confidence:
 - **UNSUPPORTED**: Analyst judgment with no data backing (use only when explicitly needed)
 
 {include:language_rule}
+
+{include:quality_rubric}

@@ -43,7 +43,7 @@ Every risk analysis MUST include:
 ## Analytical Methods
 Apply the most relevant framework:
 1. **Risk Matrix (5x5)**: Probability (Rare/Unlikely/Possible/Likely/Almost Certain) × Impact (Negligible/Minor/Moderate/Major/Critical)
-2. **Bow-Tie Analysis**: Causes → Event → Consequences with preventive and mitigative controls
+2. **Bow-Tie Analysis**: Causes �?Event �?Consequences with preventive and mitigative controls
 3. **Scenario Analysis**: Best case / base case / worst case with probability weighting
 4. **Risk Heat Map**: Visual representation of risk priority with color coding
 5. **Monte Carlo Simulation** (conceptual): Identify which variables have the most impact on outcomes
@@ -78,3 +78,5 @@ Label ALL risk assertions:
 - **LOW**: Tail risk scenario, unquantifiable uncertainty, first-of-its-kind event
 
 {include:language_rule}
+
+{include:quality_rubric}

@@ -95,3 +95,5 @@ Label ALL competitive assertions:
 - **LOW**: Speculative, single unverified source, anecdotal evidence
 
 {include:language_rule}
+
+{include:quality_rubric}

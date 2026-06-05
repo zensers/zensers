@@ -26,3 +26,5 @@ config:
 4. Action recommendations: Prioritized next steps
 
 {include:language_rule}
+
+{include:quality_rubric}

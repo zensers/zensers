@@ -28,3 +28,5 @@ config:
 4. Conclusion presentation: Present findings clearly
 
 {include:language_rule}
+
+{include:quality_rubric}

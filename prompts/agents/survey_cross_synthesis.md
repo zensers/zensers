@@ -46,3 +46,5 @@ Respond in JSON format only:
 }
 
 {include:language_rule}
+
+{include:quality_rubric}

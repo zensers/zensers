@@ -286,7 +286,7 @@ class SurveyResponse:
     
     # Data quality metrics
     duration_seconds: int = 0            # Total duration
-    quality_score: float = 1.0           # Quality score
+    quality_score: float = 50.0           # Quality score
     is_valid: bool = True                # Is valid
     
     # Demographics (if collected)

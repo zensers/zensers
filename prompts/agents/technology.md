@@ -88,3 +88,5 @@ Label ALL technology assertions:
 - **LOW**: Speculative press coverage, unverified claims, early-stage laboratory results
 
 {include:language_rule}
+
+{include:quality_rubric}

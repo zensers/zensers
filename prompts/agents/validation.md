@@ -27,3 +27,5 @@ config:
 5. Supplement recommendations: Data points needing collection
 
 {include:language_rule}
+
+{include:quality_rubric}

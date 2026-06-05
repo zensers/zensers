@@ -26,3 +26,5 @@ config:
 4. Future outlook: Key observation points for the next 6-12 months
 
 {include:language_rule}
+
+{include:quality_rubric}

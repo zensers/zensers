@@ -279,192 +279,164 @@ class AgentCoordinator:
         task: Dict[str, Any],
     ) -> None:
         """
-        带监控的任务执行（支持自动重试）
+        带监控的任务执行（执行一次，不重试，engine统一管理重试）
         
         Args:
             active_task: 活跃任务
             task: 任务数据
         """
         task_id = active_task.task_id
-        max_retries = active_task.options.max_retries
         
-        # 重试循环
-        while True:
-            heartbeat_task = None
+        heartbeat_task = None
+        
+        try:
+            # 更新状态
+            active_task.status = "running"
+            if not active_task.started_at:
+                active_task.started_at = datetime.now()
+            
+            # 更新 Session 状态为 RUNNING
+            self._update_session_status(
+                agent=active_task.agent,
+                status=AgentSessionStatus.RUNNING,
+            )
+            
+            self.progress_tracker.update(
+                task_id=task_id,
+                progress=0.0,
+                status="running",
+            )
+            
+            # 启动心跳发送任务（防止心跳超时）
+            heartbeat_task = asyncio.create_task(
+                self._send_periodic_heartbeats(task_id)
+            )
+            
+            # 执行任务（带超时）
+            timeout = active_task.options.timeout or self.config.default_timeout
             
             try:
-                # 更新状态
-                active_task.status = "running"
-                if not active_task.started_at:
-                    active_task.started_at = datetime.now()
+                # 使用 agent.run() 而非 execute()，确保结果包含标准字段（success, agent_id等）
+                # run() 方法会进行状态管理和结果格式化
+                result = await asyncio.wait_for(
+                    active_task.agent.run(task),
+                    timeout=timeout
+                )
                 
-                # 更新 Session 状态为 RUNNING
+                # 确保结果包含必需字段（双重保险）
+                if result is None:
+                    result = {"success": False, "error": "Agent returned None"}
+                elif not isinstance(result, dict):
+                    result = {"success": True, "result": result}
+                
+                # 确保success字段存在
+                if "success" not in result:
+                    result["success"] = True
+                
+                # 确保result字段存在（验证器要求）
+                if result.get("success") and "result" not in result:
+                    result["result"] = result.get("output", result.get("data", {}))
+                
+                # 成功完成
+                active_task.status = "completed"
+                active_task.result = result
+                active_task.completed_at = datetime.now()
+                
+                # 更新 Session 状态
                 self._update_session_status(
                     agent=active_task.agent,
-                    status=AgentSessionStatus.RUNNING,
+                    status=AgentSessionStatus.COMPLETED,
+                    result=result,
+                )
+                
+                self.progress_tracker.complete(
+                    task_id=task_id,
+                    status="completed",
+                    metadata={"result_type": type(result).__name__},
+                )
+                
+                self._total_completed += 1
+                logger.info(f"Task {task_id} completed successfully")
+                return
+                
+            except asyncio.TimeoutError:
+                error_msg = f"Timeout after {timeout}s"
+                logger.warning(f"Task {task_id} {error_msg}")
+                active_task.status = "failed"
+                active_task.error = error_msg
+                active_task.failure_type = "timeout"
+                active_task.partial_output = active_task.agent._context.get("last_output", "")
+                active_task.completed_at = datetime.now()
+                
+                self._update_session_status(
+                    agent=active_task.agent,
+                    status=AgentSessionStatus.FAILED,
+                    error=error_msg,
+                )
+                
+                self.progress_tracker.fail(
+                    task_id=task_id,
+                    error=error_msg,
+                )
+                
+                self._total_failed += 1
+                logger.error(f"Task {task_id} failed with timeout")
+                return
+                
+            except asyncio.CancelledError:
+                active_task.status = "cancelled"
+                active_task.error = "Task cancelled"
+                active_task.completed_at = datetime.now()
+                
+                self._update_session_status(
+                    agent=active_task.agent,
+                    status=AgentSessionStatus.CANCELLED,
+                    error="Task cancelled",
                 )
                 
                 self.progress_tracker.update(
                     task_id=task_id,
-                    progress=0.0,
-                    status="running",
+                    progress=active_task.result.get("progress", 0.0) if active_task.result else 0.0,
+                    status="cancelled",
                 )
                 
-                # 启动心跳发送任务（防止心跳超时）
-                heartbeat_task = asyncio.create_task(
-                    self._send_periodic_heartbeats(task_id)
-                )
+                logger.info(f"Task {task_id} cancelled")
+                return
                 
-                # 执行任务（带超时）
-                timeout = active_task.options.timeout or self.config.default_timeout
-                
+        except Exception as e:
+            error_msg = str(e)
+            logger.warning(f"Task {task_id} error: {error_msg}")
+            active_task.status = "failed"
+            active_task.error = error_msg
+            active_task.failure_type = "exception"
+            active_task.partial_output = active_task.agent._context.get("last_output", "")
+            active_task.completed_at = datetime.now()
+            
+            self._update_session_status(
+                agent=active_task.agent,
+                status=AgentSessionStatus.FAILED,
+                error=error_msg,
+            )
+            
+            self.progress_tracker.fail(
+                task_id=task_id,
+                error=error_msg,
+            )
+            
+            self._total_failed += 1
+            logger.error(f"Task {task_id} failed with exception")
+            return
+            
+        finally:
+            # 停止心跳发送
+            if heartbeat_task:
+                heartbeat_task.cancel()
                 try:
-                    # 使用 agent.run() 而非 execute()，确保结果包含标准字段（success, agent_id等）
-                    # run() 方法会进行状态管理和结果格式化
-                    result = await asyncio.wait_for(
-                        active_task.agent.run(task),
-                        timeout=timeout
-                    )
-                    
-                    # 确保结果包含必需字段（双重保险）
-                    if result is None:
-                        result = {"success": False, "error": "Agent returned None"}
-                    elif not isinstance(result, dict):
-                        result = {"success": True, "result": result}
-                    
-                    # 确保success字段存在
-                    if "success" not in result:
-                        result["success"] = True
-                    
-                    # 确保result字段存在（验证器要求）
-                    if result.get("success") and "result" not in result:
-                        result["result"] = result.get("output", result.get("data", {}))
-                    
-                    # 成功完成
-                    active_task.status = "completed"
-                    active_task.result = result
-                    active_task.completed_at = datetime.now()
-                    
-                    # 更新 Session 状态
-                    self._update_session_status(
-                        agent=active_task.agent,
-                        status=AgentSessionStatus.COMPLETED,
-                        result=result,
-                    )
-                    
-                    self.progress_tracker.complete(
-                        task_id=task_id,
-                        status="completed",
-                        metadata={"result_type": type(result).__name__},
-                    )
-                    
-                    self._total_completed += 1
-                    logger.info(f"Task {task_id} completed successfully")
-                    return  # 成功完成，退出循环
-                    
-                except asyncio.TimeoutError:
-                    error_msg = f"Timeout after {timeout}s"
-                    logger.warning(f"Task {task_id} {error_msg} (attempt {active_task.retry_count + 1}/{max_retries})")
-                    
-                    # 更新重试计数
-                    active_task.retry_count += 1
-                    
-                    # 检查是否还有重试机会
-                    if active_task.retry_count >= max_retries:
-                        # 重试次数耗尽，记录最终失败
-                        active_task.status = "failed"
-                        active_task.error = error_msg
-                        active_task.completed_at = datetime.now()
-                        
-                        self._update_session_status(
-                            agent=active_task.agent,
-                            status=AgentSessionStatus.FAILED,
-                            error=error_msg,
-                        )
-                        
-                        self.progress_tracker.fail(
-                            task_id=task_id,
-                            error=error_msg,
-                        )
-                        
-                        self._total_failed += 1
-                        logger.error(f"Task {task_id} exhausted all retries")
-                        return  # 退出循环
-                    else:
-                        # 还有重试机会，继续循环
-                        logger.info(f"Task {task_id} will retry (attempt {active_task.retry_count + 1}/{max_retries})")
-                        # RY-FIX-1: reset agent state and update task for retry
-                        if hasattr(active_task.agent, 'reset'):
-                            await active_task.agent.reset()
-                        task["retry_attempt"] = active_task.retry_count
-                        
+                    await heartbeat_task
                 except asyncio.CancelledError:
-                    active_task.status = "cancelled"
-                    active_task.error = "Task cancelled"
-                    active_task.completed_at = datetime.now()
-                    
-                    # 更新 Session 状态
-                    self._update_session_status(
-                        agent=active_task.agent,
-                        status=AgentSessionStatus.CANCELLED,
-                        error="Task cancelled",
-                    )
-                    
-                    self.progress_tracker.update(
-                        task_id=task_id,
-                        progress=active_task.result.get("progress", 0.0) if active_task.result else 0.0,
-                        status="cancelled",
-                    )
-                    
-                    logger.info(f"Task {task_id} cancelled")
-                    return  # 取消不重试
-                    
-            except Exception as e:
-                error_msg = str(e)
-                logger.warning(f"Task {task_id} error: {error_msg} (attempt {active_task.retry_count + 1}/{max_retries})")
-                
-                # 更新重试计数
-                active_task.retry_count += 1
-                
-                # 检查是否还有重试机会
-                if active_task.retry_count >= max_retries:
-                    # 重试次数耗尽，记录最终失败
-                    active_task.status = "failed"
-                    active_task.error = error_msg
-                    active_task.completed_at = datetime.now()
-                    
-                    self._update_session_status(
-                        agent=active_task.agent,
-                        status=AgentSessionStatus.FAILED,
-                        error=error_msg,
-                    )
-                    
-                    self.progress_tracker.fail(
-                        task_id=task_id,
-                        error=error_msg,
-                    )
-                    
-                    self._total_failed += 1
-                    logger.error(f"Task {task_id} exhausted all retries after error")
-                    return  # 退出循环
-                else:
-                    # 还有重试机会，继续循环
-                    logger.info(f"Task {task_id} will retry after error (attempt {active_task.retry_count + 1}/{max_retries})")
-                    # RY-FIX-1: reset agent state and update task for retry
-                    if hasattr(active_task.agent, 'reset'):
-                        await active_task.agent.reset()
-                    task["retry_attempt"] = active_task.retry_count
-                    
-            finally:
-                # 停止心跳发送
-                if heartbeat_task:
-                    heartbeat_task.cancel()
-                    try:
-                        await heartbeat_task
-                    except asyncio.CancelledError:
-                        pass
-                
-                # 停止心跳追踪
+                    pass
+            
+            # 停止心跳追踪
                 self.heartbeat_monitor.stop_tracking(task_id)
     
     async def _send_periodic_heartbeats(self, task_id: str) -> None:
