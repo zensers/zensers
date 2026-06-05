@@ -39,6 +39,95 @@ from .base_fixed_agent import FixedAgent
 from src.core.adjustment import RevisionService
 from src.core.i18n import I18n
 
+# Layer 1: 章节类型分析要素定义
+# 每种章节类型有独立的要素清单，替代硬编码7关键词
+SECTION_ELEMENT_REQUIREMENTS = {
+    "market_size": [
+        {"id": "current_scale", "patterns": [r"\d+\.?\d*\s*(亿|万|千亿)", r"市场规模", r"总量"], "weight": 0.20},
+        {"id": "growth", "patterns": [r"(?:CAGR|增速|增长|增长率|增长速度)"], "weight": 0.15},
+        {"id": "structure", "patterns": [r"(?:其中|占比|份额|segment|拆分|结构)"], "weight": 0.15},
+        {"id": "drivers", "patterns": [r"(?:驱动|拉动|推动|driver|catalyst|因素)"], "weight": 0.15},
+        {"id": "cross_validation", "patterns": [r"(?:交叉|验证|三角|triangulat|另据|对比)"], "weight": 0.15},
+        {"id": "forecast", "patterns": [r"(?:假设|预测|预计|forecast|assumption|展望)"], "weight": 0.10},
+        {"id": "uncertainty", "patterns": [r"(?:不确定|风险|边界|sensitivity|波动|区间)"], "weight": 0.10},
+    ],
+    "competition": [
+        {"id": "market_share", "patterns": [r"(?:市占率|份额|集中度|CR\d|HHI|concentration)"], "weight": 0.20},
+        {"id": "barriers", "patterns": [r"(?:壁垒|门槛|护城河|moat|barrier)"], "weight": 0.15},
+        {"id": "rivalry", "patterns": [r"(?:竞争|对手|rival|五力|five.?force)"], "weight": 0.20},
+        {"id": "positioning", "patterns": [r"(?:定位|差异化|strategy|战略|布局)"], "weight": 0.15},
+        {"id": "substitutes", "patterns": [r"(?:替代|威胁|threat|颠覆)"], "weight": 0.15},
+        {"id": "supplier_power", "patterns": [r"(?:供应商|议价|bargain|上游)"], "weight": 0.15},
+    ],
+    "technology": [
+        {"id": "maturity", "patterns": [r"(?:成熟度|TRL|技术阶段|发展历程|iteration)"], "weight": 0.20},
+        {"id": "trend", "patterns": [r"(?:趋势|方向|前沿|trend|roadmap|路线图)"], "weight": 0.20},
+        {"id": "comparison", "patterns": [r"(?:对比|比较|vs?|versus|替代方案)"], "weight": 0.20},
+        {"id": "ip", "patterns": [r"(?:专利|IP|知识产权|论文|publication)"], "weight": 0.15},
+        {"id": "adoption", "patterns": [r"(?:应用|落地|商业化|adopt|渗透率)"], "weight": 0.15},
+        {"id": "limits", "patterns": [r"(?:局限|瓶颈|挑战|limit|challenge|难题)"], "weight": 0.10},
+    ],
+    "risk": [
+        {"id": "identification", "patterns": [r"(?:风险|risk|威胁|隐患)"], "weight": 0.20},
+        {"id": "probability", "patterns": [r"(?:概率|可能性|likelihood|频率)"], "weight": 0.15},
+        {"id": "impact", "patterns": [r"(?:影响|冲击|损失|impact|severity)"], "weight": 0.20},
+        {"id": "mitigation", "patterns": [r"(?:应对|缓解|对冲|mitigat|控制)"], "weight": 0.20},
+        {"id": "scenario", "patterns": [r"(?:情景|场景|scenario|假设)"], "weight": 0.15},
+        {"id": "monitoring", "patterns": [r"(?:监控|预警|trigger|指标)"], "weight": 0.10},
+    ],
+    "financial_analysis": [
+        {"id": "revenue", "patterns": [r"(?:营收|收入|revenue|销售额)"], "weight": 0.15},
+        {"id": "profitability", "patterns": [r"(?:利润|利润率|净利|毛利|EBIT|margin)"], "weight": 0.20},
+        {"id": "cash_flow", "patterns": [r"(?:现金流|现金流|cash.?flow|营运资金)"], "weight": 0.15},
+        {"id": "leverage", "patterns": [r"(?:负债|杠杆|debt|D/E|偿债)"], "weight": 0.15},
+        {"id": "efficiency", "patterns": [r"(?:周转|效率|turnover|ROA|ROE)"], "weight": 0.15},
+        {"id": "growth_metrics", "patterns": [r"(?:增长|CAGR|增速|复合)"], "weight": 0.10},
+        {"id": "valuation", "patterns": [r"(?:估值|P/E|P/B|EV|折现|DCF)"], "weight": 0.10},
+    ],
+    "policy": [
+        {"id": "regulation", "patterns": [r"(?:政策|法规|regulation|监管|规制)"], "weight": 0.25},
+        {"id": "impact_assessment", "patterns": [r"(?:影响|效果|impact|catalyst|利好)"], "weight": 0.20},
+        {"id": "timeline", "patterns": [r"(?:时间表|实施|生效|阶段|过渡期)"], "weight": 0.15},
+        {"id": "stakeholders", "patterns": [r"(?:利益相关方|stakeholder|主体|参与方)"], "weight": 0.15},
+        {"id": "comparative", "patterns": [r"(?:国际|海外|compar|对比|借鉴)"], "weight": 0.15},
+        {"id": "uncertainty_policy", "patterns": [r"(?:不确定|变数|调整|修订|博弈)"], "weight": 0.10},
+    ],
+    "enterprise": [
+        {"id": "business_model", "patterns": [r"(?:商业模式|business.?model|盈利模式|变现)"], "weight": 0.20},
+        {"id": "competitive_advantage", "patterns": [r"(?:优势|护城河|moat|壁垒|核心竞争力)"], "weight": 0.20},
+        {"id": "financial_health", "patterns": [r"(?:财务|营收|利润|负债|现金流)"], "weight": 0.15},
+        {"id": "strategy", "patterns": [r"(?:战略|strategy|规划|布局|方向)"], "weight": 0.15},
+        {"id": "management", "patterns": [r"(?:管理|团队|管理层|治理|governance)"], "weight": 0.10},
+        {"id": "growth_drivers", "patterns": [r"(?:增长|驱动|catalyst|引擎|扩张)"], "weight": 0.10},
+        {"id": "risks", "patterns": [r"(?:风险|挑战|威胁|不确定)"], "weight": 0.10},
+    ],
+    "industry_chain": [
+        {"id": "chain_structure", "patterns": [r"(?:产业链|价值链|value.?chain|上下游)"], "weight": 0.25},
+        {"id": "value_distribution", "patterns": [r"(?:利润|价值|利润分配|利润池|pool)"], "weight": 0.20},
+        {"id": "bargaining_power", "patterns": [r"(?:议价|bargain|话语权|定价权)"], "weight": 0.20},
+        {"id": "bottlenecks", "patterns": [r"(?:瓶颈|制约|卡脖子|短板)"], "weight": 0.15},
+        {"id": "integration", "patterns": [r"(?:整合|集成|协同|纵向|横向)"], "weight": 0.10},
+        {"id": "ecosystem", "patterns": [r"(?:生态|ecosystem|平台|network)"], "weight": 0.10},
+    ],
+    "trend": [
+        {"id": "historical", "patterns": [r"(?:历史|过去|回顾|变迁|演进)"], "weight": 0.15},
+        {"id": "current_state", "patterns": [r"(?:当前|现状|目前|现有)"], "weight": 0.15},
+        {"id": "driving_forces", "patterns": [r"(?:驱动|推动|force|catalyst|深层)"], "weight": 0.20},
+        {"id": "future_projection", "patterns": [r"(?:预测|展望|forecast|趋势|预计)"], "weight": 0.20},
+        {"id": "signals", "patterns": [r"(?:信号|sign|迹象|early|苗头)"], "weight": 0.15},
+        {"id": "disruption", "patterns": [r"(?:颠覆|变革|disrupt|范式|转折)"], "weight": 0.15},
+    ],
+}
+
+# 通用要素：所有章节类型都应包含的基础分析要素
+GENERIC_ELEMENTS = [
+    {"id": "core_judgment", "patterns": [r"(?:核心判断|结论|观点|看法|我们认为)"], "weight": 0.25},
+    {"id": "logic_chain", "patterns": [r"(?:推导|逻辑|原因|因为|因此|hence)"], "weight": 0.25},
+    {"id": "data_support", "patterns": [r"(?:数据|数据支持|数据来源|据|统计)"], "weight": 0.25},
+    {"id": "counter_evidence", "patterns": [r"(?:反证|反方|反之|however|但|然而)"], "weight": 0.15},
+    {"id": "implication", "patterns": [r"(?:意义|影响|含义|启示|建议)"], "weight": 0.10},
+]
+
 logger = logging.getLogger(__name__)
 
 
@@ -800,26 +889,46 @@ class QualityCheckAgent(FixedAgent):
         
         return issues
 
-    def _calculate_section_score(self, content: str, issues: List[Dict]) -> float:
-        """计算章节质量分数"""
+    def _calculate_section_score(self, content: str, issues: List[Dict],
+                                  section_type: str = "generic") -> float:
+        """Layer 1: 基于分析要素的章节质量评分
+
+        按章节类型评估分析要素完整性，替代原7关键词计数。
+
+        Args:
+            content: 章节内容
+            issues: 已有问题列表
+            section_type: 章节类型 (market_size, competition, 等)
+
+        Returns:
+            0-100 分数
+        """
         import re
-        
-        score = 100.0
-        
-        structure_keywords = ["核心判断", "逻辑推导", "数据支持", "反证", "边界条件", "意义", "影响"]
-        found = sum(1 for kw in structure_keywords if kw in content)
-        structure_ratio = found / len(structure_keywords)
-        if structure_ratio < 0.5:
-            score -= (1 - structure_ratio) * 30
-        
+
+        if not content or len(content.strip()) < 50:
+            return max(0, 30 - sum(1 for i in issues if i.get("severity") == "high") * 10)
+
+        # 选择该章节类型的要素清单
+        elements = SECTION_ELEMENT_REQUIREMENTS.get(section_type, GENERIC_ELEMENTS)
+
+        element_score = 0.0
+        for elem in elements:
+            matched = any(re.search(p, content) for p in elem["patterns"])
+            if matched:
+                element_score += elem["weight"]
+
+        base_score = element_score * 100.0
+
+        # 数据密度奖励（有数字说明有量化分析）
         numbers = re.findall(r'\d+\.?\d*', content)
-        if len(numbers) < 5:
-            score -= 10
-        
+        data_bonus = min(len(numbers) * 2, 10)
+
+        # 问题惩罚
         severity_weights = {"high": 15, "medium": 5, "low": 1}
         penalty = sum(severity_weights.get(i.get("severity", "low"), 1) for i in issues)
-        score -= min(penalty, 40)
-        
+        penalty = min(penalty, 40)
+
+        score = base_score + data_bonus - penalty
         return max(0, min(100, score))
 
     def _generate_summary(self, section_results: Dict, overall_score: float) -> Dict:
@@ -870,33 +979,39 @@ class QualityCheckAgent(FixedAgent):
             "fix_suggestions": fix_suggestions,
         }
 
+    def _detect_section_type(self, section: Dict) -> str:
+        """从 section id/title 推断章节类型"""
+        sid = section.get("id", "")
+        title = section.get("title", "")
+        for known_type in SECTION_ELEMENT_REQUIREMENTS:
+            if known_type in sid.lower() or known_type in title.lower():
+                return known_type
+        return "generic"
+
     async def check_by_sections(self, sections: List[Dict],
                                  session_id: str = "",
                                  research_id: str = "") -> Dict:
-        """分章节质检"""
+        """分章节质检（支持 per-agent 统计）"""
         import re
         section_results = {}
+        agent_stats = {}
         
         for section in sections:
             section_name = section.get("title", "unknown")
             section_content = section.get("content", "")
+            agent_id = section.get("agent_id", "unknown")
+            section_type = self._detect_section_type(section)
             
             if not section_content or len(section_content.strip()) < 50:
                 section_results[section_name] = {
                     "score": 0, "status": "empty", "issues": [],
                 }
+                agent_stats[agent_id] = {
+                    "score": 0, "section": section_name, "status": "empty",
+                }
                 continue
             
             issues = []
-            
-            structure_keywords = ["核心判断", "逻辑推导", "数据支持", "反证", "边界条件", "意义", "影响"]
-            found_structures = sum(1 for kw in structure_keywords if kw in section_content)
-            if found_structures < 2:
-                issues.append({
-                    "type": "completeness",
-                    "severity": "medium",
-                    "message": f"章节结构不完整，缺少分析框架（当前{found_structures}/{len(structure_keywords)}项）",
-                })
             
             numbers = re.findall(r'\d+\.?\d*', section_content)
             if len(numbers) < 3:
@@ -909,12 +1024,13 @@ class QualityCheckAgent(FixedAgent):
             hallucination_issues = self._check_hallucinations(section_content)
             issues.extend(hallucination_issues)
             
-            section_score = self._calculate_section_score(section_content, issues)
+            section_score = self._calculate_section_score(section_content, issues, section_type)
             
             from src.core.quality.quality_state import generate_issue_id
             for issue in issues:
                 issue["id"] = generate_issue_id(section_name, issue.get("type", ""), issue.get("message", ""))
                 issue["section"] = section_name
+                issue["agent_id"] = agent_id
                 if "state" not in issue:
                     issue["state"] = "open"
             
@@ -924,6 +1040,15 @@ class QualityCheckAgent(FixedAgent):
                 "issues": issues,
                 "content_length": len(section_content),
                 "data_points_count": len(numbers),
+                "agent_id": agent_id,
+                "section_type": section_type,
+            }
+            
+            agent_stats[agent_id] = {
+                "score": section_score,
+                "section": section_name,
+                "status": "passed" if section_score >= 60 else "warning",
+                "section_type": section_type,
             }
             
             if session_id:
@@ -980,6 +1105,7 @@ class QualityCheckAgent(FixedAgent):
             "overall_status": "passed" if overall_score >= 60 else "warning",
             "overall_issues": overall_issues,
             "section_results": section_results,
+            "agent_stats": agent_stats,
             "summary": self._generate_summary(section_results, overall_score),
         }
         
