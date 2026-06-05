@@ -1053,8 +1053,10 @@ class CompositeChecker:
     """
     
     def __init__(self, checkers: List[BaseQualityChecker], weights: List[float]):
-        assert checkers and weights, "checkers and weights must be non-empty"
-        assert len(checkers) == len(weights), "checkers and weights must match"
+        if not checkers or not weights:
+            raise ValueError("checkers and weights must be non-empty")
+        if len(checkers) != len(weights):
+            raise ValueError("checkers and weights must match")
         t = sum(weights)
         self.checkers = checkers
         self.weights = [w / t for w in weights]

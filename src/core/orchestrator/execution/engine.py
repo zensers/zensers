@@ -1379,7 +1379,11 @@ class ExecutionEngine:
                                 "content": combined_content,
                                 "sources": all_sources,
                                 "data_points": all_data_points,
-                                "quality_metadata": self._build_quality_metadata(batch_results, all_data_points, all_sources),
+                                 "quality_metadata": {
+                                     "data_volume": len(all_data_points) or len(all_sources),
+                                     "sources": all_sources,
+                                     "quality_score": 50.0,
+                                 },
                             }
                             quality_result = checker.check(
                                 check_data,
@@ -1404,7 +1408,7 @@ class ExecutionEngine:
                                 _current_agents = list(batch_agents)
                                 while _retry_count < _max_retries:
                                     _retry_count += 1
-                                    _failed = self._identify_failed_agents(_current_batch, checker, _current_agents)
+                                    _failed = self._identify_failed_agents(_current_batch, checker, _current_agents, quality_context)
                                     if not _failed:
                                         break
                                     logger.info(
@@ -2548,6 +2552,7 @@ class ExecutionEngine:
         batch_results: List[Dict[str, Any]],
         checker: Any,
         batch_agents: List["IAgent"],
+        quality_context: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         """区分 infrastructure 和 quality 失败，返回失败agent列表
 
@@ -2585,7 +2590,7 @@ class ExecutionEngine:
                         "sources": r.get("sources", []),
                         "data_points": r.get("data_points", []),
                     }
-                    qr = checker.check(check_data, {})
+                    qr = checker.check(check_data, quality_context or {})
                     if not qr.passed:
                         failed.append({
                             "type": "quality",
