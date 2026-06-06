@@ -57,6 +57,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# 读取 quality_rubric.md 文件（模块级缓存，避免重复 IO）
+_RUBRIC_CACHE: str = ""
+
+def _load_quality_rubric() -> str:
+    """读取 quality_rubric.md 文件内容"""
+    global _RUBRIC_CACHE
+    if not _RUBRIC_CACHE:
+        rubric_path = Path(__file__).parent.parent.parent.parent / "prompts" / "_shared" / "quality_rubric.md"
+        if rubric_path.exists():
+            _RUBRIC_CACHE = rubric_path.read_text(encoding="utf-8")
+        else:
+            _RUBRIC_CACHE = ""
+    return _RUBRIC_CACHE
+
 
 class GenericAgent(
     StateManagementMixin,
@@ -488,6 +502,12 @@ class GenericAgent(
                         # Iterative deepening: detect knowledge gaps and supplement
                         if result.get("success") and result.get("content") and skill_registry:
                             gaps = self._detect_knowledge_gaps(result["content"])
+
+                            # 语义级缺口检测（仅在启发式触发后运行）
+                            if gaps:
+                                semantic_gaps = await self._detect_semantic_gaps(result["content"])
+                                gaps.extend(semantic_gaps)
+
                             if gaps:
                                 logger.info(f"GenericAgent {self.agent_id}: detected {len(gaps)} knowledge gaps, performing supplementary search")
                                 supp_result = await self._supplementary_search_for_gaps(
@@ -514,7 +534,14 @@ class GenericAgent(
                                         aggregated_data_points = new_data_points
                                         aggregated_sources = new_sources
                                         logger.info(f"GenericAgent {self.agent_id}: analysis revised with supplementary data")
-                        
+
+                        # 自评: 对生成内容进行质量评估
+                        max_self_eval = self.config.get("max_self_eval_iterations", 0)
+                        if max_self_eval > 0 and result.get("success") and result.get("content"):
+                            content_text = result.get("content", "")
+                            eval_result = await self._self_evaluate(content_text)
+                            result["self_evaluation"] = eval_result
+
                         if result.get("success"):
                             result["data_points"] = aggregated_data_points
                             result["sources"] = aggregated_sources
@@ -1931,7 +1958,66 @@ class GenericAgent(
         
         logger.info(f"Knowledge gap detection: {len(gaps)} gaps found (numbers={number_count}, years={year_refs}, length={len(content)})")
         return gaps
-    
+
+    async def _detect_semantic_gaps(self, content: str) -> List[str]:
+        """
+        使用 LLM 检测语义级别的知识缺口。
+
+        仅在启发式检查已触发缺口后由 execute() 调用（成本控制）。
+
+        检查维度:
+            1. 结构要素完整性: 核心判断/数据支撑/逻辑推导/反证/含义
+            2. 反证/边界条件: 风险/不确定性/替代情景
+
+        Returns:
+            List[str]: 语义缺口描述（最多 2 项）
+        """
+        summary = content[:400]
+
+        prompt = (
+            "分析以下研究内容，检测知识缺口。以 JSON 格式输出。\n\n"
+            "## 检查维度\n"
+            "1. 结构完整性：是否包含核心判断、数据支持、逻辑推导、"
+            "反证分析、投资含义五个要素？\n"
+            "2. 反证覆盖：是否讨论了风险、边界条件、替代情景？\n\n"
+            "## 内容\n"
+            f"{summary}\n\n"
+            "## 输出格式\n"
+            '{"gaps": ["缺口描述1", "缺口描述2"], '
+            '"has_structure": true/false, '
+            '"has_counter_evidence": true/false}'
+        )
+
+        resp = await self._call_llm_directly(
+            prompt=prompt,
+            temperature=0.2,
+        )
+
+        if not resp.get("success"):
+            return []
+
+        result_text = resp.get("content", "")
+
+        import json
+        try:
+            parsed = json.loads(result_text)
+            if isinstance(parsed, dict):
+                gaps = parsed.get("gaps", [])
+                return gaps[:2]
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(1))
+                if isinstance(parsed, dict):
+                    return parsed.get("gaps", [])[:2]
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return []
+
     async def _supplementary_search_for_gaps(
         self,
         topic: str,
@@ -2912,7 +2998,16 @@ class GenericAgent(
 
         methodologies = enrichment.get("methodologies", [])
         if methodologies:
-            base += f"\n\n## 分析框架\n{methodologies[0]['content'][:150]}\n"
+            methodology_summaries = []
+            for i, m in enumerate(methodologies[:3]):
+                content = m.get('content', '')
+                if content:
+                    name = m.get('name') or m.get('methodology_name') or m.get('title') or f'框架{i+1}'
+                    truncated = content[:300]
+                    methodology_summaries.append(f"{i+1}. {name}: {truncated}")
+
+            if methodology_summaries:
+                base += "\n\n## 分析框架\n" + "\n\n".join(methodology_summaries) + "\n"
 
         quality_feedback = getattr(self, '_quality_feedback', {})
         if quality_feedback:
@@ -3316,7 +3411,66 @@ class GenericAgent(
             logger.warning(f"GenericAgent {agent_id}: Output date validation applied {len(corrections)} corrections:\n" + "\n".join(corrections))
         
         return content
-    
+
+    async def _self_evaluate(self, content: str) -> Dict[str, Any]:
+        """
+        对生成的分析内容进行自我质量评估。
+
+        仅在以下条件全部满足时执行:
+            1. quality_rubric.md 文件存在
+            2. 内容长度 > 500 字符
+
+        Returns:
+            {"score": int, "weak_dimensions": List[str], "suggestions": List[str]}
+            或 rubric 不存在/短内容时返回 {"pass": True, "score": 100}
+        """
+        if len(content) < 500:
+            return {"pass": True, "score": 100}
+
+        rubric = _load_quality_rubric()
+        if not rubric:
+            return {"pass": True, "score": 100}
+
+        eval_prompt = (
+            f"请根据以下评分标准对分析内容进行质量评估（0-100 分）。\n\n"
+            f"## 评分标准\n{rubric}\n\n"
+            f"## 分析内容（前 3000 字符）\n{content[:3000]}\n\n"
+            f"请以 JSON 格式输出：\n"
+            f'{{"score": <0-100>, '
+            f'"weak_dimensions": ["维度1", "维度2"], '
+            f'"suggestions": ["改进建议1", "改进建议2"]}}'
+        )
+
+        resp = await self._call_llm_directly(
+            prompt=eval_prompt,
+            temperature=0.2,
+            max_tokens=1000,
+        )
+
+        if not resp.get("success"):
+            return {"pass": True, "score": 100, "llm_error": resp.get("error")}
+
+        result_text = resp.get("content", "")
+
+        import json
+        try:
+            parsed = json.loads(result_text)
+            if isinstance(parsed, dict) and "score" in parsed:
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_text, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(1))
+                if isinstance(parsed, dict) and "score" in parsed:
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        return {"pass": True, "score": 100, "parse_error": True}
+
     @staticmethod
     def _filter_output_contamination(
         output_content: str,

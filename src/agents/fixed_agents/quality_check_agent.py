@@ -149,6 +149,12 @@ class QualityCheckAgent(FixedAgent):
         "Quality scoring",
         "Improvement suggestions",
     ]
+
+    # 融合权重（普通类变量，非 field；便于子类配置覆盖）
+    FUSION_WEIGHTS: Dict[str, float] = {
+        "quality_score": 0.6,
+        "section_overall": 0.4,
+    }
     
     # Default quality standards
     DEFAULT_STANDARDS = {
@@ -172,7 +178,28 @@ class QualityCheckAgent(FixedAgent):
             return False, "Missing required field 'report'"
         
         return True, ""
-    
+
+    def _get_fusion_weights(self) -> Dict[str, float]:
+        """
+        获取融合权重，优先使用 config 中的配置。
+
+        config 格式:
+            config["fusion_weights"] = {"quality_score": 0.5, "section_overall": 0.5}
+        """
+        config_weights = self.config.get("fusion_weights", None)
+
+        if isinstance(config_weights, dict):
+            total = sum(config_weights.values())
+            if abs(total - 1.0) < 0.01:
+                return config_weights
+            else:
+                logger.warning(
+                    f"Fusion weights {config_weights} sum to {total}, "
+                    f"expected 1.0. Using defaults."
+                )
+
+        return dict(self.FUSION_WEIGHTS)
+
     async def execute(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """Execute quality check (async).
         
@@ -259,7 +286,11 @@ class QualityCheckAgent(FixedAgent):
                 
                 section_overall = section_quality.get("overall_score", 0)
                 if section_overall > 0:
-                    quality_score = quality_score * 0.6 + section_overall * 0.4
+                    weights = self._get_fusion_weights()
+                    quality_score = (
+                        quality_score * weights["quality_score"]
+                        + section_overall * weights["section_overall"]
+                    )
             except Exception as e:
                 logger.warning(f"Section-level quality check failed: {e}")
         

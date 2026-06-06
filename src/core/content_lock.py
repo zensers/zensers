@@ -254,6 +254,29 @@ class ContentLockManager:
 
         return self._try_unlock(section_id)
 
+    def _normalize_threshold(self, threshold: float) -> float:
+        """将阈值归一化到 0-100 尺度。
+
+        规则:
+            - 负数 → raise ValueError
+            - (0, 1.0) → warning 提示将自动放大
+            - [0, 1] → 乘以 100（兼容 0-1 尺度旧配置）
+            - > 1 → 原值返回
+        """
+        if threshold < 0:
+            raise ValueError(f"Negative threshold: {threshold}")
+
+        if 0 < threshold < 1.0:
+            logger.warning(
+                f"quality_threshold={threshold} is a fractional value, "
+                f"auto-scaling to {threshold * 100.0:.1f} (0-100 scale)"
+            )
+
+        if 0.0 <= threshold <= 1.0:
+            return threshold * 100.0
+
+        return threshold
+
     def _check_unlock_conditions(self, section_id: str) -> Tuple[bool, str]:
         """
         Check unlock conditions (read-only check, don't modify state)
@@ -285,9 +308,7 @@ class ContentLockManager:
 
                 # Check quality threshold
                 if rule.lock_type in ("quality_threshold", "both"):
-                    threshold_100 = rule.quality_threshold
-                    if threshold_100 <= 1.0:
-                        threshold_100 = threshold_100 * 100.0
+                    threshold_100 = self._normalize_threshold(rule.quality_threshold)
                     if required_status.quality_score < threshold_100:
                         return False, (
                             f"Required section {required_id} quality "
@@ -330,9 +351,7 @@ class ContentLockManager:
 
                 # Check quality threshold
                 if rule.lock_type in ("quality_threshold", "both"):
-                    threshold_100 = rule.quality_threshold
-                    if threshold_100 <= 1.0:
-                        threshold_100 = threshold_100 * 100.0
+                    threshold_100 = self._normalize_threshold(rule.quality_threshold)
                     if required_status.quality_score < threshold_100:
                         return False, (
                             f"Required section {required_id} quality "

@@ -32,7 +32,7 @@ import re
 from abc import ABC, abstractmethod
 from collections import Counter
 from dataclasses import dataclass, field
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Literal
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -49,6 +49,7 @@ class QualityResult:
     suggestions: List[str] = field(default_factory=list) # Improvement suggestions
     details: Dict[str, Any] = field(default_factory=dict) # Detailed info
     checked_at: datetime = field(default_factory=datetime.now)
+    score_scale: Literal["0-1", "0-100"] = "0-100"  # 分数尺度，默认 0-100
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary"""
@@ -61,6 +62,7 @@ class QualityResult:
             "suggestions": self.suggestions,
             "details": self.details,
             "checked_at": self.checked_at.isoformat(),
+            "score_scale": self.score_scale,
         }
 
 

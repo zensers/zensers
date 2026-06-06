@@ -438,7 +438,17 @@ class DynamicAgentFactory(AgentFactory):
                 session = getattr(agent, '_session', None)
                 if session and getattr(session, 'parent_session_id', None) == parent_session_id:
                     agent_ids_to_remove.append(agent_id)
+
             for aid in agent_ids_to_remove:
+                agent_obj = self._agents[aid]
+                # 在删除 agent 前获取 session_id，用于清理持久化文件
+                if self._persistence and hasattr(self._persistence, 'delete_session'):
+                    session_id = getattr(getattr(agent_obj, '_session', None), 'session_id', None)
+                    if session_id:
+                        try:
+                            self._persistence.delete_session(session_id)
+                        except Exception as e:
+                            logger.warning(f"Failed to delete hibernate data for {session_id}: {e}")
                 del self._agents[aid]
             registry.clear()
             del self._session_registries[parent_session_id]

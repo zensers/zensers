@@ -221,7 +221,49 @@ class SessionPersistenceManager:
         }
     
     # === 清理操作 ===
-    
+
+    def delete_session(self, session_id: str) -> bool:
+        """
+        删除指定 session 的持久化文件。
+
+        Args:
+            session_id: Session ID
+
+        Returns:
+            是否成功删除了至少一个文件
+        """
+        deleted = False
+
+        session_path = self.sessions_dir / f"{session_id}.json"
+        if session_path.exists():
+            try:
+                session_path.unlink()
+                logger.debug(f"Deleted hibernate session file: {session_id}")
+                deleted = True
+            except OSError as e:
+                logger.warning(f"Failed to delete session file {session_id}: {e}")
+
+        result_path = self.results_dir / f"{session_id}_result.json"
+        if result_path.exists():
+            try:
+                result_path.unlink()
+                logger.debug(f"Deleted hibernate result file: {session_id}")
+                deleted = True
+            except OSError as e:
+                logger.warning(f"Failed to delete result file {session_id}: {e}")
+
+        legacy_dir = self.results_dir / session_id
+        if legacy_dir.exists():
+            try:
+                import shutil
+                shutil.rmtree(legacy_dir)
+                logger.debug(f"Deleted legacy results dir: {session_id}")
+                deleted = True
+            except OSError as e:
+                logger.warning(f"Failed to delete legacy results {session_id}: {e}")
+
+        return deleted
+
     def cleanup_completed_session(self, parent_session_id: str) -> bool:
         """
         清理已完成的 Session 文件

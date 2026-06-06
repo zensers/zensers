@@ -2538,12 +2538,10 @@ class ExecutionEngine:
         if quality_score is None:
             quality_score = 50.0
         
-        # 确保在有效范围内 (0-100)
+        # 确保在有效范围内 (0-100)，使用统一归一化
         try:
-            score = float(quality_score)
-            if 0.0 <= score < 1.0:
-                score = score * 100.0
-            return max(0.0, min(100.0, score))
+            from src.core.quality.normalizer import normalize_quality_score
+            return normalize_quality_score(float(quality_score), default=50.0)
         except (TypeError, ValueError):
             return 50.0
 
