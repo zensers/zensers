@@ -311,6 +311,7 @@ class DocumentAPI:
         self._adjustment_handler = adjustment_handler
         self._research_result_store = research_result_store
         self._knowledge_deposit_callback = knowledge_deposit_callback
+        self._background_tasks = set()  # prevent GC of fire-and-forget tasks
         
         logger.info(f"DocumentAPI initialized with storage_dir={self.storage_dir}")
     
@@ -599,9 +600,11 @@ class DocumentAPI:
                     with open(cache_path, "r", encoding="utf-8") as _f:
                         _cached = _json.load(_f)
                     import asyncio
-                    asyncio.get_running_loop().create_task(
+                    _task = asyncio.get_running_loop().create_task(
                         self._knowledge_deposit_callback(task_id, _cached)
                     )
+                    self._background_tasks.add(_task)
+                    _task.add_done_callback(self._background_tasks.discard)
                     logger.info(f"[EXPORT] Knowledge deposit scheduled for task_id={task_id}")
                 else:
                     logger.info(f"[EXPORT] No cache file found, skipping knowledge deposit")
