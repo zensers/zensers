@@ -113,17 +113,11 @@ class TestP03ScoreNormalizationE2E:
     """端到端: _extract_quality_score 0-1→0-100 + content_lock 兼容"""
 
     def test_extract_score_0_1_range_auto_scales(self):
-        sys_modules = {}
-        engine_path = SRC_ROOT / "core" / "orchestrator" / "execution" / "engine.py"
-        content = engine_path.read_text(encoding="utf-8")
-
-        lines = content.split("\n")
-        found_auto_scale = False
-        for line in lines:
-            if "0.0 <= score < 1.0" in line and "score * 100.0" in content:
-                found_auto_scale = True
-                break
-        assert found_auto_scale, "Auto-scale 0-1 → 0-100 not found"
+        """normalizer.py 中的 0-1→0-100 自动放大逻辑"""
+        normalizer_path = SRC_ROOT / "core" / "quality" / "normalizer.py"
+        content = normalizer_path.read_text(encoding="utf-8")
+        assert "0.0 <= score < 1.0" in content, "Normalizer should detect 0-1 range"
+        assert "score * 100.0" in content, "Normalizer should auto-scale 0-1 → 0-100"
 
     def test_extract_score_default_is_50(self):
         engine_path = SRC_ROOT / "core" / "orchestrator" / "execution" / "engine.py"
@@ -138,7 +132,7 @@ class TestP03ScoreNormalizationE2E:
     def test_content_lock_auto_scales_legacy_threshold(self):
         lock_path = SRC_ROOT / "core" / "content_lock.py"
         content = lock_path.read_text(encoding="utf-8")
-        assert "threshold_100 <= 1.0" in content, "content_lock should auto-scale legacy 0-1 thresholds"
+        assert "0.0 <= threshold <= 1.0" in content, "content_lock should auto-scale legacy 0-1 thresholds (via _normalize_threshold)"
 
     @pytest.mark.asyncio
     async def test_content_lock_mark_completed_with_0_100_score(self):
@@ -153,10 +147,12 @@ class TestP03ScoreNormalizationE2E:
     async def test_content_lock_rejects_score_above_100(self):
         from src.core.dynamic_orchestrator import ExecutionPlan
         from src.core.content_lock import ContentLockManager
+        from src.core.task_structure import TaskStructure
 
+        ts = TaskStructure(task_id="test", topic="test", sections=[])
         plan = ExecutionPlan(
             plan_id="test_plan",
-            task_structure=[],
+            task_structure=ts,
             phases=[],
             content_lock_rules=[],
         )
@@ -165,10 +161,10 @@ class TestP03ScoreNormalizationE2E:
             manager.mark_completed("section_1", quality_score=101.0)
 
     def test_content_lock_score_1_is_not_auto_scaled(self):
-        """score=1.0 (1/100) should NOT be auto-scaled to 100 in engine"""
-        engine_path = SRC_ROOT / "core" / "orchestrator" / "execution" / "engine.py"
-        content = engine_path.read_text(encoding="utf-8")
-        assert "0.0 <= score < 1.0" in content, "Engine should use < 1.0 (not <= 1.0) for auto-scale"
+        """score=1.0 (1/100) should NOT be auto-scaled to 100 in normalizer"""
+        normalizer_path = SRC_ROOT / "core" / "quality" / "normalizer.py"
+        content = normalizer_path.read_text(encoding="utf-8")
+        assert "0.0 <= score < 1.0" in content, "Normalizer should use < 1.0 (not <= 1.0) for auto-scale"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -179,9 +175,10 @@ class TestP04CoordinatorRetryE2E:
     """端到端: coordinator 在重试时注入 retry_attempt 到 agent._context"""
 
     def test_coordinator_injects_retry_attempt(self):
-        coord_path = SRC_ROOT / "core" / "orchestrator" / "execution" / "coordinator" / "agent_coordinator.py"
-        content = coord_path.read_text(encoding="utf-8")
-        assert 'active_task.agent._context["retry_attempt"]' in content
+        """engine.py (v9.3 重构后) 中的 retry_attempt 注入"""
+        engine_path = SRC_ROOT / "core" / "orchestrator" / "execution" / "engine.py"
+        content = engine_path.read_text(encoding="utf-8")
+        assert 'agent._context["retry_attempt"]' in content
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -395,14 +392,15 @@ class TestCrossFixIntegration:
     """交叉验证: 修复间的协同和一致性"""
 
     def test_score_range_consistent_across_engine_and_lock(self):
-        """engine 输出的 0-100 分数与 content_lock 的 0-100 输入一致"""
-        engine_path = SRC_ROOT / "core" / "orchestrator" / "execution" / "engine.py"
+        """engine/normalizer 输出的 0-100 分数与 content_lock 的 0-100 输入一致"""
+        normalizer_path = SRC_ROOT / "core" / "quality" / "normalizer.py"
         lock_path = SRC_ROOT / "core" / "content_lock.py"
 
-        engine_content = engine_path.read_text(encoding="utf-8")
+        normalizer_content = normalizer_path.read_text(encoding="utf-8")
         lock_content = lock_path.read_text(encoding="utf-8")
 
-        assert "min(100.0" in engine_content, "Engine clamps to 100"
+        # normalizer.py 中 normalize_quality_score 做 max(0.0, min(100.0, ...))
+        assert "max(0.0, min(100.0" in normalizer_content, "normalizer clamps to [0, 100]"
         assert "100.0" in lock_content, "Lock accepts up to 100"
 
     def test_quality_result_issues_type_matches_injection(self):
@@ -416,7 +414,7 @@ class TestCrossFixIntegration:
         agent_content = agent_path.read_text(encoding="utf-8")
 
         assert "issues: List[str]" in checkers_content, "QualityResult.issues is List[str]"
-        assert "quality_result.issues[:5]" in engine_content, "Engine injects issues[:5]"
+        assert "quality_result.issues[:3]" in engine_content, "Engine injects issues[:3]"
         assert "for issue in fb_issues[:3]" in agent_content, "Agent iterates issues[:3]"
 
     def test_revising_since_timestamp_flow(self):

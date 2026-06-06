@@ -1696,11 +1696,13 @@ class ExecutionEngine:
         
         # Analysis phase: results have substantial content with analysis
         if has_content:
-            # G3-FIX-1: wrap with CompositeChecker + LLMJudgeChecker for semantic evaluation
+            # Track B: three-layer semantic scoring (L1+L2+L3), fallback to analysis_checker
             try:
-                from src.core.quality.llm_judge import LLMJudgeChecker
-                from src.core.quality.checkers import CompositeChecker
-                return CompositeChecker([self.analysis_checker, LLMJudgeChecker(threshold=75.0)], [0.7, 0.3])
+                from src.core.quality.semantic_adapter import SemanticQualityAdapter
+                return SemanticQualityAdapter(
+                    threshold=75.0,
+                    fallback_checker=self.analysis_checker,
+                )
             except ImportError:
                 return self.analysis_checker
         

@@ -23,10 +23,13 @@ __all__ = ["EntityExtractor"]
 import logging
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, Any, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+_DICT_PATH = Path(__file__).resolve().parents[4] / "data" / "knowledge" / "methodology" / "entity_dictionary.yaml"
 
 
 @dataclass
@@ -97,6 +100,16 @@ class EntityExtractor:
         # 初始化正则模式
         self._init_patterns()
         
+        # 加载外部词典（合并到已知列表）
+        self._dict_companies: List[str] = []
+        self._dict_persons: List[str] = []
+        self._dict_products: List[str] = []
+        self._dict_metrics: List[str] = []
+        self._dict_aliases: Dict[str, str] = dict(self.COMPANY_ALIASES)
+        
+        dict_path = self.config.get("dictionary_path", str(_DICT_PATH))
+        self._load_dictionary(dict_path)
+        
         logger.info(f"EntityExtractor initialized with config: {self.config.keys()}")
     
     def _init_patterns(self):
@@ -130,6 +143,61 @@ class EntityExtractor:
         self.metric_re = re.compile(
             rf'([\u4e00-\u9fa5]{{2,6}}(?:{metric_pattern}))'
         )
+    
+    def _load_dictionary(self, path: str):
+        """从 YAML 词典加载实体，合并到已知列表"""
+        try:
+            import yaml
+            p = Path(path)
+            if not p.exists():
+                logger.debug(f"Dictionary file not found: {path}")
+                return
+            with open(p, "r", encoding="utf-8") as f:
+                data = yaml.safe_load(f)
+            if not data:
+                return
+            for entry in data.get("companies", []):
+                name = entry.get("name", "")
+                if name and name not in self._dict_companies:
+                    self._dict_companies.append(name)
+                for alias in entry.get("aliases", []):
+                    if alias and alias not in self._dict_aliases:
+                        self._dict_aliases[alias] = name
+            for entry in data.get("persons", []):
+                name = entry.get("name", "")
+                if name and name not in self._dict_persons:
+                    self._dict_persons.append(name)
+                for alias in entry.get("aliases", []):
+                    if alias and alias not in self._dict_persons:
+                        self._dict_persons.append(alias)
+                    if alias and alias not in self._dict_aliases:
+                        self._dict_aliases[alias] = name
+            for entry in data.get("products", []):
+                name = entry.get("name", "")
+                if name and name not in self._dict_products:
+                    self._dict_products.append(name)
+                for alias in entry.get("aliases", []):
+                    if alias and alias not in self._dict_products:
+                        self._dict_products.append(alias)
+                    if alias and alias not in self._dict_aliases:
+                        self._dict_aliases[alias] = name
+            for entry in data.get("metrics", []):
+                name = entry.get("name", "")
+                if name and name not in self._dict_metrics:
+                    self._dict_metrics.append(name)
+                for alias in entry.get("aliases", []):
+                    if alias and alias not in self._dict_metrics:
+                        self._dict_metrics.append(alias)
+                    if alias and alias not in self._dict_aliases:
+                        self._dict_aliases[alias] = name
+            logger.info(
+                f"Loaded dictionary: {len(self._dict_companies)} companies, "
+                f"{len(self._dict_persons)} persons, "
+                f"{len(self._dict_products)} products, "
+                f"{len(self._dict_metrics)} metrics"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to load dictionary {path}: {e}")
     
     # ========== 主接口 ==========
     
@@ -201,8 +269,8 @@ class EntityExtractor:
             )
             entities.append(entity)
         
-        # 已知公司名称（硬编码）
-        known_companies = ["宁德时代", "比亚迪", "特斯拉", "CATL", "BYD", "Tesla"]
+        # 已知公司名称（字典 + 硬编码后备）
+        known_companies = list(set(self._dict_companies + ["宁德时代", "比亚迪", "特斯拉", "CATL", "BYD", "Tesla"]))
         for company in known_companies:
             if company in text:
                 # 检查是否已经提取
@@ -210,8 +278,8 @@ class EntityExtractor:
                     pos = text.find(company)
                     entity = self._create_entity(
                         entity_type="company",
-                        name=self.COMPANY_ALIASES.get(company, company),
-                        aliases=[company] if company != self.COMPANY_ALIASES.get(company, company) else [],
+                        name=self._dict_aliases.get(company, company),
+                        aliases=[company] if company != self._dict_aliases.get(company, company) else [],
                         position=(pos, pos + len(company)),
                         context=self._get_context(text, pos, pos + len(company)),
                         source=source,
@@ -229,8 +297,8 @@ class EntityExtractor:
         """提取人物实体"""
         entities = []
         
-        # 已知人物名称
-        known_persons = ["马斯克", "王传福", "曾毓群"]
+        # 已知人物名称（字典 + 硬编码后备）
+        known_persons = list(set(self._dict_persons + ["马斯克", "王传福", "曾毓群"]))
         for person in known_persons:
             if person in text:
                 pos = text.find(person)
@@ -274,8 +342,8 @@ class EntityExtractor:
         """提取产品实体"""
         entities = []
         
-        # 已知产品名称
-        known_products = ["Model 3", "Model Y", "刀片电池", "麒麟电池"]
+        # 已知产品名称（字典 + 硬编码后备）
+        known_products = list(set(self._dict_products + ["Model 3", "Model Y", "刀片电池", "麒麟电池"]))
         for product in known_products:
             if product in text:
                 pos = text.find(product)
@@ -299,8 +367,8 @@ class EntityExtractor:
         """提取指标实体"""
         entities = []
         
-        # 常见指标
-        known_metrics = ["市场份额", "营收", "利润", "增长率", "市值", "估值"]
+        # 常见指标（字典 + 硬编码后备）
+        known_metrics = list(set(self._dict_metrics + ["市场份额", "营收", "利润", "增长率", "市值", "估值"]))
         for metric in known_metrics:
             if metric in text:
                 pos = text.find(metric)
@@ -378,31 +446,32 @@ class EntityExtractor:
         return text[context_start:context_end]
     
     def _deduplicate(self, entities: List[Entity]) -> List[Entity]:
-        """去重与合并实体"""
-        # 按名称分组
-        name_to_entity: Dict[str, Entity] = {}
+        """去重与合并实体 — 按 (normalized_name, entity_type) 分组"""
+        key_to_entity: Dict[Tuple[str, str], Entity] = {}
         
         for entity in entities:
-            # 标准化名称
-            normalized_name = self.COMPANY_ALIASES.get(entity.name, entity.name)
+            normalized_name = self._dict_aliases.get(entity.name, entity.name)
+            key = (normalized_name, entity.entity_type)
             
-            if normalized_name in name_to_entity:
-                # 合并
-                existing = name_to_entity[normalized_name]
+            if key in key_to_entity:
+                existing = key_to_entity[key]
                 existing.mention_count += 1
-                # 添加别名
                 if entity.name != normalized_name and entity.name not in existing.aliases:
                     existing.aliases.append(entity.name)
-                # 取最高置信度
                 existing.confidence = max(existing.confidence, entity.confidence)
             else:
-                # 新实体
                 if entity.name != normalized_name:
                     entity.aliases.append(entity.name)
                     entity.name = normalized_name
-                name_to_entity[normalized_name] = entity
+                key_to_entity[key] = entity
         
-        return list(name_to_entity.values())
+        # 跨类型冲突：同一名称多种类型时，保留置信度最高的
+        name_best: Dict[str, Entity] = {}
+        for (name, etype), entity in key_to_entity.items():
+            if name not in name_best or entity.confidence > name_best[name].confidence:
+                name_best[name] = entity
+        
+        return list(name_best.values())
     
     def _entity_to_dict(self, entity: Entity) -> Dict[str, Any]:
         """将实体转换为字典"""

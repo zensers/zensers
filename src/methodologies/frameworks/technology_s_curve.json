@@ -3,5 +3,13 @@
   "name": "技术S曲线分析",
   "priority": 4,
   "aspects": ["technology", "technology_analysis", "trend"],
-  "content": "请按S曲线框架分析技术演进:\n1. 当前性能: 技术当前性能指标 vs 理论极限\n2. 拐点识别: 技术性能增速变化的转折点\n3. 替代时机: 新技术超越现有技术的预计时间点\n4. 渗透率: 当前市场渗透率及扩散轨迹\n5. 投资决策: 基于S曲线位置的研发投资建议"
+  "content": "请按S曲线框架分析技术演进:\n1. 当前性能: 技术当前性能指标 vs 理论极限\n2. 拐点识别: 技术性能增速变化的转折点\n3. 替代时机: 新技术超越现有技术的预计时间点\n4. 渗透率: 当前市场渗透率及扩散轨迹\n5. 投资决策: 基于S曲线位置的研发投资建议",
+  "components": [
+    {"id": "current_performance", "name": "当前性能评估", "description": "技术当前性能指标与理论极限的对比", "keywords": ["性能", "效率", "指标", "极限", "天花板"]},
+    {"id": "inflection_point", "name": "拐点识别", "description": "技术性能增速变化的转折点分析", "keywords": ["拐点", "增速", "转折", "加速", "放缓"]},
+    {"id": "substitution_timing", "name": "替代时机判断", "description": "新技术超越现有技术的预计时间", "keywords": ["替代", "超越", "技术路线", "时间点", "里程碑"]},
+    {"id": "penetration_trajectory", "name": "渗透率轨迹", "description": "当前市场渗透率及扩散路径", "keywords": ["渗透率", "扩散", "采纳率", "普及", "市场接受"]},
+    {"id": "investment_implication", "name": "投资决策建议", "description": "基于S曲线位置的研发投资建议", "keywords": ["投资", "研发", "建议", "策略", "资源配置"]}
+  ],
+  "evidence_required": ["技术性能参数数据", "历史技术演进数据", "市场渗透率数据", "竞品技术对比数据"]
 }

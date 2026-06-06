@@ -3,5 +3,13 @@
   "name": "波特五力分析",
   "priority": 1,
   "aspects": ["competitive_landscape", "market_structure", "industry_analysis"],
-  "content": "请按以下五个维度分析:\n1. 现有企业间的竞争强度\n2. 潜在进入者的威胁\n3. 替代品的威胁\n4. 供应商的议价能力\n5. 购买者的议价能力"
+  "content": "请按以下五个维度分析:\n1. 现有企业间的竞争强度\n2. 潜在进入者的威胁\n3. 替代品的威胁\n4. 供应商的议价能力\n5. 购买者的议价能力",
+  "components": [
+    {"id": "rivalry_intensity", "name": "现有竞争者竞争强度", "description": "行业内现有企业间的竞争态势和激烈程度", "keywords": ["竞争", "价格战", "市场份额", "CR", "HHI", "集中度"]},
+    {"id": "new_entrant_threat", "name": "新进入者威胁", "description": "潜在进入者进入行业的壁垒和可能性", "keywords": ["壁垒", "进入门槛", "护城河", "资本要求", "牌照"]},
+    {"id": "substitute_threat", "name": "替代品威胁", "description": "替代产品或服务对本行业的威胁", "keywords": ["替代", "替代品", "转换成本", "替代方案"]},
+    {"id": "supplier_power", "name": "供应商议价能力", "description": "上游供应商的谈判筹码和影响", "keywords": ["供应商", "上游", "议价", "供应集中度", "原材料"]},
+    {"id": "buyer_power", "name": "购买者议价能力", "description": "下游客户的谈判筹码和影响", "keywords": ["客户", "下游", "购买者", "议价", "集中度"]}
+  ],
+  "evidence_required": ["行业竞争格局数据", "企业市场份额数据", "进入壁垒案例", "供应链结构信息"]
 }

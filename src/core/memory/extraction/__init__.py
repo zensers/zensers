@@ -16,11 +16,13 @@ from .relation_extractor import RelationExtractor
 from .fact_verifier import FactVerifier
 from .knowledge_normalizer import KnowledgeNormalizer
 from .knowledge_extractor import KnowledgeExtractor
+from .llm_entity_extractor import LLMEntityExtractor
 
 __all__ = [
     "EntityExtractor",
     "RelationExtractor",
     "FactVerifier",
     "KnowledgeNormalizer",
-    "KnowledgeExtractor"
+    "KnowledgeExtractor",
+    "LLMEntityExtractor"
 ]

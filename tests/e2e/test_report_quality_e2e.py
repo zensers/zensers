@@ -357,8 +357,9 @@ class TestQualityMetrics:
         # 验证分数范围
         assert 0 <= result["quality_score"] <= 100
         
-        # 验证通过状态
-        if result["quality_score"] >= 70 and len(result["issues"]) == 0:
+        # 验证 passed 为布尔值且与分数一致
+        assert isinstance(result["passed"], bool)
+        if result["quality_score"] >= 70:
             assert result["passed"] is True
         else:
             assert result["passed"] is False
