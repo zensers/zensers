@@ -899,16 +899,6 @@ class ResearchOrchestrator:
                     data["survey_responses_count"] = survey_result.get(
                         "responses_count", 0)
 
-            # 7/7.5 Compile + deposit knowledge (delegated to _phase5_deposit_knowledge)
-            try:
-                await self._phase5_deposit_knowledge(
-                    aggregated_dict=aggregated.to_dict(),
-                    task_id=task_id,
-                    topic=requirement.topic,
-                )
-            except Exception as knowledge_err:
-                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
-
             # 7.6 Canonical data validation gate (hard check after aggregation)
             try:
                 from src.core.data.canonical_registry import CanonicalDataRegistry
@@ -1106,6 +1096,16 @@ class ResearchOrchestrator:
             if quality_result and isinstance(quality_result, dict):
                 quality_score_val = quality_result.get("quality_score", 0)
                 quality_issues_list = quality_result.get("issues", [])[:10]
+
+            # 7/7.5 Knowledge deposit (AFTER report generation, non-blocking)
+            try:
+                await self._phase5_deposit_knowledge(
+                    aggregated_dict=aggregated.to_dict(),
+                    task_id=task_id,
+                    topic=requirement.topic,
+                )
+            except Exception as knowledge_err:
+                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
 
             return ResearchResult(
                 task_id=task_id,
@@ -1831,17 +1831,6 @@ class ResearchOrchestrator:
                     data["survey_responses_count"] = survey_result.get("responses_count", 0)
                     logger.info(f"[{task_id}] Survey data injected into aggregated result")
 
-            # 7/7.5 Compile + deposit knowledge (delegated to _phase5_deposit_knowledge)
-            try:
-                await self._phase5_deposit_knowledge(
-                    aggregated_dict=aggregated_dict,
-                    task_id=task_id,
-                    topic=requirement.topic,
-                    session_id=getattr(requirement, 'session_id', None),
-                )
-            except Exception as knowledge_err:
-                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
-
             # 7.6 Canonical data validation gate (hard check, same as research() path)
             try:
                 from src.core.data.canonical_registry import CanonicalDataRegistry
@@ -2101,6 +2090,17 @@ class ResearchOrchestrator:
                     )
                 except Exception as e:
                     logger.warning(f"[{task_id}] Failed to record wisdom: {e}")
+
+            # 7/7.5 Knowledge deposit (AFTER report generation, non-blocking)
+            try:
+                await self._phase5_deposit_knowledge(
+                    aggregated_dict=aggregated_dict,
+                    task_id=task_id,
+                    topic=requirement.topic,
+                    session_id=getattr(requirement, 'session_id', None),
+                )
+            except Exception as knowledge_err:
+                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
 
             return ResearchResult(
                 task_id=task_id,
