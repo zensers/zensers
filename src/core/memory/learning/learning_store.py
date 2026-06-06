@@ -211,11 +211,9 @@ class LearningStore(SQLiteStore[LearningRecord]):
         return f"{category}.{content_hash}"
     
     def generate_learning_id(self) -> str:
-        """生成学习ID"""
-        timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-        import random
-        random_suffix = random.randint(1000, 9999)
-        return f"LRN-{timestamp}-{random_suffix}"
+        """生成学习ID（uuid4，122 bit 熵，实际零碰撞）"""
+        import uuid
+        return f"LRN-{uuid.uuid4().hex[:16]}"
     
     # Note: Uses custom INSERT logic for special deduplication behavior.
     # Does not use inherited SQLiteStore.add() method.
