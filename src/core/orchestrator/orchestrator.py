@@ -900,11 +900,14 @@ class ResearchOrchestrator:
                         "responses_count", 0)
 
             # 7/7.5 Compile + deposit knowledge (delegated to _phase5_deposit_knowledge)
-            await self._phase5_deposit_knowledge(
-                aggregated_dict=aggregated.to_dict(),
-                task_id=task_id,
-                topic=requirement.topic,
-            )
+            try:
+                await self._phase5_deposit_knowledge(
+                    aggregated_dict=aggregated.to_dict(),
+                    task_id=task_id,
+                    topic=requirement.topic,
+                )
+            except Exception as knowledge_err:
+                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
 
             # 7.6 Canonical data validation gate (hard check after aggregation)
             try:
@@ -1829,12 +1832,15 @@ class ResearchOrchestrator:
                     logger.info(f"[{task_id}] Survey data injected into aggregated result")
 
             # 7/7.5 Compile + deposit knowledge (delegated to _phase5_deposit_knowledge)
-            await self._phase5_deposit_knowledge(
-                aggregated_dict=aggregated_dict,
-                task_id=task_id,
-                topic=requirement.topic,
-                session_id=getattr(requirement, 'session_id', None),
-            )
+            try:
+                await self._phase5_deposit_knowledge(
+                    aggregated_dict=aggregated_dict,
+                    task_id=task_id,
+                    topic=requirement.topic,
+                    session_id=getattr(requirement, 'session_id', None),
+                )
+            except Exception as knowledge_err:
+                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
 
             # 7.6 Canonical data validation gate (hard check, same as research() path)
             try:
