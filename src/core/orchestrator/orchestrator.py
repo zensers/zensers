@@ -1097,16 +1097,6 @@ class ResearchOrchestrator:
                 quality_score_val = quality_result.get("quality_score", 0)
                 quality_issues_list = quality_result.get("issues", [])[:10]
 
-            # 7/7.5 Knowledge deposit (AFTER report generation, non-blocking)
-            try:
-                await self._phase5_deposit_knowledge(
-                    aggregated_dict=aggregated.to_dict(),
-                    task_id=task_id,
-                    topic=requirement.topic,
-                )
-            except Exception as knowledge_err:
-                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
-
             return ResearchResult(
                 task_id=task_id,
                 status=result_status,
@@ -2090,17 +2080,6 @@ class ResearchOrchestrator:
                     )
                 except Exception as e:
                     logger.warning(f"[{task_id}] Failed to record wisdom: {e}")
-
-            # 7/7.5 Knowledge deposit (AFTER report generation, non-blocking)
-            try:
-                await self._phase5_deposit_knowledge(
-                    aggregated_dict=aggregated_dict,
-                    task_id=task_id,
-                    topic=requirement.topic,
-                    session_id=getattr(requirement, 'session_id', None),
-                )
-            except Exception as knowledge_err:
-                logger.warning(f"[{task_id}] Knowledge deposit failed (non-fatal): {knowledge_err}")
 
             return ResearchResult(
                 task_id=task_id,

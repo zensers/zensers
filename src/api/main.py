@@ -766,7 +766,21 @@ async def llm_health():
 
 # ============ Document API ============
 from src.api.document_api import DocumentAPI, DocumentAPIRouter
-document_api = DocumentAPI()
+
+async def _knowledge_deposit_callback(task_id, aggregated_dict):
+    """Post-export knowledge deposit — triggered after user downloads final report"""
+    try:
+        topic = aggregated_dict.get("topic", task_id)
+        await _research_orchestrator._phase5_deposit_knowledge(
+            aggregated_dict=aggregated_dict,
+            task_id=task_id,
+            topic=topic,
+        )
+        logger.info(f"[EXPORT] Knowledge deposit completed for {task_id}")
+    except Exception as e:
+        logger.warning(f"[EXPORT] Knowledge deposit failed for {task_id}: {e}")
+
+document_api = DocumentAPI(knowledge_deposit_callback=_knowledge_deposit_callback)
 document_router = DocumentAPIRouter(document_api).get_router()
 if document_router:
     app.include_router(document_router, prefix="/api/v1")

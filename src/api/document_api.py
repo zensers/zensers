@@ -286,7 +286,8 @@ class DocumentAPI:
         export_manager = None,
         preview_generator = None,
         adjustment_handler = None,
-        research_result_store = None
+        research_result_store = None,
+        knowledge_deposit_callback = None,
     ):
         """
         Initialize API
@@ -298,6 +299,7 @@ class DocumentAPI:
             preview_generator: Preview generator instance
             adjustment_handler: Adjustment handler instance
             research_result_store: Research result store instance
+            knowledge_deposit_callback: async callable(task_id, aggregated_dict) for post-export knowledge deposit
         """
         self.storage_dir = Path(storage_dir) if storage_dir else Path("./data/documents")
         self.storage_dir.mkdir(parents=True, exist_ok=True)
@@ -308,6 +310,7 @@ class DocumentAPI:
         self._preview_generator = preview_generator
         self._adjustment_handler = adjustment_handler
         self._research_result_store = research_result_store
+        self._knowledge_deposit_callback = knowledge_deposit_callback
         
         logger.info(f"DocumentAPI initialized with storage_dir={self.storage_dir}")
     
@@ -584,6 +587,26 @@ class DocumentAPI:
         logger.info(f"[EXPORT] Download URL: /api/v1/download/{task_id}")
         logger.info(f"[EXPORT] File name: {task_id}_report.docx")
         logger.info(f"[EXPORT] File size: {result.file_size}")
+        
+        # Post-export: trigger knowledge deposit (non-blocking)
+        if self._knowledge_deposit_callback:
+            try:
+                import json as _json
+                cache_path = Path("data") / task_id / "research_result_cache.json"
+                if not cache_path.exists():
+                    cache_path = Path("data/reports") / task_id / "research_result_cache.json"
+                if cache_path.exists():
+                    with open(cache_path, "r", encoding="utf-8") as _f:
+                        _cached = _json.load(_f)
+                    import asyncio
+                    asyncio.get_running_loop().create_task(
+                        self._knowledge_deposit_callback(task_id, _cached)
+                    )
+                    logger.info(f"[EXPORT] Knowledge deposit scheduled for task_id={task_id}")
+                else:
+                    logger.info(f"[EXPORT] No cache file found, skipping knowledge deposit")
+            except Exception as _kd_err:
+                logger.warning(f"[EXPORT] Knowledge deposit scheduling failed: {_kd_err}")
         
         return {
             "status": "success",
