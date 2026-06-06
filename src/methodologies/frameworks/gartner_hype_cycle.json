@@ -1,0 +1,7 @@
+{
+  "id": "gartner_hype_cycle",
+  "name": "Gartner Hype Cycle",
+  "priority": 2,
+  "aspects": ["technology", "technology_analysis", "trend"],
+  "content": "请按Gartner Hype Cycle五个阶段分析:\n1. Innovation Trigger: 技术突破或产品发布引起关注\n2. Peak of Expectations: 过度乐观，期望达到顶峰\n3. Trough of Disillusionment: 技术未能满足预期，兴趣降温\n4. Slope of Enlightenment: 最佳实践出现，技术实用化\n5. Plateau of Productivity: 主流采用，市场价值明确"
+}

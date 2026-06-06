@@ -1,0 +1,7 @@
+{
+  "id": "market_concentration_analysis",
+  "name": "市场集中度分析",
+  "priority": 3,
+  "aspects": ["competitive_landscape", "industry_analysis", "market_analysis"],
+  "content": "请按以下维度分析市场集中度:\n1. CR3/CR5: 前3/5大企业市场份额合计及趋势\n2. HHI指数: 赫芬达尔指数计算及市场类型判定\n3. 集中度驱动: 规模效应/技术壁垒/政策壁垒等动因\n4. 变化趋势: 市场份额变动方向和行业整合阶段\n5. 垄断风险: 反垄断监管风险和市场扭曲程度"
+}

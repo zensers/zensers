@@ -1,0 +1,7 @@
+{
+  "id": "industry_lifecycle",
+  "name": "行业生命周期分析",
+  "priority": 3,
+  "aspects": ["trend", "industry_analysis", "market_analysis"],
+  "content": "请按行业生命周期五阶段分析:\n1. 导入期: 市场教育阶段，增速快但基数小，玩家少\n2. 成长期: 渗透率加速提升，竞争加剧，龙头初现\n3. 震荡期: 增速放缓，产能过剩，行业整合加速\n4. 成熟期: 格局稳定，增速趋近GDP，利润靠效率\n5. 衰退期: 需求萎缩，替代品出现，产能退出"
+}

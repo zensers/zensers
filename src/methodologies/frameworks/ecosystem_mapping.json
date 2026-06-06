@@ -1,0 +1,7 @@
+{
+  "id": "ecosystem_mapping",
+  "name": "产业生态图谱分析",
+  "priority": 5,
+  "aspects": ["industry_chain", "industry_analysis", "enterprise_analysis"],
+  "content": "请按生态图谱框架分析:\n1. 参与者: 平台方/互补者/供应商/客户的角色和规模\n2. 依赖关系: 各参与者之间的依赖强度和方向\n3. 网络效应: 同边/跨边网络效应的性质和强弱\n4. 平台锁定: 生态参与者的转换成本和锁定程度\n5. 生态演进: 新兴参与者和潜在颠覆者的出现"
+}

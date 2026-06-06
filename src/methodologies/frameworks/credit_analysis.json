@@ -1,0 +1,7 @@
+{
+  "id": "credit_analysis",
+  "name": "信用分析框架 (Credit Analysis)",
+  "priority": 5,
+  "aspects": ["financial_analysis", "risk_assessment"],
+  "content": "请按以下维度进行信用分析:\n1. 偿债能力: 利息覆盖倍数/净负债EBITDA/流动比率\n2. 现金流充足性: 自由现金流对债务的覆盖程度\n3. 资本结构: 杠杆率趋势，债务到期结构，融资渠道\n4. 业务风险: 行业稳定性/竞争地位/客户集中度\n5. 外部增信: 股东支持/政府关系/资产抵押等信用增强因素"
+}

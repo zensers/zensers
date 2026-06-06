@@ -1,0 +1,7 @@
+{
+  "id": "cohort_analysis",
+  "name": "增长衰减队列分析",
+  "priority": 5,
+  "aspects": ["market_size", "market_analysis", "financial_analysis"],
+  "content": "请按队列分析方法分析增长:\n1. 增长阶段: 识别市场处于导入/成长/成熟/衰退阶段\n2. 增速衰减: 随基数扩大，增长率衰减的模式和速度\n3. 增量拆分: 新客户贡献 vs 存量客户增长\n4. 渗透率天花板: 达到饱和点时增速趋零的路径\n5. 生命周期: 市场整体和细分市场的生命周期位置"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "signal_detection",
+  "name": "信号检测框架 (Signal Detection)",
+  "priority": 4,
+  "aspects": ["trend", "technology", "strategy"],
+  "content": "请按信号检测框架分析:\n1. 弱信号: 早期的、不显著的、被忽视的变化迹象\n2. 强信号: 已经被广泛认知和确认的明确趋势\n3. 先行指标: 能预测趋势方向变化的量化指标\n4. 滞后指标: 确认趋势已发生的验证性指标\n5. 信号验证: 交叉验证信号真伪的方法和标准"
+}

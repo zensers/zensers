@@ -1,0 +1,7 @@
+{
+  "id": "stakeholder_mapping",
+  "name": "利益相关方地图 (Stakeholder Mapping)",
+  "priority": 4,
+  "aspects": ["policy", "policy_analysis", "industry_analysis"],
+  "content": "请按以下维度绘制利益相关方地图:\n1. 识别: 核心/主要/次要利益相关方及其角色\n2. 影响力: 各利益相关方对政策过程和结果的影响力评级\n3. 立场: 每方对政策的支持/反对/中立立场及强度\n4. 利益分析: 每方在政策中的核心诉求和关切点\n5. 博弈: 关键利益冲突和可能的博弈妥协方案"
+}

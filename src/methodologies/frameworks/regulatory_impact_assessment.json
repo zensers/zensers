@@ -1,0 +1,7 @@
+{
+  "id": "regulatory_impact_assessment",
+  "name": "监管影响评估 (Regulatory Impact)",
+  "priority": 2,
+  "aspects": ["policy", "policy_analysis", "risk_assessment"],
+  "content": "请按以下维度评估监管影响:\n1. 政策目标: 监管的意图和预期效果判断\n2. 成本效益: 合规成本的经济影响量化评估\n3. 利益分配: 政策红利/成本的行业和利益相关方分配\n4. 执行风险: 监管执行不力或过度执行的潜在后果\n5. 政策叠加: 多项监管政策的叠加效应和协同冲突"
+}

@@ -1,0 +1,7 @@
+{
+  "id": "market_sizing_top_down",
+  "name": "Top-down 市场规模测算",
+  "priority": 2,
+  "aspects": ["market_size", "market_analysis"],
+  "content": "请按自上而下方法测算市场规模:\n1. 宏观指标: GDP/行业增加值等宏观总量\n2. 行业过滤: 从宏观指标中过滤出目标行业占比\n3. 细分分配: 按产品线/区域/客户群分配至细分市场\n4. 交叉验证: 与行业报告数据进行偏差校正\n5. 口径说明: 明确数据来源和测算假设"
+}

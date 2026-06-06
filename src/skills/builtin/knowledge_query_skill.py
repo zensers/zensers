@@ -77,7 +77,7 @@ class KnowledgeQuerySkill(Skill):
 
         async def _match_methodologies():
             if _match_frameworks is not None:
-                return _match_frameworks(aspect)[:1]
+                return _match_frameworks(aspect)[:3]
             return []
 
         results = await asyncio.gather(

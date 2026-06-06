@@ -1,0 +1,7 @@
+{
+  "id": "strategic_group_mapping",
+  "name": "战略群组分析 (Strategic Group Mapping)",
+  "priority": 2,
+  "aspects": ["competitive_landscape", "industry_analysis", "enterprise_analysis"],
+  "content": "请按以下步骤进行战略群组分析:\n1. 维度选择: 选取2-3个关键战略维度（如价格/质量/地理覆盖）\n2. 群组识别: 按战略维度将竞争对手划分为不同战略群组\n3. 群组定位: 在二维矩阵上标示各群组位置和规模\n4. 壁垒分析: 各群组之间的移动壁垒和群组内竞争强度\n5. 趋势判断: 各群组规模变化和战略漂移方向"
+}

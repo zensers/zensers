@@ -1,0 +1,7 @@
+{
+  "id": "profit_pool_analysis",
+  "name": "利润池分析 (Profit Pool)",
+  "priority": 2,
+  "aspects": ["industry_chain", "industry_analysis", "value_chain"],
+  "content": "请按利润池框架分析:\n1. 链上价值分布: 从原材料到终端的价值分配比例\n2. 毛利率分环节: 各环节毛利率水平和3年趋势\n3. 利润集中度: 利润在产业链中的集中区域和原因\n4. 价值捕获 vs 创造: 各环节创造价值与捕获利润的匹配度\n5. 利润转移趋势: 技术进步和竞争格局对利润分配的影响"
+}

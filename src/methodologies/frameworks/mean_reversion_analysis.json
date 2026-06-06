@@ -1,0 +1,7 @@
+{
+  "id": "mean_reversion_analysis",
+  "name": "均值回归分析 (Mean Reversion)",
+  "priority": 4,
+  "aspects": ["financial_analysis", "investment_analysis"],
+  "content": "请按均值回归框架分析:\n1. 周期定位: 识别行业处于周期上行/下行/顶峰/谷底阶段\n2. 历史比较: 当前利润率/估值与历史均值对比\n3. 结构性vs周期性: 区分利润变化是结构性还是周期性\n4. 回归驱动: 推动均值回归的力量（竞争/产能/需求）\n5. 正常化预测: 估计周期正常化后的可持续利润水平"
+}

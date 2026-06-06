@@ -35,17 +35,31 @@ def validate_framework(data: Dict) -> List[str]:
 
 
 def validate_all_frameworks(frameworks_dir: Optional[Path] = None) -> Dict[str, List[str]]:
-    if frameworks_dir is None:
-        frameworks_dir = Path(__file__).parent / "frameworks"
+    if frameworks_dir is not None:
+        dirs = [frameworks_dir]
+    else:
+        dirs = [
+            Path(__file__).parent / "frameworks",
+            Path(__file__).parents[3] / "data" / "knowledge" / "methodology" / "frameworks",
+        ]
     results = {}
-    for f in frameworks_dir.glob("*.json"):
-        try:
-            with open(f, encoding="utf-8") as fh:
-                data = json.load(fh)
-        except (json.JSONDecodeError, OSError) as e:
-            results[f.name] = [f"File error: {e}"]
+    seen_ids = set()
+    for d in dirs:
+        if not d.exists():
             continue
-        errors = validate_framework(data)
-        if errors:
-            results[f.name] = errors
+        for f in sorted(d.glob("*.json")):
+            try:
+                with open(f, encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except (json.JSONDecodeError, OSError) as e:
+                results[f.name] = [f"File error: {e}"]
+                continue
+            fw_id = data.get("id")
+            if fw_id and fw_id in seen_ids:
+                continue
+            if fw_id:
+                seen_ids.add(fw_id)
+            errors = validate_framework(data)
+            if errors:
+                results[f.name] = errors
     return results

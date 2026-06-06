@@ -1,0 +1,7 @@
+{
+  "id": "trl_assessment",
+  "name": "TRL技术成熟度评估 (ISO 16290)",
+  "priority": 3,
+  "aspects": ["technology", "technology_analysis"],
+  "content": "请按ISO 16290标准评估TRL等级:\n1. 基础原理 (TRL 1-3): 科学原理验证，实验室环境概念验证\n2. 实验室验证 (TRL 4-5): 组件/子系统在模拟环境验证，集成验证\n3. 演示验证 (TRL 6-7): 原型系统在相关环境演示，实际环境原型验证\n4. 商业化 (TRL 8-9): 系统验证并投产，市场广泛应用"
+}

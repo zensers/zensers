@@ -1,0 +1,7 @@
+{
+  "id": "technology_s_curve",
+  "name": "技术S曲线分析",
+  "priority": 4,
+  "aspects": ["technology", "technology_analysis", "trend"],
+  "content": "请按S曲线框架分析技术演进:\n1. 当前性能: 技术当前性能指标 vs 理论极限\n2. 拐点识别: 技术性能增速变化的转折点\n3. 替代时机: 新技术超越现有技术的预计时间点\n4. 渗透率: 当前市场渗透率及扩散轨迹\n5. 投资决策: 基于S曲线位置的研发投资建议"
+}

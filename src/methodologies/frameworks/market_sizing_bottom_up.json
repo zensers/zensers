@@ -1,0 +1,7 @@
+{
+  "id": "market_sizing_bottom_up",
+  "name": "Bottom-up 市场规模测算",
+  "priority": 3,
+  "aspects": ["market_size", "market_analysis"],
+  "content": "请按自下而上方法测算市场规模:\n1. 单位量: 各细分市场的产品/服务销量\n2. 均价: 各细分市场的平均售价及趋势\n3. 加总: 量×价加总得到细分市场规模\n4. 汇总: 各细分市场汇总得到总市场规模\n5. 校验: 与行业口径交叉校验偏差"
+}
