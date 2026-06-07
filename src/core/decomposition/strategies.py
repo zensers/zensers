@@ -34,6 +34,7 @@ class ResearchPhase(Enum):
     DEEP_ANALYSIS = "deep_analysis"          # Deep analysis
     SYNTHESIS = "synthesis"                  # Synthesis
     REPORT_GENERATION = "report_generation"  # Report generation
+    CALIBRATION = "calibration"              # Cross-agent numeric calibration
 
 
 # Dynamically assign Skills by research dimension, avoid all Agents carrying irrelevant skills

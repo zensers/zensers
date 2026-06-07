@@ -214,6 +214,7 @@ class GenericAgent(
             "translate": "llm_skill",
             "research": "llm_skill",  # 研究任务使用 LLM
             "data_collection": "llm_skill",  # 数据收集使用 LLM 整合搜索结果
+            "calibration": "llm_skill",  # M5-b: 全报告数据校准
             "execute": "llm_skill",  # 通用执行任务（来自ExecutionEngine._execute_batch）
             # LangChain Skills
             "web_search": "lc_tavily_search",
@@ -491,7 +492,13 @@ class GenericAgent(
                                     prompt += f"\n\n## 实时更新规范数据（其他agent已完成）\n{_ds}\n"
                                     prompt += "**注意**: 这些数据来自刚刚完成的其他agent，优先级高于前面列出的规范数据。"
                         result = await skill.execute(prompt=prompt, system_prompt=system_prompt)
-                        
+
+                        # M3: canonical enforcement after LLM output
+                        if result.get("success") and result.get("content") and canonical_data:
+                            result["content"] = self._enforce_canonical_values(
+                                result["content"], canonical_data
+                            )
+
                         # 日期验证
                         if result.get("success") and result.get("content"):
                             validated = self._validate_output_dates(result["content"], self.agent_id)
@@ -525,6 +532,13 @@ class GenericAgent(
                                         sibling_aspects=sibling_aspects,
                                     )
                                     revised = await skill.execute(prompt=prompt2, system_prompt=system_prompt)
+
+                                    # M3: canonical enforcement on revised content
+                                    if revised.get("success") and revised.get("content") and canonical_data:
+                                        revised["content"] = self._enforce_canonical_values(
+                                            revised["content"], canonical_data
+                                        )
+
                                     if revised.get("success") and revised.get("content"):
                                         validated = self._validate_output_dates(revised["content"], self.agent_id)
                                         if validated != revised["content"]:
@@ -545,6 +559,35 @@ class GenericAgent(
                         if result.get("success"):
                             result["data_points"] = aggregated_data_points
                             result["sources"] = aggregated_sources
+                        return self._ensure_standard_result(result, action)
+                    
+                    # M5-b: CALIBRATION - cross-agent numeric consistency check
+                    if agent_category == "calibration":
+                        all_results = task.get("parameters", {}).get("all_results", context.get("all_results", []))
+                        canonical_data = task.get("parameters", {}).get("canonical_data", context.get("canonical_data", {}))
+                        from src.core.prompts.calibration_prompt import (
+                            CALIBRATION_SYSTEM_PROMPT,
+                            CALIBRATION_USER_PROMPT_TEMPLATE,
+                        )
+                        all_sections = []
+                        for r in all_results:
+                            agent_id = r.get("agent_id", "unknown")
+                            section_content = r.get("content", "") or r.get("result", "")
+                            status = "✓" if r.get("success") else "✗"
+                            all_sections.append(f"[{status}] Agent {agent_id}:\n{section_content}")
+                        canonical_summary = "\n".join([
+                            f"- {k}: {v.get('value','')}{v.get('unit','')}"
+                            for k, v in canonical_data.items()
+                        ]) if canonical_data else "(no canonical data provided)"
+                        prompt = CALIBRATION_USER_PROMPT_TEMPLATE.format(
+                            canonical_summary=canonical_summary,
+                            all_sections_report="\n\n".join(all_sections) if all_sections else "(no sections to calibrate)",
+                            target_currency=task.get("target_currency", "CNY"),
+                        )
+                        result = await skill.execute(
+                            prompt=prompt,
+                            system_prompt=CALIBRATION_SYSTEM_PROMPT,
+                        )
                         return self._ensure_standard_result(result, action)
                     
                     # Check if there is aggregated content from previous phases (synthesis agent path)
@@ -618,7 +661,13 @@ class GenericAgent(
                             result = await skill.execute(prompt=prompt, system_prompt=system_prompt)
                         else:
                             result = await skill.execute(prompt=prompt)
-                        
+
+                        # M3: canonical enforcement on synthesis output
+                        if result.get("success") and result.get("content") and _canonical_data_syn:
+                            result["content"] = self._enforce_canonical_values(
+                                result["content"], _canonical_data_syn
+                            )
+
                         # 日期验证
                         if result.get("success") and result.get("content"):
                             validated = self._validate_output_dates(result["content"], self.agent_id)
@@ -1175,7 +1224,81 @@ class GenericAgent(
                 result["category"] = _cat
             
         return result
-    
+
+    def _enforce_canonical_values(self, content: str, canonical_data: Dict) -> str:
+        """
+        M3: Post-processing to enforce canonical values in generated content.
+        Extracts metrics via MetricExtractor, compares with canonical_data,
+        and replaces values differing by more than 5% (skipping table lines).
+        """
+        import re as _re
+        if not content or not canonical_data:
+            return content
+
+        from src.core.data.metric_extractor import MetricExtractor
+        extractor = MetricExtractor()
+
+        data_points = [{"content": content, "url": ""}]
+        found_metrics = extractor.extract(data_points)
+
+        # Group candidates by metric name, pick the best match for each
+        metric_candidates = {}
+        for fm in found_metrics:
+            metric_name = fm["metric"]
+            text_value = fm["value"]
+            text_unit = fm["unit"]
+
+            for key, entry in canonical_data.items():
+                if not isinstance(entry, dict):
+                    continue
+                canonical_value = entry.get("value")
+                if canonical_value is None:
+                    continue
+
+                entry_metric = key.split("_")[0] if "_" in key else key
+                if entry_metric != metric_name:
+                    continue
+
+                diff = abs(text_value - float(canonical_value)) / max(abs(float(canonical_value)), 0.01)
+                if diff > 0.05:
+                    cur = metric_candidates.get(metric_name)
+                    if cur is None or diff > cur["diff"]:
+                        metric_candidates[metric_name] = {
+                            "old_value": text_value,
+                            "new_value": canonical_value,
+                            "unit": text_unit,
+                            "diff": diff,
+                        }
+
+        for metric, cand in metric_candidates.items():
+            old_val = cand["old_value"]
+            new_val = cand["new_value"]
+            old_str = str(old_val)
+            new_str = str(new_val)
+            old_pattern = old_str
+            if old_str.endswith(".0"):
+                old_pattern = old_str[:-2]
+            unit = cand["unit"]
+
+            pattern = (
+                rf'({_re.escape(metric)}'
+                rf'[^\d]*?)'
+                rf'({_re.escape(old_pattern)})'
+                rf'(\s*{_re.escape(unit)})'
+            )
+
+            def _skip_table_line(match, _new=new_str):
+                last_newline = content.rfind('\n', 0, match.start())
+                if last_newline >= 0:
+                    line_start = content[last_newline + 1:]
+                    if line_start.startswith('|'):
+                        return match.group(0)
+                return match.group(1) + _new + match.group(3)
+
+            content = _re.sub(pattern, _skip_table_line, content)
+
+        return content
+
     async def run(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """
         运行Agent（带状态管理和错误处理）

@@ -28,7 +28,6 @@ from src.core.storage import ResearchResultStore, ResearchStatus
 # Harness constraint layer for agent output validation
 from src.core.harness import check_agent_output
 
-from src.core.data.canonical_registry import parse_entry_key
 
 from .control import (
     ConcurrencyManager,
@@ -1464,47 +1463,22 @@ class ExecutionEngine:
                 all_results.extend(_unlock_results)
                 pending_unlocked.clear()
             
-            # Pre-generation consistency gate: detect inconsistency, auto-fix data_points only
-            # Auto-fix targets structured data_points, NOT narrative content text.
-            # Content text is never modified — only data_points are reconciled to canonical values.
+            # M5-a: Enhanced consistency gate — fixes content + data_points via MetricExtractor
             if result.status != "failed" and self.enable_quality_control and all_results and self._active_canonical_data:
                 try:
-                    from src.core.quality.checkers import NumericConsistencyGate
-                    _gate = NumericConsistencyGate(threshold=80.0)
-                    _gate_sections = [
-                        {"id": r.get("agent_id", f"agent_{i}"), "content": r.get("content", "") or r.get("result", "")}
-                        for i, r in enumerate(all_results) if r.get("success")
-                    ]
-                    _gate_result = _gate.check({"sections": _gate_sections})
-                    if not _gate_result.passed:
-                        logger.warning(f"Consistency gate: {_gate_result.score:.1f}/80, reconciling data_points to canonical values")
-                        _fix_count = 0
-                        for _metric_key, _canon in self._active_canonical_data.items():
-                            _kp = parse_entry_key(_metric_key)
-                            _cv = str(_canon.get("value", ""))
-                            if not _cv:
-                                continue
-                            _metric_name = _kp["metric"]
-                            # Only fix data_points (structured metadata), never touch content text
-                            for _r in all_results:
-                                if not _r.get("success"):
-                                    continue
-                                for _dp in _r.get("data_points", []):
-                                    if _dp.get("metric", "").lower() == _metric_name.lower():
-                                        _dp_year = str(_dp.get("year", ""))
-                                        _dp_caliber = _dp.get("caliber", "") or ""
-                                        _canon_year = str(_kp.get("year", ""))
-                                        _canon_caliber = _canon.get("caliber", "") or ""
-                                        if _canon_year and _dp_year and _dp_year != _canon_year:
-                                            continue
-                                        if _canon_caliber and _dp_caliber and _dp_caliber != _canon_caliber:
-                                            continue
-                                        _old_val = str(_dp.get("value", ""))
-                                        if _old_val != "" and _old_val != _cv:
-                                            _dp["value"] = _cv
-                                            _fix_count += 1
-                        if _fix_count > 0:
-                            logger.info(f"Consistency gate: reconciled {_fix_count} data_points to canonical values (content text unchanged)")
+                    from src.core.orchestrator.execution.calibration_gate import fix_content_from_canonical
+                    _target_cur = getattr(self, '_target_currency', 'CNY')
+                    _gate_result = fix_content_from_canonical(
+                        all_results, self._active_canonical_data, _target_cur
+                    )
+                    all_results = _gate_result["all_results"]
+                    _cal_report = _gate_result["calibration_report"]
+                    if _cal_report["auto_fixed"] or _cal_report["currency_converted"]:
+                        logger.info(
+                            f"M5-a calibration gate: {len(_cal_report['auto_fixed'])} content fixes, "
+                            f"{len(_cal_report['currency_converted'])} currency conversions, "
+                            f"{_cal_report['total_metrics_checked']} metrics checked"
+                        )
                 except ImportError:
                     pass
             
@@ -2092,7 +2066,10 @@ class ExecutionEngine:
                                             if url:
                                                 seen_urls.add(url)
                                             deduped.append(dp)
-                                        task["aggregated_data_points"] = deduped[:5000]
+                                        # M2: 按 agent 的 aspect 过滤 data_points
+                                        task["aggregated_data_points"] = self._filter_data_by_aspect(
+                                            deduped, agent_aspect
+                                        )
                                         injected_data = True
                                     if saved_srcs and len(saved_srcs) > 0:
                                         seen_urls = set()
@@ -2644,3 +2621,41 @@ class ExecutionEngine:
                     merged[i] = rr
                     break
         return merged
+
+    # M2: Aspect-based data filtering for P1-1 fallback injection
+    SYNONYM_MAP = {
+        "财务": ["营收", "利润", "毛利率", "净利", "收入", "成本", "费用"],
+        "销量": ["销量", "出货", "交付", "市场份额", "市占率"],
+        "竞争": ["竞争对手", "竞争格局", "市场格局", "份额"],
+        "研发": ["研发投入", "R&D", "专利", "技术创新"],
+        "风险": ["风险", "负债", "现金流", "财务健康"],
+        "国际化": ["海外", "出口", "国际化", "出海"],
+        "预测": ["预测", "展望", "趋势", "前景"],
+    }
+
+    def _filter_data_by_aspect(self, data_points: list, aspect: str) -> list:
+        """按 aspect 关键词对 data_points 做相关性评分和过滤"""
+        if not data_points:
+            return []
+        if not aspect:
+            return data_points[:200]
+
+        aspect_clean = aspect.replace("section_", "").replace("_", " ")
+        aspect_keywords = set(aspect_clean.split())
+        expanded_keywords = set(aspect_keywords)
+        for kw in aspect_keywords:
+            for syn_key, syn_vals in self.SYNONYM_MAP.items():
+                if syn_key in kw or kw in syn_key:
+                    expanded_keywords.update(syn_vals)
+
+        scored = []
+        for dp in data_points:
+            dp_text = (dp.get("content", "") + " " + dp.get("title", "")).lower()
+            overlap = sum(1 for kw in expanded_keywords if kw.lower() in dp_text)
+            scored.append((overlap, dp))
+
+        scored.sort(key=lambda x: -x[0])
+        relevant = [dp for score, dp in scored if score > 0][:500]
+        if relevant:
+            return relevant
+        return data_points[:200]

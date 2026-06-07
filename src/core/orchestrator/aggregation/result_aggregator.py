@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -860,19 +860,38 @@ class ResultAggregator:
         self._total_aggregations = 0
         self._total_conflicts = 0
     
-    def _extract_stage_from_agent_id(self, agent_id: str) -> str:
+    def _extract_stage_from_agent_id(self, agent_id: str, result: Optional[Dict] = None) -> str:
         """
-        从 agent_id 中提取阶段信息（断点1修复）
+        从 agent_id 中提取阶段信息（断点1修复 + M0-b category 优先）
+        
+        M0-b: 优先从 result["category"] 读取（由 _ensure_standard_result 写入），
+        仅在无 category 时 fallback 到 agent_id 关键字匹配。
         
         Agent ID 格式示例：
         - "synthesis_abc123" -> "synthesis"
         - "analysis_market_size_xyz" -> "analysis"
         - "data_collector_001" -> "data_collection"
         - "agent_001" -> "data_collection"
+        - "phase_1_agent_0" + category="research" -> "data_collection" (M0-b)
+        - "phase_2_agent_0" + category="analysis" -> "analysis" (M0-b)
         """
+        if result and isinstance(result, dict):
+            meta_category = result.get("category", "")
+            stage_map = {
+                "research": "data_collection",
+                "data_collection": "data_collection",
+                "quality-check": "data_validation",
+                "analysis": "analysis",
+                "market-analysis": "analysis",
+                "financial-analysis": "analysis",
+                "synthesis": "synthesis",
+                "calibration": "calibration",
+            }
+            if meta_category in stage_map:
+                return stage_map[meta_category]
+        
         agent_id_lower = agent_id.lower()
         
-        # 按优先级匹配
         if "synthesis" in agent_id_lower or "summary" in agent_id_lower or "conclusion" in agent_id_lower:
             return "synthesis"
         elif "analysis" in agent_id_lower or "market" in agent_id_lower or "competition" in agent_id_lower:
@@ -966,7 +985,7 @@ class ResultAggregator:
         
         for agent_id, result in results.items():
             # 断点1修复：提取阶段信息
-            stage = self._extract_stage_from_agent_id(agent_id)
+            stage = self._extract_stage_from_agent_id(agent_id, result)
             
             # 修复：正确提取Agent返回的内容
             # Agent结果格式: {success, message, content, result, agent_id, ...}
@@ -999,7 +1018,12 @@ class ResultAggregator:
                 layered_content[stage][agent_id] = actual_content
                 
                 # 断点2修复：记录来源追踪
-                section_target = self._determine_section_target(agent_id, stage, agent_id)
+                # M0-a: prefer _section_id (from orchestrator key mapping) over heuristic
+                _sec_id = result.get("_section_id", "")
+                if _sec_id:
+                    section_target = _sec_id
+                else:
+                    section_target = self._determine_section_target(agent_id, stage, agent_id)
                 content_provenance[agent_id] = ContentProvenance(
                     source_key=agent_id,
                     stage=stage,
@@ -1036,7 +1060,11 @@ class ResultAggregator:
                         layered_content[stage][key] = value
                     
                     # 断点2修复：记录来源追踪
-                    section_target = self._determine_section_target(agent_id, stage, key)
+                    _sec_id_d = result.get("_section_id", "")
+                    if _sec_id_d:
+                        section_target = _sec_id_d
+                    else:
+                        section_target = self._determine_section_target(agent_id, stage, key)
                     content_provenance[key] = ContentProvenance(
                         source_key=key,
                         stage=stage,

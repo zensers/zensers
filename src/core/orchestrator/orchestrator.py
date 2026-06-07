@@ -830,15 +830,16 @@ class ResearchOrchestrator:
             if exec_result.stage_results:
                 for stage_name, stage_results_list in exec_result.stage_results.items():
                     for i, result in enumerate(stage_results_list):
-                        # Try to extract aspect from result as key
-                        # result format: {success, content, result, agent_id, ...}
+                        # M0-a: Use agent_id as key (unique per agent) instead of section_id.
+                        # section_id is shared by DC and Analysis agents for the same section,
+                        # causing collision. Save section_id as metadata for aggregator.
                         agent_id = result.get("agent_id", "")
-
-                        # 优先使用 section_id（由 engine 注入结果字典）
-                        # 新格式 phase_1_agent_N 的 agent_id 解析会全部坍缩为 "1_agent"
-                        # section_id 格式: section_0_核心财务指标（唯一不碰撞）
                         section_id = result.get("section_id", "") or ""
-                        if section_id:
+                        if agent_id:
+                            key = agent_id
+                            if section_id:
+                                result["_section_id"] = section_id
+                        elif section_id:
                             key = section_id
                         elif agent_id in agent_section_map:
                             key = agent_section_map[agent_id]
@@ -1757,15 +1758,17 @@ class ResearchOrchestrator:
                 for stage_name, stage_results_list in exec_result.stage_results.items():
                     for i, result in enumerate(stage_results_list):
                         agent_id = result.get("agent_id", "")
-
-                        # 优先使用 section_id（由 engine 注入结果字典）
                         section_id = result.get("section_id", "") or ""
-                        if section_id:
+                        # M0-a: Use agent_id as key (unique per agent) instead of section_id.
+                        if agent_id:
+                            key = agent_id
+                            if section_id:
+                                result["_section_id"] = section_id
+                        elif section_id:
                             key = section_id
                         elif agent_id in agent_section_map:
                             key = agent_section_map[agent_id]
                         else:
-                            # Fallback: 解析 agent_id
                             aspect = None
                             if agent_id:
                                 parts = agent_id.split("_")

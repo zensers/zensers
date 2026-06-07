@@ -3,7 +3,6 @@ DynamicPhaseOrchestrator - Dynamically generates execution phases from task stru
 """
 import logging
 import uuid
-from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -22,6 +21,7 @@ class PhaseType(Enum):
     SURVEY = "survey"
     CROSS_SYNTHESIS = "cross_synthesis"
     VALIDATION = "validation"
+    CALIBRATION = "calibration"
 
 
 @dataclass
@@ -106,10 +106,18 @@ class ExecutionPlan:
                 phase.phase_type, ResearchPhase.DEEP_ANALYSIS
             )
             for spec in phase.agent_specs:
+                # M1-a: Category override to match generic_agent routing
+                if rp == ResearchPhase.DATA_COLLECTION:
+                    category_override = "research"
+                elif rp == ResearchPhase.DATA_VALIDATION:
+                    category_override = "quality-check"
+                else:
+                    category_override = spec.agent_type
+
                 orig = OriginalAgentSpec(
                     agent_id=spec.agent_id,
                     agent_type=spec.agent_type,
-                    category=spec.agent_type,
+                    category=category_override,
                     task_description=spec.core_question or "",
                     input_keys=[],
                     output_keys=spec.section_ids,
@@ -187,24 +195,69 @@ class DynamicPhaseOrchestrator:
         if not dag_layers and task_structure.sections:
             dag_layers = [[s.section_id for s in task_structure.sections]]
 
+        # M1: Split ANALYSIS sections into DC + Analysis dual phases
+        dc_sections = []
+        analysis_sections = []
+        synthesis_sections = []
+        other_sections = []
+        dc_section_to_agent = {}  # separate map: section_id -> DC agent_id (never overwritten)
+
         for layer_ids in dag_layers:
-            phase_id = f"phase_{counter}"
-            layer_sections = [section_map[sid] for sid in layer_ids if sid in section_map]
-            if not layer_sections:
-                continue
+            for sid in layer_ids:
+                section = section_map.get(sid)
+                if not section:
+                    continue
+                if section.section_role == SectionRole.ANALYSIS:
+                    dc_sections.append(section)
+                    analysis_sections.append(section)
+                elif section.section_role == SectionRole.SYNTHESIS:
+                    synthesis_sections.append(section)
+                else:
+                    other_sections.append(section)
 
-            roles_in_layer = [section_map[sid].section_role for sid in layer_ids if sid in section_map]
-            dominant_role = Counter(roles_in_layer).most_common(1)[0][0]
-            phase_type = self._role_to_phase_type(dominant_role)
+        # M1 Phase A: DATA_COLLECTION — ANALYSIS sections do pure search first
+        dc_phase = None
+        if dc_sections:
+            dc_phase = self._create_dc_phase(f"phase_{counter}", dc_sections, task_structure, topic,
+                                              section_to_agent=dc_section_to_agent)
+            phases.append(dc_phase)
+            counter += 1
 
+        # M1 Phase B: DEEP_ANALYSIS — ANALYSIS sections analyze with DC data
+        analysis_phase = None
+        if analysis_sections:
+            dc_depends = [dc_phase.phase_id] if dc_phase else []
+            analysis_phase = self._create_analysis_phase_with_deps(
+                f"phase_{counter}", analysis_sections, task_structure, topic,
+                dc_agent_map=dc_section_to_agent,
+                section_to_agent=global_section_to_agent,
+                depends_on=dc_depends,
+            )
+            phases.append(analysis_phase)
+            counter += 1
+
+        # Phase C: SYNTHESIS sections (keep original logic)
+        if synthesis_sections:
             depends_on = [phases[-1].phase_id] if phases else []
-
-            phase = self._create_phase(phase_id, phase_type, layer_sections,
+            phase = self._create_phase(f"phase_{counter}", PhaseType.SYNTHESIS, synthesis_sections,
                                         task_structure, topic, parallel=True,
                                         depends_on=depends_on,
                                         section_to_agent=global_section_to_agent)
             phases.append(phase)
             counter += 1
+
+        # Phase D: Other sections (DATA_COLLECTION, SUPPORTING)
+        if other_sections:
+            depends_on = [phases[-1].phase_id] if phases else []
+            for section in other_sections:
+                phase_type = self._role_to_phase_type(section.section_role)
+                phase = self._create_phase(f"phase_{counter}", phase_type, [section],
+                                            task_structure, topic, parallel=True,
+                                            depends_on=depends_on,
+                                            section_to_agent=global_section_to_agent)
+                phases.append(phase)
+                depends_on = [phase.phase_id]
+                counter += 1
 
         # CROSS_SYNTHESIS if both survey and desk research exist
         has_survey = any(p.phase_type == PhaseType.SURVEY for p in phases)
@@ -223,6 +276,63 @@ class DynamicPhaseOrchestrator:
         phases.append(self._create_report_phase(f"phase_{counter}", task_structure, topic,
                                                  depends_on=depends_on))
         return phases
+
+    def _create_dc_phase(self, phase_id, sections, task_structure, topic,
+                          section_to_agent=None):
+        """M1: Create pure data collection phase for ANALYSIS sections."""
+        if section_to_agent is None:
+            section_to_agent = {}
+        agents = []
+        for i, section in enumerate(sections):
+            agent_id = f"{phase_id}_agent_{i}"
+            agent = AgentSpec(
+                agent_id=agent_id,
+                agent_type=PhaseType.DATA_COLLECTION.value,
+                section_ids=[section.section_id],
+                priority=i,
+                config={"content_dependency": [], "resolved_dependencies": []},
+                core_question=f"收集 {section.section_name} 维度的基础数据",
+            )
+            agents.append(agent)
+            section_to_agent[section.section_id] = agent_id
+        section_ids = [s.section_id for s in sections]
+        return ExecutionPhase(
+            phase_id=phase_id, phase_type=PhaseType.DATA_COLLECTION,
+            agent_specs=agents, section_ids=section_ids,
+            parallel=True, depends_on=[],
+        )
+
+    def _create_analysis_phase_with_deps(self, phase_id, sections, task_structure, topic,
+                                          dc_agent_map=None, section_to_agent=None, depends_on=None):
+        """M1: Create analysis phase where each agent depends on its DC agent."""
+        if dc_agent_map is None:
+            dc_agent_map = {}
+        if section_to_agent is None:
+            section_to_agent = {}
+        agents = []
+        for i, section in enumerate(sections):
+            agent_id = f"{phase_id}_agent_{i}"
+            dc_dep = dc_agent_map.get(section.section_id, "")
+            agent = AgentSpec(
+                agent_id=agent_id,
+                agent_type=PhaseType.ANALYSIS.value,
+                section_ids=[section.section_id],
+                priority=i,
+                config={
+                    "content_dependency": [],
+                    "resolved_dependencies": [dc_dep] if dc_dep else [],
+                },
+                core_question=section.section_name,
+                dependencies=[dc_dep] if dc_dep else [],
+            )
+            agents.append(agent)
+            section_to_agent[section.section_id] = agent_id
+        section_ids = [s.section_id for s in sections]
+        return ExecutionPhase(
+            phase_id=phase_id, phase_type=PhaseType.ANALYSIS,
+            agent_specs=agents, section_ids=section_ids,
+            parallel=True, depends_on=depends_on or [],
+        )
 
     def _role_to_phase_type(self, role: SectionRole) -> PhaseType:
         mapping = {
@@ -291,10 +401,12 @@ class DynamicPhaseOrchestrator:
                         existing.append(cd)
 
         # Generate ContentLockRule per section, deduplicated
+        seen_lock_targets = set()
         for phase in phases:
             for agent in phase.agent_specs:
                 for sid in agent.section_ids:
-                    if sid in dep_map:
+                    if sid in dep_map and sid not in seen_lock_targets:
+                        seen_lock_targets.add(sid)
                         rules.append(ContentLockRule(
                             target_section=sid,
                             required_sections=list(dict.fromkeys(dep_map[sid])),
