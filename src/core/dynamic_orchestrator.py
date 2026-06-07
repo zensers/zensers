@@ -278,6 +278,14 @@ class DynamicPhaseOrchestrator:
         # M5-b Phase E: CALIBRATION — cross-agent numeric consistency check
         _has_analysis = any(p.phase_type == PhaseType.ANALYSIS for p in phases)
         if _has_analysis:
+            # Calibrator must depend on ALL prior agents so scheduler puts it in a later batch.
+            # Phase-level depends_on controls execution flow; agent-level resolved_dependencies
+            # ensures the scheduler topological sort batches the calibrator after all prior agents.
+            _prior_agent_ids = []
+            for _p in phases:
+                for _spec in _p.agent_specs:
+                    if _spec.agent_id:
+                        _prior_agent_ids.append(_spec.agent_id)
             cal_depends_on = [phases[-1].phase_id] if phases else []
             cal_phase = ExecutionPhase(
                 phase_id=f"phase_{counter}",
@@ -290,6 +298,7 @@ class DynamicPhaseOrchestrator:
                         priority=0,
                         config={
                             "content_dependency": [],
+                            "resolved_dependencies": _prior_agent_ids,
                             "category": "calibration",
                         },
                         core_question="统一全报告数据口径，消除数值和叙述矛盾",
