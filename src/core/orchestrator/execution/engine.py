@@ -68,6 +68,7 @@ class AgentCategory(Enum):
     REPORT_GENERATION = "report_generation"   # 报告生成
     QUALITY_CHECK = "quality_check"           # 质量检查
     DOCUMENT_GENERATION = "document_generation"  # 文档生成
+    CALIBRATION = "calibration"               # M5-b: 数据校准
     UNKNOWN = "unknown"                       # 未知类型
     
     @classmethod
@@ -1866,8 +1867,27 @@ class ExecutionEngine:
                             "total_word_count": sum(len(s.get("content", "")) for s in research_sections),
                         },
                     }
+                    # M5-b: Inject calibration results into Report agent task
+                    _calib = [r for r in previous_results if r.get("category") == "calibration" and r.get("success")]
+                    if _calib:
+                        _calib_data = _calib[0]
+                        task["calibration_report"] = _calib_data.get("calibration_report", {})
+                        task["unified_data_reference"] = _calib_data.get("unified_data_reference", {})
+                        logger.info(f"[_execute_batch] Report agent: injected calibration results from {_calib[0].get('agent_id', 'unknown')}")
                     logger.info(f"[_execute_batch] 报告生成任务: sections={len(research_sections)}, "
                                f"data_points={len(aggregated_data_points)}")
+                elif agent_category == AgentCategory.CALIBRATION:
+                    task = {
+                        "action": "calibration",
+                        "parameters": {
+                            "all_results": previous_results,
+                            "canonical_data": getattr(self, '_active_canonical_data', {}),
+                            "target_currency": getattr(self, '_target_currency', 'CNY'),
+                        }
+                    }
+                    logger.info(f"[_execute_batch] calibration agent {agent.agent_id}: "
+                                f"receiving {len(previous_results)} prior results, "
+                                f"{len(getattr(self, '_active_canonical_data', {}))} canonical entries")
                 elif agent_category == AgentCategory.SYNTHESIS:
                     # **正确修复**: 基于 scheduler 中定义的依赖关系过滤数据
                     # synthesis agent 只接收其依赖的 agent 的结果

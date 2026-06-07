@@ -588,6 +588,9 @@ class GenericAgent(
                             prompt=prompt,
                             system_prompt=CALIBRATION_SYSTEM_PROMPT,
                         )
+                        if result.get("success") and result.get("content"):
+                            result["calibration_report"] = {"summary": result["content"][:5000], "full_text": result["content"]}
+                            result["unified_data_reference"] = {}
                         return self._ensure_standard_result(result, action)
                     
                     # Check if there is aggregated content from previous phases (synthesis agent path)

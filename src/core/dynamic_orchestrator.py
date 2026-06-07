@@ -96,6 +96,7 @@ class ExecutionPlan:
             PhaseType.ANALYSIS: ResearchPhase.DEEP_ANALYSIS,
             PhaseType.SYNTHESIS: ResearchPhase.SYNTHESIS,
             PhaseType.CROSS_SYNTHESIS: ResearchPhase.SYNTHESIS,
+            PhaseType.CALIBRATION: ResearchPhase.CALIBRATION,
             PhaseType.REPORT: ResearchPhase.REPORT_GENERATION,
             PhaseType.VALIDATION: ResearchPhase.DATA_VALIDATION,
         }
@@ -106,11 +107,13 @@ class ExecutionPlan:
                 phase.phase_type, ResearchPhase.DEEP_ANALYSIS
             )
             for spec in phase.agent_specs:
-                # M1-a: Category override to match generic_agent routing
+                # M1-a + M5-b: Category override to match generic_agent routing
                 if rp == ResearchPhase.DATA_COLLECTION:
                     category_override = "research"
                 elif rp == ResearchPhase.DATA_VALIDATION:
                     category_override = "quality-check"
+                elif rp == ResearchPhase.CALIBRATION:
+                    category_override = "calibration"
                 else:
                     category_override = spec.agent_type
 
@@ -135,6 +138,7 @@ class ExecutionPlan:
                 ResearchPhase.DATA_VALIDATION,
                 ResearchPhase.DEEP_ANALYSIS,
                 ResearchPhase.SYNTHESIS,
+                ResearchPhase.CALIBRATION,
                 ResearchPhase.REPORT_GENERATION,
             ] if phases.get(rp)
         ]
@@ -269,6 +273,33 @@ class DynamicPhaseOrchestrator:
                                               task_structure, topic, parallel=False,
                                               depends_on=depends_on,
                                               section_to_agent=global_section_to_agent))
+            counter += 1
+
+        # M5-b Phase E: CALIBRATION — cross-agent numeric consistency check
+        _has_analysis = any(p.phase_type == PhaseType.ANALYSIS for p in phases)
+        if _has_analysis:
+            cal_depends_on = [phases[-1].phase_id] if phases else []
+            cal_phase = ExecutionPhase(
+                phase_id=f"phase_{counter}",
+                phase_type=PhaseType.CALIBRATION,
+                agent_specs=[
+                    AgentSpec(
+                        agent_id=f"phase_{counter}_calibrator",
+                        agent_type="calibration",
+                        section_ids=[],
+                        priority=0,
+                        config={
+                            "content_dependency": [],
+                            "category": "calibration",
+                        },
+                        core_question="统一全报告数据口径，消除数值和叙述矛盾",
+                    ),
+                ],
+                section_ids=[],
+                parallel=False,
+                depends_on=cal_depends_on,
+            )
+            phases.append(cal_phase)
             counter += 1
 
         # REPORT phase (always last)
