@@ -16,6 +16,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
+from src.core.data.metric_extractor import MetricExtractor
+
 logger = logging.getLogger(__name__)
 
 # 标点归一化：统一所有中英文标点、空白为下划线
@@ -1105,6 +1107,37 @@ class ResultAggregator:
                     merged_data[key] = resolved_value
                     self._total_conflicts += 1
         
+        # M4: 跨 agent 数值级对账 — MetricExtractor 冲突检测
+        metric_conflicts = 0
+        metric_conflict_details: List[Dict[str, Any]] = []
+        agent_metrics: Dict[str, List[Dict[str, Any]]] = {}
+        if len(results) >= 2:
+            extractor = MetricExtractor()
+            for agent_id, result in results.items():
+                content = result.get("content", "")
+                if content:
+                    extracted = extractor.extract([{"content": content, "url": ""}])
+                    if extracted:
+                        agent_metrics[agent_id] = extracted
+            if len(agent_metrics) >= 2:
+                metric_groups: Dict[Tuple[str, int], List[Tuple[str, float]]] = {}
+                for agent_id, metrics in agent_metrics.items():
+                    for m in metrics:
+                        key = (m["metric"], m["year"])
+                        if key not in metric_groups:
+                            metric_groups[key] = []
+                        metric_groups[key].append((agent_id, m["value"]))
+                for (metric_name, year), entries in metric_groups.items():
+                    values = [e[1] for e in entries]
+                    if len(set(values)) > 1:
+                        metric_conflicts += 1
+                        metric_conflict_details.append({
+                            "key": metric_name,
+                            "year": year,
+                            "values": values,
+                            "sources": [e[0] for e in entries],
+                        })
+        
         # 3. 去重
         if self.config.dedup_enabled:
             merged_data = self._deduplicate(merged_data)
@@ -1133,6 +1166,8 @@ class ResultAggregator:
             "total_conflicts": len(conflicts),
             "conflict_keys": [c.key for c in conflicts],
             "total_sources": len(all_sources),  # P0-3修复
+            "metric_conflicts": metric_conflicts,  # M4
+            "metric_conflict_details": metric_conflict_details,  # M4
         }
         
         if metadata:
