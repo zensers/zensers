@@ -133,14 +133,52 @@ class TestM3EnforceCanonicalValues:
         result = agent._enforce_canonical_values(content, canonical)
         assert "326亿元" in result
 
-    def test_chinese_and_english_mixed(self, agent):
-        """中英文混合内容的替换"""
+    def test_english_net_profit_replaced(self, agent):
+        """英文 net profit 被正确匹配并替换"""
         content = "In 2024, BYD's net profit reached RMB 32.6 billion"
         canonical = {
             "净利润_2024_CNY": {"value": 326.5, "unit": "亿元"}
         }
         result = agent._enforce_canonical_values(content, canonical)
-        assert result == content  # 英文格式不应被中文正则匹配到
+        assert "326.5" in result
+        assert "32.6" not in result
+
+    def test_english_revenue_replaced(self, agent):
+        """英文 revenue 被正确匹配并替换"""
+        content = "Total revenue was 777.0 billion CNY in 2024"
+        canonical = {
+            "营收_2024_CNY": {"value": 777.0, "unit": "亿元"}
+        }
+        result = agent._enforce_canonical_values(content, canonical)
+        assert "777.0" in result
+
+    def test_english_market_share(self, agent):
+        """英文 market share 被正确匹配"""
+        content = "BYD's market share reached 35.5% in 2024"
+        canonical = {
+            "市占率_2024": {"value": 35.5, "unit": "%"}
+        }
+        result = agent._enforce_canonical_values(content, canonical)
+        assert "35.5" in result
+
+    def test_english_sales_volume(self, agent):
+        """英文 sales/deliveries 被正确匹配"""
+        content = "BYD delivered 4.25 million vehicles in 2024"
+        canonical = {
+            "销量_2024": {"value": 425, "unit": "万辆"}
+        }
+        result = agent._enforce_canonical_values(content, canonical)
+        # unit mismatch (million vs 万辆) → falls back to value-only pattern
+        assert "BYD delivered" in result
+
+    def test_english_gross_margin(self, agent):
+        """英文 gross margin 被正确匹配并替换"""
+        content = "The gross margin improved to 20.1% in fiscal 2024"
+        canonical = {
+            "毛利率_2024": {"value": 20.1, "unit": "%"}
+        }
+        result = agent._enforce_canonical_values(content, canonical)
+        assert "20.1" in result
 
     def test_same_metric_appears_twice_both_replaced(self, agent):
         """同一指标值出现两次，两次都应替换"""

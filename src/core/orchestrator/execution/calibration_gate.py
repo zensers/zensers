@@ -62,6 +62,7 @@ def fix_content_from_canonical(
     from src.core.data.canonical_registry import parse_entry_key
 
     extractor = MetricExtractor()
+    en_aliases = getattr(MetricExtractor, 'ENGLISH_ALIASES', {})
     results = deepcopy(all_results)
 
     normalized_canonical, currency_converted = _normalize_canonical(canonical_data, target_currency)
@@ -101,12 +102,17 @@ def fix_content_from_canonical(
 
                 old_str = str(text_value)
                 new_str = str(best_canonical)
-                old_pattern = old_str[:-2] if old_str.endswith(".0") else old_str
+                if old_str.endswith(".0"):
+                    old_pattern = _re.escape(old_str[:-2]) + r'(?:\.0)?'
+                else:
+                    old_pattern = _re.escape(old_str)
 
+                names = [metric_name] + en_aliases.get(metric_name, [])
+                name_part = "(?:" + "|".join(_re.escape(n) for n in names) + ")"
                 pattern = (
-                    rf'({_re.escape(metric_name)}'
+                    rf'({name_part}'
                     rf'[^\d]*?)'
-                    rf'({_re.escape(old_pattern)})'
+                    rf'({old_pattern})'
                     rf'(\s*{_re.escape(text_unit)})'
                 )
 

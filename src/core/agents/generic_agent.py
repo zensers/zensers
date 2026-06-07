@@ -1230,6 +1230,7 @@ class GenericAgent(
         M3: Post-processing to enforce canonical values in generated content.
         Extracts metrics via MetricExtractor, compares with canonical_data,
         and replaces values differing by more than 5% (skipping table lines).
+        Supports both Chinese and English metric names via ENGLISH_ALIASES.
         """
         import re as _re
         if not content or not canonical_data:
@@ -1237,12 +1238,11 @@ class GenericAgent(
 
         from src.core.data.metric_extractor import MetricExtractor
         extractor = MetricExtractor()
+        en_aliases = getattr(MetricExtractor, 'ENGLISH_ALIASES', {})
 
         data_points = [{"content": content, "url": ""}]
         found_metrics = extractor.extract(data_points)
 
-        # Group candidates by metric name, pick the best match for each
-        metric_candidates = {}
         for fm in found_metrics:
             metric_name = fm["metric"]
             text_value = fm["value"]
@@ -1260,42 +1260,34 @@ class GenericAgent(
                     continue
 
                 diff = abs(text_value - float(canonical_value)) / max(abs(float(canonical_value)), 0.01)
-                if diff > 0.05:
-                    cur = metric_candidates.get(metric_name)
-                    if cur is None or diff > cur["diff"]:
-                        metric_candidates[metric_name] = {
-                            "old_value": text_value,
-                            "new_value": canonical_value,
-                            "unit": text_unit,
-                            "diff": diff,
-                        }
+                if diff <= 0.05:
+                    continue
 
-        for metric, cand in metric_candidates.items():
-            old_val = cand["old_value"]
-            new_val = cand["new_value"]
-            old_str = str(old_val)
-            new_str = str(new_val)
-            old_pattern = old_str
-            if old_str.endswith(".0"):
-                old_pattern = old_str[:-2]
-            unit = cand["unit"]
+                new_str = str(canonical_value)
+                old_str = str(text_value)
+                if old_str.endswith(".0"):
+                    old_pattern = _re.escape(old_str[:-2]) + r'(?:\.0)?'
+                else:
+                    old_pattern = _re.escape(old_str)
 
-            pattern = (
-                rf'({_re.escape(metric)}'
-                rf'[^\d]*?)'
-                rf'({_re.escape(old_pattern)})'
-                rf'(\s*{_re.escape(unit)})'
-            )
+                names = [metric_name] + en_aliases.get(metric_name, [])
+                name_part = "(?:" + "|".join(_re.escape(n) for n in names) + ")"
+                pattern = (
+                    rf'({name_part}'
+                    rf'[^\d]*?)'
+                    rf'({old_pattern})'
+                    rf'(\s*{_re.escape(text_unit)})'
+                )
 
-            def _skip_table_line(match, _new=new_str):
-                last_newline = content.rfind('\n', 0, match.start())
-                if last_newline >= 0:
-                    line_start = content[last_newline + 1:]
-                    if line_start.startswith('|'):
-                        return match.group(0)
-                return match.group(1) + _new + match.group(3)
+                def _skip_table_line(match, _new=new_str):
+                    last_newline = content.rfind('\n', 0, match.start())
+                    if last_newline >= 0:
+                        line_start = content[last_newline + 1:]
+                        if line_start.startswith('|'):
+                            return match.group(0)
+                    return match.group(1) + _new + match.group(3)
 
-            content = _re.sub(pattern, _skip_table_line, content)
+                content = _re.sub(pattern, _skip_table_line, content)
 
         return content
 
