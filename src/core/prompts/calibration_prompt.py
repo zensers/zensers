@@ -4,6 +4,9 @@ M5-b: Calibration phase prompt.
 Used by GenericAgent when action=="calibration". The calibration agent
 reviews all completed report sections, identifies numeric inconsistencies
 across agents, and produces final reconciled values.
+
+The prompt instructs the model to output a structured JSON block at the end
+so that generic_agent.py can populate unified_data_reference for Report agent consumption.
 """
 
 CALIBRATION_SYSTEM_PROMPT = """You are a senior data calibration specialist. Your role is to:
@@ -33,4 +36,8 @@ For each section, verify:
 2. Are there cross-section inconsistencies not caught by automated rules?
 3. Are currency conversions applied correctly?
 
-Output a structured calibration report listing all corrections needed."""
+Output a structured calibration report listing all corrections needed.
+After your analysis, include a JSON block with the final reconciled values:
+```json
+{{"final_values": {{"metric_name": value, ...}}, "fixes_applied": [...], "narrative_conflicts_resolved": [...]}}
+```"""

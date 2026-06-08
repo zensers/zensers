@@ -589,8 +589,22 @@ class GenericAgent(
                             system_prompt=CALIBRATION_SYSTEM_PROMPT,
                         )
                         if result.get("success") and result.get("content"):
-                            result["calibration_report"] = {"summary": result["content"][:5000], "full_text": result["content"]}
-                            result["unified_data_reference"] = {}
+                            _cal_content = result["content"]
+                            result["calibration_report"] = {"summary": _cal_content[:5000], "full_text": _cal_content}
+                            _ref = {}
+                            import re as _re
+                            _json_block = _re.search(
+                                r'```(?:json)\s*(\{.*?\})\s*```', _cal_content, _re.DOTALL
+                            )
+                            if _json_block:
+                                import json as _json
+                                try:
+                                    _parsed = _json.loads(_json_block.group(1))
+                                    if isinstance(_parsed, dict):
+                                        _ref = _parsed
+                                except _json.JSONDecodeError:
+                                    pass
+                            result["unified_data_reference"] = _ref
                         return self._ensure_standard_result(result, action)
                     
                     # Check if there is aggregated content from previous phases (synthesis agent path)
@@ -1450,10 +1464,10 @@ class GenericAgent(
         
         logger.info(f"GenericAgent {self.agent_id}: 搜索配置 min_queries={min_queries}, max_results={max_results_per_query}")
         
-        # 质量阈值
-        MIN_QUALITY_SCORE = 75.0  # Q-FIX-4: was 50.0
-        MIN_SOURCES = 8  # 最少高质量来源数（提高要求）
-        STAGNATION_LIMIT = 10  # 质量停滞检测：连续多少轮(每轮3次搜索)质量未提升则接受当前数据
+        # 质量阈值：与 SearchQualityFilter 默认值 40.0 对齐
+        MIN_QUALITY_SCORE = 45.0  # 与 quality_filter 实际可达到的分值匹配
+        MIN_SOURCES = 5  # 最少高质量来源数
+        STAGNATION_LIMIT = 6  # 质量停滞检测：连续多少轮(每轮3次搜索)质量未提升则接受当前数据
         
         # 新增：硬限制（防止无限循环）
         MAX_QUERIES = 50  # 最大搜索次数
@@ -2740,15 +2754,20 @@ class GenericAgent(
                 )
                 
                 if scraper_result.get("success"):
-                    # web_scraper_skill 返回的字段是 "text"，不是 "result"
                     full_text = scraper_result.get("text", "") or scraper_result.get("result", "")
                     if full_text and len(full_text) > len(result.get("body", "")):
-                        # 使用完整内容替换简短摘要
                         enriched = result.copy()
-                        enriched["body"] = full_text[:3000]  # 限制长度，避免过长的内容
+                        enriched["body"] = full_text[:3000]
                         enriched["full_content_fetched"] = True
                         enriched["content_length"] = len(full_text)
-                        logger.debug(f"GenericAgent: 爬取成功 {url[:50]}... 内容长度={len(full_text)}")
+                        # 用完整内容重新计算 quality_score（原分基于 snippet 偏低）
+                        _old_score = enriched.get("quality_score", 30)
+                        if len(full_text) > 1000:
+                            enriched["quality_score"] = max(_old_score, 55)
+                        elif len(full_text) > 300:
+                            enriched["quality_score"] = max(_old_score, 45)
+                        logger.debug(f"GenericAgent: 爬取成功 {url[:50]}... "
+                                     f"内容长度={len(full_text)}, 质量分={_old_score}->{enriched['quality_score']}")
                         return enriched
             except asyncio.TimeoutError:
                 logger.debug(f"GenericAgent: 爬取超时 {url[:50]}...")

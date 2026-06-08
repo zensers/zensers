@@ -281,11 +281,12 @@ class DynamicPhaseOrchestrator:
             # Calibrator must depend on ALL prior agents so scheduler puts it in a later batch.
             # Phase-level depends_on controls execution flow; agent-level resolved_dependencies
             # ensures the scheduler topological sort batches the calibrator after all prior agents.
-            _prior_agent_ids = []
+            _prior_agent_ids_set = set()
             for _p in phases:
                 for _spec in _p.agent_specs:
                     if _spec.agent_id:
-                        _prior_agent_ids.append(_spec.agent_id)
+                        _prior_agent_ids_set.add(_spec.agent_id)
+            _prior_agent_ids = sorted(_prior_agent_ids_set)
             cal_depends_on = [phases[-1].phase_id] if phases else []
             cal_phase = ExecutionPhase(
                 phase_id=f"phase_{counter}",

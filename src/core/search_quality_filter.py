@@ -252,23 +252,11 @@ class SearchQualityFilter:
             score = self._calculate_quality_score(result, query, context)
             quality_scores.append(score)
 
-        # Determine effective threshold: use adaptive if filtering is too aggressive
+        # Use fixed threshold — never adapt downward
+        # When quality is uniformly low, better to return fewer results
+        # than let garbage through. The caller (search_skill.py) has a
+        # fallback that scores and returns top-N if filtering is too aggressive.
         effective_threshold = self.min_quality_score
-        passed_count = sum(1 for s in quality_scores if not s.is_filtered and s.overall_score >= effective_threshold)
-        if results and passed_count < max(3, len(results) * 0.33):
-            # Too few results passed: find the 50th percentile score among passable results
-            passable_scores = sorted(
-                [s.overall_score for s in quality_scores if not s.is_filtered],
-                reverse=True
-            )
-            if passable_scores:
-                adaptive = passable_scores[max(0, len(passable_scores) // 2 - 1)]
-                if adaptive < effective_threshold and adaptive >= 10.0:
-                    effective_threshold = adaptive
-                    # B2: Adaptive floor - never go below 75% of configured threshold
-                    effective_threshold = max(effective_threshold, self._min_quality_score * 0.75)
-                    logger.info(f"Adaptive threshold: {self.min_quality_score:.0f} -> {effective_threshold:.0f} "
-                                f"(only {passed_count}/{len(results)} passed at fixed threshold)")
 
         # Apply the effective threshold
         filtered_results = []
@@ -422,6 +410,19 @@ class SearchQualityFilter:
         # Default to general source
         return SourceCredibility.TIER4_GENERAL, False, None
 
+    @staticmethod
+    def _split_query_terms(query: str) -> set:
+        """Split query into terms, handling both English (space) and Chinese."""
+        terms = set(query.lower().split())
+        # Chinese text has no spaces — extract individual CJK characters
+        cjk_chars = set()
+        for ch in query:
+            if '\u4e00' <= ch <= '\u9fff' or '\u3000' <= ch <= '\u303f':
+                cjk_chars.add(ch)
+        if cjk_chars:
+            terms.update(cjk_chars)
+        return terms
+
     def _assess_relevance(
         self,
         result: Dict[str, Any],
@@ -438,7 +439,7 @@ class SearchQualityFilter:
         body = result.get("body", "") or result.get("snippet", "")
         body = body.lower()
 
-        query_terms = set(query.lower().split())
+        query_terms = self._split_query_terms(query)
 
         if not query_terms:
             return 50.0

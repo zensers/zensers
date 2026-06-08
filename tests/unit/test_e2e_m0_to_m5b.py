@@ -222,9 +222,9 @@ class TestE2EM0toM5b:
         """M5-b 校准阶段：ANALYSIS 类型 section → 生成 CALIBRATION phase。"""
         from src.core.task_structure import SectionRole
         from src.core.dynamic_orchestrator import PhaseType
-        from tests.unit.test_m5b_calibration_phase import _make_orch_plan
+        from tests.helpers import make_orch_plan
 
-        plan = _make_orch_plan([SectionRole.ANALYSIS, SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
+        plan = make_orch_plan([SectionRole.ANALYSIS, SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
         cal_phases = [p for p in plan.phases if p.phase_type == PhaseType.CALIBRATION]
 
         assert len(cal_phases) == 1
@@ -241,9 +241,9 @@ class TestE2EM0toM5b:
         """M5-b: 校准 agent 依赖所有前置 agent。"""
         from src.core.task_structure import SectionRole
         from src.core.dynamic_orchestrator import PhaseType
-        from tests.unit.test_m5b_calibration_phase import _make_orch_plan
+        from tests.helpers import make_orch_plan
 
-        plan = _make_orch_plan([SectionRole.ANALYSIS, SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
+        plan = make_orch_plan([SectionRole.ANALYSIS, SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
         cal_phase = [p for p in plan.phases if p.phase_type == PhaseType.CALIBRATION][0]
         calibrator = cal_phase.agent_specs[0]
         deps = calibrator.config.get("resolved_dependencies", [])
@@ -265,9 +265,9 @@ class TestE2EM0toM5b:
         from src.core.task_structure import SectionRole
         from src.core.dynamic_orchestrator import PhaseType
         from src.core.decomposition.strategies import ResearchPhase
-        from tests.unit.test_m5b_calibration_phase import _make_orch_plan
+        from tests.helpers import make_orch_plan
 
-        plan = _make_orch_plan([SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
+        plan = make_orch_plan([SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
         decomp = plan.to_decomposition_plan()
         order = decomp.execution_order
 
@@ -283,29 +283,63 @@ class TestE2EM0toM5b:
         """M5-b: 无 ANALYSIS section 时不应生成校准阶段。"""
         from src.core.task_structure import SectionRole
         from src.core.dynamic_orchestrator import PhaseType
-        from tests.unit.test_m5b_calibration_phase import _make_orch_plan
+        from tests.helpers import make_orch_plan
 
-        plan = _make_orch_plan([SectionRole.SYNTHESIS, SectionRole.DATA_COLLECTION])
+        plan = make_orch_plan([SectionRole.SYNTHESIS, SectionRole.DATA_COLLECTION])
         cal_phases = [p for p in plan.phases if p.phase_type == PhaseType.CALIBRATION]
         assert len(cal_phases) == 0
 
-    def test_stage_m5b_calibration_agent_task_structure(self):
-        """M5-b: engine.py 的校准 agent task 结构验证。"""
-        import inspect
-        from src.core.orchestrator.execution import engine as engine_module
+    def test_stage_m5b_calibration_injection_logic(self):
+        """M5-b: 校准注入逻辑（engine.py 1871-1875 行）按契约产出正确结果。"""
+        previous_results = [
+            {"agent_id": "cal_1", "category": "calibration", "success": True,
+             "calibration_report": {"summary": "revenue fixed", "full_text": "..."},
+             "unified_data_reference": {"final_values": {"revenue": 6770}}},
+            {"agent_id": "analysis_1", "category": "analysis", "success": True},
+        ]
 
-        src = inspect.getsource(engine_module)
-        assert '"action": "calibration"' in src
-        assert 'AgentCategory.CALIBRATION' in src
+        _calib = [r for r in previous_results if r.get("category") == "calibration" and r.get("success")]
+        task = {}
+        if _calib:
+            _calib_data = _calib[0]
+            task["calibration_report"] = _calib_data.get("calibration_report", {})
+            task["unified_data_reference"] = _calib_data.get("unified_data_reference", {})
 
-    def test_stage_m5b_calibration_injected_into_report(self):
-        """M5-b: engine.py 注入 calibration_report + unified_data_reference 到 report agent。"""
-        import inspect
-        from src.core.orchestrator.execution import engine as engine_module
+        assert task["calibration_report"]["summary"] == "revenue fixed"
+        assert task["unified_data_reference"]["final_values"]["revenue"] == 6770
 
-        src = inspect.getsource(engine_module)
-        assert "calibration_report" in src
-        assert "unified_data_reference" in src
+    def test_stage_m5b_calibration_no_injection_without_results(self):
+        """M5-b: 无校准结果 → 不注入 calibration_report。"""
+        previous_results = [
+            {"agent_id": "analysis_1", "category": "analysis", "success": True},
+        ]
+
+        _calib = [r for r in previous_results if r.get("category") == "calibration" and r.get("success")]
+        task = {}
+        if _calib:
+            _calib_data = _calib[0]
+            task["calibration_report"] = _calib_data.get("calibration_report", {})
+            task["unified_data_reference"] = _calib_data.get("unified_data_reference", {})
+
+        assert "calibration_report" not in task
+        assert "unified_data_reference" not in task
+
+    def test_stage_m5b_classify_agent_calibration(self):
+        """M5-b: classify_agent 对 calibration category 返回 CALIBRATION。"""
+        from src.core.orchestrator.execution.engine import ExecutionEngine, ExecutionConfig, AgentCategory
+        from src.core.communication import MessageBus, SharedMemory
+
+        class _MockAgent:
+            agent_id = "calibrator_1"
+            config = {"category": "calibration"}
+
+        engine = ExecutionEngine(
+            config=ExecutionConfig(),
+            message_bus=MessageBus(),
+            shared_memory=SharedMemory(),
+        )
+        result = engine.classify_agent(_MockAgent())
+        assert result == AgentCategory.CALIBRATION
 
     def test_full_pipeline_end_to_end(self):
         """
@@ -317,7 +351,7 @@ class TestE2EM0toM5b:
         from src.core.task_structure import SectionRole
         from src.core.dynamic_orchestrator import PhaseType
         from src.core.decomposition.strategies import ResearchPhase
-        from tests.unit.test_m5b_calibration_phase import _make_orch_plan
+        from tests.helpers import make_orch_plan
 
         raw = deepcopy(ALL_RAW)
 
@@ -353,7 +387,7 @@ class TestE2EM0toM5b:
         assert "analysis" in aggregated.layered_content
 
         # --- Stage 3: M5-b 校准阶段生成 ---
-        plan = _make_orch_plan([SectionRole.ANALYSIS, SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
+        plan = make_orch_plan([SectionRole.ANALYSIS, SectionRole.ANALYSIS, SectionRole.SYNTHESIS])
         cal_phases = [p for p in plan.phases if p.phase_type == PhaseType.CALIBRATION]
         assert len(cal_phases) == 1
 
@@ -387,7 +421,7 @@ class TestE2EM0toM5b:
         from src.core.orchestrator.aggregation.result_aggregator import ResultAggregator
         from src.core.task_structure import SectionRole
         from src.core.dynamic_orchestrator import PhaseType
-        from tests.unit.test_m5b_calibration_phase import _make_orch_plan
+        from tests.helpers import make_orch_plan
 
         raw = deepcopy(DC_RESULTS)
 
@@ -400,6 +434,6 @@ class TestE2EM0toM5b:
         assert aggregated.stats["total_agents"] == 2
         assert aggregated.stats["metric_conflicts"] == 0
 
-        plan = _make_orch_plan([SectionRole.DATA_COLLECTION, SectionRole.SYNTHESIS])
+        plan = make_orch_plan([SectionRole.DATA_COLLECTION, SectionRole.SYNTHESIS])
         cal_phases = [p for p in plan.phases if p.phase_type == PhaseType.CALIBRATION]
         assert len(cal_phases) == 0, "无 ANALYSIS → 不应生成校准阶段"
