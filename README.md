@@ -2,66 +2,75 @@
 
 # Zensers
 
-**AI-Powered Market Research Platform**
+**Automated Market Research Platform**
+
+<br>
 
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-green.svg)]()
 [![Tests](https://img.shields.io/badge/tests-439%20passing-brightgreen.svg)]()
 [![Next.js](https://img.shields.io/badge/Next.js-14-black.svg)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal.svg)]()
 
-*Turn research questions into professional reports — automatically.*
+<br>
+
+> Generate professional research reports through multi-agent collaboration — with automatic data consistency assurance.
 
 </div>
 
 ---
 
-## Why Zensers?
+## ✦ Overview
 
-LLMs generate great text, but they **hallucinate numbers**. Research reports need accuracy — every data point must be traceable and consistent.
+Zensers is an open-source platform that transforms research questions into comprehensive, professionally formatted reports. Unlike simple LLM wrappers, it orchestrates a team of specialized agents that research, analyze, cross-validate, and synthesize information — producing reports where every data point is checked for consistency.
 
-Zensers is built different: a multi-agent system that doesn't just write reports — it **audits every number** before it reaches the page.
-
----
-
-## Features
-
-- **Multi-Agent Orchestration** — Dynamic agent teams (research, analysis, synthesis, calibration) collaborate on complex reports
-- **Data Consistency Pipeline** — Automatic cross-validation of every metric against authoritative sources
-- **Multi-Engine Search** — DuckDuckGo, Baidu, Google, and Bing integration with intelligent result ranking
-- **Smart Content Extraction** — Adaptive web scraping that handles JS sites, PDFs, and anti-bot protection
-- **Professional Report Output** — DOCX, PPTX, PDF, and Markdown with publication-grade formatting
-- **Bilingual Support** — Full Chinese-English mixed-language report capabilities
+**Use cases:** Industry analysis · Company research · Financial reporting · Market intelligence · Academic literature review
 
 ---
 
-## Quick Start
+## ✦ Key Capabilities
+
+| | |
+|---|---|
+| **Multi-Agent System** | Dynamic agent teams autonomously handle research, analysis, synthesis, and quality calibration |
+| **Data Pipeline** | Automatic cross-validation ensures numerical consistency across all report sections |
+| **Intelligent Search** | Integrated search across DuckDuckGo, Baidu, Google, and Bing with smart result ranking |
+| **Web Scraping** | Adaptive extraction that handles JavaScript-rendered sites, PDF documents, and anti-bot protection |
+| **Report Generation** | Professional output in DOCX, PPTX, PDF, and Markdown with publication-grade formatting |
+| **Bilingual Support** | Full support for Chinese and English mixed-language reports |
+
+---
+
+## ✦ Quick Start
 
 ```bash
-# Install
+# Install dependencies
 pip install -r requirements.txt
 
-# Configure
+# Configure your LLM API key
 cp config/settings.example.yaml config/settings.yaml
 
-# Run
+# Launch the server
 uvicorn src.main:app --reload
 ```
 
 ---
 
-## Tech Stack
+## ✦ Tech Stack
 
-**Backend**: Python + FastAPI + asyncio  
-**LLM**: OpenAI-compatible (GPT-4, Claude, local models)  
-**Search**: DuckDuckGo, Baidu, Google, Bing  
-**Frontend**: Next.js 14 + Tailwind CSS  
-**Testing**: pytest (439 tests)
+| Layer | Technology |
+|---|---|
+| Backend | Python · FastAPI · asyncio |
+| LLM | OpenAI / Anthropic / Local models |
+| Search | DuckDuckGo · Baidu API · Google · Bing |
+| Frontend | Next.js 14 · Tailwind CSS |
+| Testing | pytest · 439 tests |
 
 ---
 
-## License
+## ✦ License
 
-MIT
+MIT License — see [LICENSE](LICENSE)
 
 ---
 
