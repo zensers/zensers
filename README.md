@@ -2,167 +2,196 @@
 
 [![MIT License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)](https://nextjs.org/)
+[![Tests](https://img.shields.io/badge/tests-439%20passed-brightgreen.svg)]()
 
-**Open-source automated market research system powered by multi-agent collaboration**
+**Automated Industry Research System — 自动化产业研究系统**
 
-基于多Agent协作的开源自动化市场研究系统
+> Multi-agent collaboration platform that generates professional-grade industry research reports with guaranteed data consistency.  
+> 多智能体协同平台，生成具有数据一致性保障的专业级行业研究报告。
 
 ---
 
-## Key Features / 核心特性
+## Overview / 概述
 
-- 🤖 **Multi-Agent Collaboration** — Master agent dynamically spawns specialized agents for complex research tasks / 主控Agent动态生成专业Agent协同完成复杂研究
-- 📊 **Professional Report Generation** — McKinsey-style international publication quality reports / 支持McKinsey风格的国际出版物级别报告输出
-- 📈 **Intelligent Chart Generation** — 10 professional chart types with automatic data visualization / 10种专业图表类型，自动数据可视化
-- 🔌 **Open Source Ecosystem** — Integrates LangChain, LlamaIndex and other open-source skills / 集成LangChain、LlamaIndex等开源Skill生态
-- 🧠 **Model Agnostic** — Universal OpenAI-compatible interface supporting GPT, Claude, local models / 通用OpenAI接口，支持GPT、Claude、本地模型等
-- 💾 **Persistent State** — Task state persistence with crash recovery and resume support / 任务状态持久存储，支持崩溃恢复和断点续传
-- 🔧 **Dynamic Extension** — Auto-discovery and dynamic installation of skills / Skill自动发现和动态安装，功能无限扩展
-- 🌐 **Modern Frontend** — Next.js 14 with Tailwind CSS for responsive UI / 基于Next.js 14和Tailwind CSS的现代化前端界面
+Zensers is an open-source automated market research system that goes beyond simple LLM-based report generation. It features a **multi-agent orchestration engine** with a **6-stage data consistency pipeline (M0–M5)** that ensures every number in the final report is cross-validated against authoritative canonical data.
+
+Unlike naive report generators that suffer from hallucinated numbers, Zensers treats data integrity as a first-class concern — catching and fixing inconsistencies across agents, stages, and currencies before the final report is assembled.
 
 ---
 
 ## Architecture / 系统架构
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      User Interface                          │
-│                     用户交互层 (Next.js)                       │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│                   Understanding Layer                        │
-│                     需求理解层                                │
-│              (Requirement Analysis & Parsing)                │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│                  Orchestration Layer                         │
-│                     主控调度层                                │
-│         (Master Agent, Task Planning, Agent Spawning)        │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│                     Agent Layer                              │
-│                    Agent执行层                               │
-│    (Specialized Agents: Research, Analysis, Generation)      │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-┌─────────────────────────▼───────────────────────────────────┐
-│                     Skill Layer                              │
-│                    Skill能力层                               │
-│   (Search, Scraping, Charts, Document Generation, etc.)      │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        User Interface                            │
+│               Next.js 14 + Tailwind CSS / REST API               │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────┐
+│                    Orchestration Layer                            │
+│     ResearchOrchestrator · Task Planner · Agent Scheduling       │
+│     Intelligent Routing · Content Lock Manager · Session Mgmt    │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────┐
+│                    Multi-Agent Execution                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
+│  │  Data     │  │ Analysis │  │Synthesis │  │  Calibration   │  │
+│  │Collection │  │  Agents  │  │  Agents  │  │    Agent       │  │
+│  │  Agents   │  │          │  │          │  │  (M5-b LLM)    │  │
+│  └──────────┘  └──────────┘  └──────────┘  └────────────────┘  │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────┐
+│              M0–M5 Data Consistency Pipeline                      │
+│  ┌────┐ ┌────┐ ┌────┐ ┌────┐ ┌──────┐ ┌────┐                   │
+│  │ M0 │→│ M1 │→│ M2 │→│ M3 │→│ M5-a │→│ M5-b│                   │
+│  │Agg.│ │Dual│ │Filt│ │Can.│ │ Gate │ │Cal. │                   │
+│  │    │ │Phse│ │er  │ │Enf.│ │ Fix  │ │ LLM │                   │
+│  └────┘ └────┘ └────┘ └────┘ └──────┘ └────┘                   │
+└───────────────────────────┬─────────────────────────────────────┘
+                            │
+┌───────────────────────────▼─────────────────────────────────────┐
+│                      Skill Layer                                 │
+│  Search(Baidu/DDGS/Google) · Scraper(Scrapling/PW) · Charts     │
+│  PDF Generation(DOCX/PPTX) · Quality Checkers                   │
+└─────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## Key Features / 核心特性
+
+### 🎯 M0–M5 Data Consistency Pipeline
+The core innovation — a 6-stage pipeline guaranteeing numerical accuracy:
+
+| Stage | Function | What it does |
+|-------|----------|-------------|
+| **M0** | Aggregation | Maps agent_id→aggregation keys, preserves cross-phase content (DC vs Analysis) |
+| **M1** | Dual-Phase | Generates DC + Analysis phases per section, manages interdependencies |
+| **M2** | Aspect Filtering | Routes data to correct sections based on aspect/topic matching |
+| **M3** | Canonical Enforcement | Replaces agent values with authoritative canonical data (>5% diff threshold) |
+| **M5-a** | Consistency Gate | Fixes content + data_points via MetricExtractor; cross-currency conversion |
+| **M5-b** | Calibration Phase | LLM-based cross-agent consistency check; generates calibration report |
+
+### 🤖 Multi-Agent Orchestration
+- **Dynamic Agent Spawning**: Master agent spawns specialized agents (DC, Analysis, Synthesis, Calibration) based on task complexity
+- **Content Lock Manager**: Section-level dependency tracking prevents parallel conflicts
+- **Session Persistence**: Crash recovery with checkpoint-based resume
+- **Parallel Execution**: Topological scheduler for optimal batch execution
+
+### 🔍 Search Infrastructure
+- **Multi-Engine**: DuckDuckGo (DDGS), Baidu (baidu-serp-api), Google, Bing (CN/Intl)
+- **Adaptive Scraping** (v3.0): Scrapling `AsyncFetcher` with anti-bot detection, Playwright for JS sites, pdfplumber for PDF reports
+- **Two-Stage Enrichment**: Search → snippet → full content crawl → LLM
+- **Quality Scoring**: Multi-dimensional scoring (credibility × 35% + relevance × 30% + depth × 25% + freshness × 10%)
+
+### 📊 Professional Report Generation
+- **Multi-Format Output**: DOCX, PPTX, PDF, Markdown, HTML
+- **Intelligent Charts**: 10 chart types (matplotlib, plotly, seaborn)
+- **McKinsey-Style Templates**: Professional publication-grade formatting
+- **Bilingual Support**: Chinese + English mixed-language reports
+
+### 🧠 Model Agnostic
+- Universal OpenAI-compatible interface
+- Supports GPT-4, Claude, Gemini, local models
+- Automatic fallback across providers
+
+---
+
+## M0–M5 Pipeline in Action / 数据一致性管线工作流
+
+```
+Agent outputs → M5-a Gate (canonical fix)
+     ↓
+M0 Aggregation (phase-aware key mapping)
+     ↓
+M4 Conflict Detection (cross-agent metric comparison)
+     ↓
+M5-b Calibration (LLM reconciliation → Report injection)
+     ↓
+Final report with guaranteed data consistency
+```
+
+**Example**: Two analysis agents produce conflicting revenue figures (7200 vs 6770). The pipeline detects the discrepancy at M4, applies the authoritative canonical value (6770) at M5-a, and the calibration agent documents the fix at M5-b — the final report uses the correct value with full traceability.
 
 ---
 
 ## Quick Start / 快速开始
 
-### Prerequisites / 前置要求
-
-- Python 3.10 or higher
-- Node.js 18 or higher
-- OpenAI-compatible API key
-
-### Installation / 安装
+### Prerequisites
 
 ```bash
-# Clone the repository
-git clone https://github.com/sunchaokun/zensers.git
-cd zensers
-
-# Install backend dependencies
+# Python 3.10+ and Node.js 18+
 pip install -r requirements.txt
-
-# Install frontend dependencies
-cd frontend
-npm install
-cd ..
+pip install "scrapling[fetchers]"   # web scraping engine
+scrapling install                   # install browser dependencies
 ```
 
-### Configuration / 配置
+### Configuration
 
 ```bash
-# Copy the example configuration
 cp config/settings.example.yaml config/settings.yaml
-
-# Edit config/settings.yaml and add your API keys
-# 编辑 config/settings.yaml 并填入你的API密钥
+# Edit config/settings.yaml to add LLM API keys
 ```
 
-### Run / 运行
+### Run
 
 ```bash
-# Start backend server
+# Backend
 uvicorn src.main:app --reload
 
-# In a new terminal, start frontend
-cd frontend
-npm run dev
+# Frontend (separate terminal)
+cd frontend && npm run dev
 ```
 
-Access the application at `http://localhost:3000`
-
-访问 `http://localhost:3000` 使用应用
+Open `http://localhost:3000`
 
 ---
 
-## Documentation / 文档
+## Project Statistics / 项目统计
 
-- [API Reference](docs/API.md) — REST API documentation
-- [Architecture](docs/ARCHITECTURE.md) — System architecture design
-- [Agent Design](docs/AGENT_DESIGN.md) — Agent states and lifecycle
-- [Skill System](docs/SKILL_SYSTEM.md) — Skill management and integration
-- [Changelog](docs/CHANGELOG.md) — Version history
-- [Roadmap](docs/ROADMAP.md) — Development roadmap
+| Metric | Value |
+|--------|-------|
+| Commits | 28+ |
+| Automated Tests | 439 |
+| Test Pass Rate | 100% (core pipeline) |
+| Search Engines | 5 (DuckDuckGo, Baidu, Google, Bing CN/Intl) |
+| Scraping Strategies | 4 (static, JS, PDF, redirect resolution) |
+| Output Formats | 6 (DOCX, PPTX, PDF, MD, HTML, JSON) |
+| License | MIT |
 
 ---
 
 ## Tech Stack / 技术栈
 
-| Layer | Technology | Description |
-|-------|------------|-------------|
-| **Backend** | Python 3.10+ | Core development language |
-| **Framework** | FastAPI | High-performance async web framework |
-| **LLM** | LangChain + OpenAI API | Multi-model support with unified interface |
-| **Frontend** | Next.js 14 | React framework with App Router |
-| **Styling** | Tailwind CSS | Utility-first CSS framework |
-| **Validation** | Pydantic | Data validation and settings management |
-| **Async** | asyncio | Concurrent task processing |
-| **Testing** | pytest | Unit and integration testing |
+| Layer | Technology |
+|-------|-----------|
+| **Runtime** | Python 3.10+ · asyncio |
+| **API** | FastAPI · WebSocket (SSE streaming) |
+| **LLM** | OpenAI API · Anthropic · LangChain |
+| **Search** | DuckDuckGo · baidu-serp-api · Scrapling · Playwright · pdfplumber |
+| **Documents** | python-docx · python-pptx · reportlab · markdown |
+| **Charts** | matplotlib · plotly · seaborn |
+| **Frontend** | Next.js 14 · Tailwind CSS |
+| **Testing** | pytest · 439 tests |
 
 ---
 
-## Contributing / 贡献
+## Documentation / 文档
 
-We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-欢迎贡献代码！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 了解贡献指南。
-
----
-
-## License / 许可证
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
-本项目采用 MIT 许可证 — 详见 [LICENSE](LICENSE) 文件。
+- [API Reference](docs/API.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Agent Design](docs/AGENT_DESIGN.md)
+- [Skill System](docs/SKILL_SYSTEM.md)
+- [Changelog](docs/CHANGELOG.md)
 
 ---
 
-## Acknowledgments / 致谢
+## License
 
-This project builds upon the following open-source projects:
-
-- [LangChain](https://github.com/langchain-ai/langchain) — LLM application framework
-- [LlamaIndex](https://github.com/run-llama/llama_index) — Data framework for LLMs
-- [FastAPI](https://github.com/tiangolo/fastapi) — Modern web framework for Python
-- [Next.js](https://github.com/vercel/next.js) — React framework for production
-
-See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for full license details.
+MIT License — see [LICENSE](LICENSE)
 
 ---
 
-*Zensers — Making market research smarter and more efficient*  
-*Zensers — 让市场研究更智能、更高效*
+*Zensers — Making market research smarter and more efficient · 让市场研究更智能、更高效*
