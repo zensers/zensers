@@ -61,7 +61,7 @@ uvicorn src.main:app --reload
 | Layer | Technology |
 |---|---|
 | Backend | Python · FastAPI · asyncio |
-| LLM | OpenAI / Anthropic / Local models |
+| LLM | OpenAI / DeepSeek / Local models |
 | Search | DuckDuckGo · Baidu API · Google · Bing |
 | Frontend | Next.js 14 · Tailwind CSS |
 | Testing | pytest · 439 tests |
