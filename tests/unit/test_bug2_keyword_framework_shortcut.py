@@ -65,11 +65,14 @@ class TestKeywordFrameworkShortcut:
 
     @pytest.mark.asyncio
     async def test_research_mode_depth_research_keyword_triggers_framework(self):
-        """Bug 2 验证：research 模式下'深度研究'关键词也触发 framework"""
+        """Bug 2 验证：research 模式下'深度研究'关键词触发 framework，暂停研究任务"""
         api = self._make_api()
         session = _make_session(mode='research', topic='比亚迪财务分析', directions=['营收分析'])
         from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
         cm = get_cancel_manager()
+        mock_task = MagicMock()
+        mock_task.done.return_value = False
+        api._executor_tasks['ses_001'] = mock_task
 
         with patch('src.api.research_api.session_manager') as sm:
             sm.get.return_value = session
@@ -82,6 +85,9 @@ class TestKeywordFrameworkShortcut:
                 with patch.object(cm, 'pause') as mock_pause:
                     result = await api._handle_user_message('ses_001', '深度研究')
 
+                    mock_pause.assert_called_once_with('ses_001')
+                    mock_task.cancel.assert_called_once()
+                    assert 'ses_001' not in api._executor_tasks
                     mock_enter_fw.assert_called_once()
                     assert result['mode'] == 'framework'
 

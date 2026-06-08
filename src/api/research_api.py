@@ -308,6 +308,18 @@ class ResearchAPI:
         is_depth_command = any(kw in input_lower for kw in depth_keywords) and not any(input_lower.endswith(s) for s in question_suffixes)
         if is_depth_command and latest_context.get('topic'):
             logger.info(f"Depth research keyword detected for {session_id}, entering framework mode directly")
+            if mode == 'research':
+                from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
+                cm = get_cancel_manager()
+                cm.pause(session_id)
+                old = self._executor_tasks.pop(session_id, None)
+                if old and not old.done():
+                    old.cancel()
+                conv_machine = session.get('state_machine')
+                if conv_machine and conv_machine.current_state == ConversationState.EXECUTING:
+                    if conv_machine.can_transition_to(ConversationState.FRAMEWORK_CONFIRM):
+                        conv_machine.transition(ConversationState.FRAMEWORK_CONFIRM)
+                session['mode'] = 'chat'
             return await self._enter_framework_mode(session_id, user_input)
 
         if mode == 'framework':
