@@ -78,17 +78,8 @@ export function useResearch() {
         ? useSessionStore.getState().sessions[prevId]?.messages || []
         : [];
 
-      // C8: setSessionId BEFORE createSession to avoid subscription recursion
       useResearchStore.getState().setSessionId(data.session_id);
-      useSessionStore.getState().createSession(data.session_id, input);
-
-      // C4: merge old session messages into new session
-      if (prevMessages.length > 0) {
-        const store = useSessionStore.getState();
-        if (store.sessions[data.session_id]) {
-          store.syncActive({ messages: prevMessages });
-        }
-      }
+      useSessionStore.getState().createSession(data.session_id, input, prevMessages);
 
       setTaskId(data.task_id);
 
@@ -167,10 +158,14 @@ export function useResearch() {
       };
 
       const data = await api.startResearch(input, undefined, llmConfig, fileIds);
-      setSessionId(data.session_id);
 
-      // createSession now auto-transfers messages from pending session (Issue 1 fix)
-      useSessionStore.getState().createSession(data.session_id, input);
+      const existingMsgs = useChatStore.getState().messages;
+      const initialMsgs = existingMsgs.length > 0 ? existingMsgs : [
+        { id: nanoid(), role: 'user' as const, content: input, timestamp: new Date().toISOString() },
+      ];
+
+      setSessionId(data.session_id);
+      useSessionStore.getState().createSession(data.session_id, input, initialMsgs);
       setTaskId(data.session_id);  // Break isLocalOnly loop: without taskId, sendMessage redirects back to startResearch
 
         // Async tool execution path: returns processing status, SSE pushes results later

@@ -250,10 +250,34 @@ except Exception as e:
 
 ## 五、建议修复优先级（三次校验版）
 
-1. **P0**：关键词快捷路径触发 framework 模式（最直接的解决方案，放在 `_handle_user_message` 入口覆盖所有模式）
-2. **P1**：`createSession` 接受 `initialMessages` 参数（防御性加固，消除对 `__pending__` 的隐式依赖）
+1. **P0 ✅ 已完成**：关键词快捷路径触发 framework 模式（`research_api.py:304-311`）
+2. **P1 ✅ 已完成**：`createSession` 接受 `initialMessages` 参数（`useSessionStore.ts:55,198`）
 3. **P1**：processing 路径添加助手消息（当前不可达，但作为 `_llm_converse` 异步化改造的配套修改）
 4. **P1**：JSON 解析失败时自动进入 framework（条件触发）
 5. **P2**：`_llm_converse` 异步 tool_call 改造（高风险大改动，需配套 processing 路径修改）
 6. **P2**：synthesis prompt 改进（允许 `enter_framework` action，当前不经过此路径）
 7. **P2**：页面刷新后自动恢复 session（用户体验改善）
+
+---
+
+## 六、已实施修复详情
+
+### Bug 1 修复：`createSession` 防御性加固
+
+**修改文件：**
+- `web/src/store/useSessionStore.ts` — `createSession` 增加 `initialMessages?: ChatMessage[]` 参数，优先使用传入消息
+- `web/src/hooks/useResearch.ts` — `startResearch` 和 `quickStartResearch` 显式传入消息列表
+
+**测试：** `web/src/store/__tests__/bug1-createSession.test.ts` — 6 tests passed
+
+### Bug 2 修复：关键词快捷路径触发 framework
+
+**修改文件：**
+- `src/api/research_api.py:304-311` — `_handle_user_message` 入口（mode 路由前）检测关键词，直接调用 `_enter_framework_mode`
+
+**关键词过滤规则：**
+- 命中：深度研究、deep research、按框架研究、根据框架、开始研究、start research、详细分析、detailed analysis
+- 排除疑问句：以 ？ ? 吗 呢 是什么 是什么意思 怎么 如何 结尾
+- 必须有 topic 才触发（避免空框架）
+
+**测试：** `tests/unit/test_bug2_keyword_framework_shortcut.py` — 8 tests passed

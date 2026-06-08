@@ -302,6 +302,14 @@ class ResearchAPI:
         if self._should_start_execution(user_input, mode, latest_context, session_id):
             return await self._start_execution(session_id)
 
+        depth_keywords = ('深度研究', 'deep research', '按框架研究', '根据框架', '开始研究', 'start research', '详细分析', 'detailed analysis')
+        question_suffixes = ('？', '?', '吗', '呢', '是什么', '是什么意思', '怎么', '如何')
+        input_lower = user_input.strip().lower()
+        is_depth_command = any(kw in input_lower for kw in depth_keywords) and not any(input_lower.endswith(s) for s in question_suffixes)
+        if is_depth_command and latest_context.get('topic'):
+            logger.info(f"Depth research keyword detected for {session_id}, entering framework mode directly")
+            return await self._enter_framework_mode(session_id, user_input)
+
         if mode == 'framework':
             if user_input.strip().lower() == 'cancel research':
                 logger.info(f"User cancelled framework for {session_id}")

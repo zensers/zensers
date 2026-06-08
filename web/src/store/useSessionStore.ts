@@ -52,7 +52,7 @@ interface SessionRegistry {
   sessions: Record<string, SessionCache>;
 
   switchTo: (id: string) => void;
-  createSession: (id: string, title?: string) => void;
+  createSession: (id: string, title?: string, initialMessages?: ChatMessage[]) => void;
   closeSession: (id: string) => void;
 
   /** Sync state back to cache from Research/Chat store */
@@ -196,9 +196,11 @@ export const useSessionStore = create<SessionRegistry>()(
         set({ activeId: id });
       },
 
-      createSession: (id: string, title?: string) => {
+      createSession: (id: string, title?: string, initialMessages?: ChatMessage[]) => {
         const { activeId, sessions } = get();
-        const pendingMsgs = activeId === '__pending__' ? sessions['__pending__']?.messages || [] : [];
+        const pendingMsgs = initialMessages && initialMessages.length > 0
+          ? initialMessages
+          : (activeId === '__pending__' ? sessions['__pending__']?.messages || [] : []);
         const { ['__pending__']: _, ...rest } = sessions;
         const newSession = { ...emptyCache(id, title), messages: pendingMsgs };
         set({ sessions: { ...rest, [id]: newSession }, activeId: id });
