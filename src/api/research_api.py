@@ -306,7 +306,7 @@ class ResearchAPI:
         question_suffixes = ('？', '?', '吗', '呢', '是什么', '是什么意思', '怎么', '如何')
         input_lower = user_input.strip().lower()
         is_depth_command = any(kw in input_lower for kw in depth_keywords) and not any(input_lower.endswith(s) for s in question_suffixes)
-        if is_depth_command and latest_context.get('topic'):
+        if is_depth_command and latest_context.get('topic') and mode != 'framework':
             logger.info(f"Depth research keyword detected for {session_id}, entering framework mode directly")
             if mode == 'research':
                 from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager

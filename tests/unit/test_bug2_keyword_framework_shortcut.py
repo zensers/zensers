@@ -158,6 +158,28 @@ class TestKeywordFrameworkShortcut:
                 mock_enter_fw.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_framework_mode_keyword_not_intercepted(self):
+        """验证：framework 模式下关键词不拦截，走正常 framework 确认流程"""
+        api = self._make_api()
+        session = _make_session(mode='framework', topic='比亚迪财务分析', directions=['营收分析'])
+
+        with patch('src.api.research_api.session_manager') as sm:
+            sm.get.return_value = session
+
+            with patch.object(api, '_enter_framework_mode', new=AsyncMock(return_value={
+                'session_id': 'ses_001', 'step': 5, 'mode': 'framework',
+                'message': 'should not be called'
+            })) as mock_enter_fw:
+                with patch.object(api, '_handle_framework_mode', new=AsyncMock(return_value={
+                    'session_id': 'ses_001', 'step': 5, 'mode': 'framework',
+                    'message': '框架确认中'
+                })) as mock_fw_msg:
+                    result = await api._handle_user_message('ses_001', '开始研究')
+
+                    mock_enter_fw.assert_not_called()
+                    mock_fw_msg.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_normal_message_does_not_trigger_framework(self):
         """验证：普通消息（无关键词）走正常 LLM 路径"""
         api = self._make_api()
