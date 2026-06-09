@@ -449,7 +449,7 @@ export function useResearch() {
 
     // Existing session: send message (works for both chat mode and research mode)
     // In research mode (currentStep=6), backend _handle_user_message routes via _llm_converse
-    if (currentStep === 0 || currentStep === 6) {
+    if (currentStep === null || currentStep === 0 || currentStep === 6) {
       // Chat mode: send message
       try {
         setIsNetworkBusy(true);
