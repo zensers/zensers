@@ -530,7 +530,7 @@ export function useResearch() {
     }
 
     // Chat mode: click suggestion
-    if (currentStep === 0) {
+    if (currentStep === null || currentStep === 0) {
       try {
         setIsNetworkBusy(true);
         const data = await api.clickSuggestion(sessionId!, optionId, exampleText);
