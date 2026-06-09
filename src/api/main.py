@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """FastAPI Main Application - Zensers API."""
 import asyncio
+import sys
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 import json
 import logging, os, uuid
 from pathlib import Path
