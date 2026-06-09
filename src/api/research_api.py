@@ -344,12 +344,16 @@ class ResearchAPI:
             input_lower = user_input.strip().lower()
             cancel_keywords = ('取消研究', 'cancel research', '停止研究', 'stop research', '终止研究', 'abort research')
             pause_keywords = ('暂停', 'pause', '暂停研究', 'pause research')
+            resume_keywords = ('继续', '继续研究', 'resume', 'resume research', '继续执行', '继续运行')
             if any(kw in input_lower for kw in cancel_keywords):
                 logger.info(f"Keyword cancel detected in research mode for {session_id}")
                 return await self.cancel_research(session_id)
             if any(kw in input_lower for kw in pause_keywords):
                 logger.info(f"Keyword pause detected in research mode for {session_id}")
                 return await self.pause_research(session_id)
+            if any(kw in input_lower for kw in resume_keywords) and cm.is_paused(session_id):
+                logger.info(f"Keyword resume detected for paused {session_id}")
+                return await self.resume_research(session_id)
             return await self._handle_research_msg(session_id, user_input, session)
 
         return {'error': f"Unknown mode: {mode}", 'error_code': 'UNKNOWN_MODE'}
@@ -392,10 +396,11 @@ class ResearchAPI:
         try:
             conv_result = await asyncio.wait_for(self._llm_converse(session_id, user_input), timeout=60)
         except asyncio.TimeoutError:
-            return {'session_id': session_id, 'step': session.get('current_step', 6), 'mode': 'research', 'status': 'running', 'message': '消息分析超时，您的消息已记录，研究继续执行中。', 'suggestions': [], 'next_step': 'continue_research'}
+            logger.warning(f"LLM converse timed out during research for {session_id}, queuing message")
+            return {'session_id': session_id, 'step': session.get('current_step', 6), 'mode': 'research', 'status': 'running', 'message': '消息分析超时，您的消息已记录。您可以说"暂停"后重新发送，或等待研究完成后回复。', 'suggestions': ['暂停研究', '继续等待'], 'next_step': 'continue_research'}
         except Exception as e:
             logger.error(f"LLM converse failed: {e}", exc_info=True)
-            return {'session_id': session_id, 'step': session.get('current_step', 6), 'mode': 'research', 'status': 'running', 'message': '消息处理临时异常，研究继续执行中。', 'suggestions': [], 'next_step': 'continue_research'}
+            return {'session_id': session_id, 'step': session.get('current_step', 6), 'mode': 'research', 'status': 'running', 'message': '消息处理临时异常，您可以尝试"暂停"后重新发送。', 'suggestions': ['暂停研究'], 'next_step': 'continue_research'}
 
         if conv_result.get('status') == 'processing':
             return {'session_id': session_id, 'step': 0, 'mode': 'research', 'status': 'processing', 'message': conv_result.get('message', '正在处理您的请求...'), 'suggestions': [], 'next_step': 'tool_executing'}
