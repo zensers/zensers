@@ -375,7 +375,7 @@ class ResearchAPI:
 
         if cm.is_paused(session_id):
             try:
-                conv_result = await asyncio.wait_for(self._llm_converse(session_id, user_input), timeout=30)
+                conv_result = await asyncio.wait_for(self._llm_converse(session_id, user_input), timeout=60)
             except asyncio.TimeoutError:
                 logger.warning(f"LLM converse timed out for paused {session_id}, falling back to chat")
                 return await self._handle_chat_mode(session_id, user_input)
@@ -390,7 +390,7 @@ class ResearchAPI:
 
         logger.info(f"User message during research: {user_input}")
         try:
-            conv_result = await asyncio.wait_for(self._llm_converse(session_id, user_input), timeout=30)
+            conv_result = await asyncio.wait_for(self._llm_converse(session_id, user_input), timeout=60)
         except asyncio.TimeoutError:
             return {'session_id': session_id, 'step': session.get('current_step', 6), 'mode': 'research', 'status': 'running', 'message': '消息分析超时，您的消息已记录，研究继续执行中。', 'suggestions': [], 'next_step': 'continue_research'}
         except Exception as e:
