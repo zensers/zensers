@@ -53,6 +53,8 @@ if TYPE_CHECKING:
     from src.core.communication import MessageBus, SharedMemory
     from src.core.content_lock import ContentLockManager  # 新增：智能路由内容锁
 
+from src.core.content_lock import SectionState  # R-FIX-10: 用于 mark_section_state
+
 logger = logging.getLogger(__name__)
 
 
@@ -228,6 +230,7 @@ class ExecutionEngine:
         self.config = config
         self.message_bus = message_bus
         self._shared_memory = shared_memory
+        self.shared_memory = shared_memory
         
         # 控制机制
         self.concurrency = ConcurrencyManager(ConcurrencyConfig(
@@ -1151,6 +1154,7 @@ class ExecutionEngine:
                                 "success": True,
                                 "agent_id": agent_id,
                                 "section_id": section_id,
+                                "_section_id": section_id,  # R-FIX-13
                                 "content": content[:50000],
                                 "data_points": cached_result.get("data_points", []),
                                 "sources": cached_result.get("sources", []),
@@ -1191,7 +1195,24 @@ class ExecutionEngine:
                                 agent = scheduler.get_agent_by_id(agent_result.get("agent_id", ""))
                                 if agent:
                                     section_id = self._get_section_id_from_agent(agent)
-                                    content_lock.mark_completed(section_id, 1.0)
+                                    agent_result["_section_id"] = section_id  # R-FIX-13
+                                    # R-FIX-10: 缓存路径也需要 category 区分
+                                    _cat = agent.config.get("category", "") if agent else ""
+                                    if not _cat and agent:
+                                        _aid = agent.agent_id or ""
+                                        if _aid.startswith("phase_1_"):
+                                            _cat = "research"
+                                        elif _aid.startswith("phase_2_"):
+                                            _cat = "analysis"
+                                    _is_dc_cache = (
+                                        _cat == "research"
+                                        or _cat == "data_collection"
+                                        or (not _cat and agent and not agent_result.get("content") and agent_result.get("data_points"))
+                                    )
+                                    if _is_dc_cache:
+                                        content_lock.mark_section_state(section_id, SectionState.DATA_COLLECTED, 1.0)
+                                    else:
+                                        content_lock.mark_completed(section_id, 1.0)
                         all_results.extend(batch_results)
                         result.stage_results[f"batch_{batch_index + 1}"] = batch_results
                         
@@ -1225,6 +1246,7 @@ class ExecutionEngine:
                                         agent = scheduler.get_agent_by_id(agent_id)
                                         section_id = self._get_section_id_from_agent(agent) if agent else self._get_section_id_from_agent_id(agent_id)
                                         agent_result["section_id"] = section_id
+                                        agent_result["_section_id"] = section_id  # R-FIX-13
                         continue
                     logger.warning(f"[批次{batch_index + 1}] 没有有效的Agent，跳过")
                     result.stage_results[f"batch_{batch_index + 1}"] = []
@@ -1291,19 +1313,37 @@ class ExecutionEngine:
                     agent = scheduler.get_agent_by_id(agent_id)
                     section_id = self._get_section_id_from_agent(agent) if agent else self._get_section_id_from_agent_id(agent_id)
                     agent_result["section_id"] = section_id
+                    agent_result["_section_id"] = section_id  # R-FIX-13
                     if agent_result.get("success"):
                         scheduler.mark_completed(agent_id, agent_result)
-                        # 通知内容锁管理器章节完成
                         if content_lock is not None:
                             quality_score = self._extract_quality_score(agent_result)
-                            unlocked_sections = content_lock.mark_completed(section_id, quality_score)
-                            if unlocked_sections:
-                                logger.info(f"[内容锁] 章节 {section_id} 完成，解锁章节: {unlocked_sections}")
-                                # C-FIX-1: find newly unlocked agents in scheduler (not just batch_agents)
-                                for _usid in unlocked_sections:
-                                    _ua = _section_to_agent.get(_usid)
-                                    if _ua:
-                                        pending_unlocked.append(_ua)
+                            # R-FIX-10: 区分 data_collection 和 analysis 的完成状态
+                            _category = (agent_result.get("category", "")
+                                         or (agent.config.get("category", "") if agent else ""))
+                            if not _category and agent:
+                                _aid = agent.agent_id or ""
+                                if _aid.startswith("phase_1_"):
+                                    _category = "research"
+                                elif _aid.startswith("phase_2_"):
+                                    _category = "analysis"
+                            # R-FIX-10b: data_collection agents (no content, only data_points)
+                            # should always mark as DATA_COLLECTED, never COMPLETED
+                            _is_dc = (
+                                _category == "research"
+                                or _category == "data_collection"
+                                or (not _category and agent and not agent_result.get("content") and agent_result.get("data_points"))
+                            )
+                            if _is_dc:
+                                content_lock.mark_section_state(section_id, SectionState.DATA_COLLECTED, quality_score)
+                            else:
+                                unlocked_sections = content_lock.mark_completed(section_id, quality_score)
+                                if unlocked_sections:
+                                    logger.info(f"[内容锁] 章节 {section_id} 完成，解锁章节: {unlocked_sections}")
+                                    for _usid in unlocked_sections:
+                                        _ua = _section_to_agent.get(_usid)
+                                        if _ua:
+                                            pending_unlocked.append(_ua)
                     else:
                         scheduler.mark_failed(agent_id, agent_result.get("error", "Unknown error"))
                         # 通知内容锁管理器章节失败

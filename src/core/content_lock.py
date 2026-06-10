@@ -23,7 +23,6 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
-from dataclasses import dataclass, field
 import logging
 import threading
 
@@ -38,13 +37,14 @@ class SectionState(Enum):
     Section state
 
     State transitions:
-    LOCKED → PENDING → RUNNING → COMPLETED
+    LOCKED → PENDING → RUNNING → DATA_COLLECTED → RUNNING → COMPLETED
                       → FAILED → PENDING (retry)
     """
     LOCKED = "locked"           # Locked, waiting for prerequisite sections
     PENDING = "pending"         # Unlocked, waiting for execution
     RUNNING = "running"         # Currently executing
-    COMPLETED = "completed"     # Execution completed
+    DATA_COLLECTED = "data_collected"  # R-FIX-10: Data collection done, analysis can execute
+    COMPLETED = "completed"     # Execution completed (final state)
     FAILED = "failed"           # Execution failed
     SKIPPED = "skipped"         # Skipped execution
 
@@ -211,15 +211,18 @@ class ContentLockManager:
         """
         status = self._section_statuses.get(section_id)
         if not status:
-            return False, f"Section {section_id} not found"
+            return True, f"Section {section_id} not registered, allowing execution"
 
-        # Check state
         if status.state == SectionState.RUNNING:
             return False, "Already running"
-
         if status.state == SectionState.COMPLETED:
             return False, "Already completed"
-
+        if status.state == SectionState.DATA_COLLECTED:
+            if status.content_locked:
+                can_unlock, reason = self._check_unlock_conditions(section_id)
+                if not can_unlock:
+                    return False, reason
+            return True, "Data collected, ready for analysis"
         if status.state == SectionState.FAILED:
             if status.retry_count >= self._max_retries:
                 return False, f"Max retries ({self._max_retries}) exceeded"
@@ -300,7 +303,7 @@ class ContentLockManager:
                     return False, f"Required section {required_id} not found"
 
                 # Check completion status
-                if required_status.state != SectionState.COMPLETED:
+                if required_status.state not in (SectionState.COMPLETED, SectionState.DATA_COLLECTED):
                     return False, (
                         f"Required section {required_id} is {required_status.state.value}, "
                         f"not completed"
@@ -342,8 +345,7 @@ class ContentLockManager:
                 if not required_status:
                     return False, f"Required section {required_id} not found"
 
-                # Check completion status
-                if required_status.state != SectionState.COMPLETED:
+                if required_status.state not in (SectionState.COMPLETED, SectionState.DATA_COLLECTED):
                     return False, (
                         f"Required section {required_id} is {required_status.state.value}, "
                         f"not completed"
@@ -392,7 +394,7 @@ class ContentLockManager:
         if not status:
             return False
         
-        if status.state not in (SectionState.PENDING, SectionState.FAILED):
+        if status.state not in (SectionState.PENDING, SectionState.FAILED, SectionState.DATA_COLLECTED):
             return False
         
         status.state = SectionState.RUNNING
@@ -453,6 +455,43 @@ class ContentLockManager:
                         unlocked.append(target_id)
 
             return unlocked
+
+    def mark_section_state(
+        self,
+        section_id: str,
+        state: SectionState,
+        quality_score: Optional[float] = None,
+    ) -> bool:
+        """
+        R-FIX-10: Directly set section state (e.g., DATA_COLLECTED for Phase 1 completion).
+
+        Args:
+            section_id: Section ID
+            state: Target state
+            quality_score: Optional quality score to set
+
+        Returns:
+            Whether the state was successfully set
+        """
+        with self._lock:
+            status = self._section_statuses.get(section_id)
+            if not status:
+                logger.warning(f"Section {section_id} not found for mark_section_state")
+                return False
+            old_state = status.state
+            status.state = state
+            if quality_score is not None:
+                status.quality_score = quality_score
+            if state == SectionState.DATA_COLLECTED:
+                status.complete_time = datetime.now()
+                can_unlock, _ = self._check_unlock_conditions(section_id)
+                if can_unlock:
+                    status.content_locked = False
+            logger.info(
+                f"[内容锁] Section {section_id} state: {old_state.value} → {state.value}"
+                + (f", quality={quality_score:.2f}" if quality_score is not None else "")
+            )
+            return True
 
     def mark_failed(
         self,
@@ -751,7 +790,8 @@ class ContentLockManager:
                 "pending": [],
                 "locked": [],
                 "failed": [],
-                "skipped": [],  # P1-3 fix: Add skipped key
+                "skipped": [],
+                "data_collected": [],
             }
 
             for section_id, status in self._section_statuses.items():

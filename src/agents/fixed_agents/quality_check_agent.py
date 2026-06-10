@@ -298,11 +298,13 @@ class QualityCheckAgent(FixedAgent):
         # Robust gate: score + structural completeness.
         # Individual missing recommended sections or format issues do not block.
         high_severity_issues = [i for i in issues if i.get("severity") == "high"]
+        placeholder_issues = [i for i in high_severity_issues if "占位符" in i.get("message", "") or "placeholder" in i.get("message", "").lower()]
         
         passed = (
             quality_score >= 60
             and completeness_result.get("passed", False)
             and len(high_severity_issues) <= 1  # allow 1 high-severity issue (fuzzy border)
+            and len(placeholder_issues) == 0   # placeholder content always fails
         )
         
         # If there are low-severity issues, log but don't block
@@ -405,6 +407,21 @@ class QualityCheckAgent(FixedAgent):
                 })
                 suggestions.append(f"Add '{req_section}' section if applicable")
         
+        # Check for placeholder/degraded sections
+        import re
+        placeholder_count = 0
+        for section in sections:
+            sec_content = section.get("content", "") if isinstance(section, dict) else str(section)
+            if re.search(r'本章节数据不足|数据不足.*无法生成|请检查上游数据采集', sec_content):
+                placeholder_count += 1
+        if placeholder_count > 0:
+            issues.append({
+                "type": "completeness",
+                "severity": "high",
+                "message": f"{placeholder_count}/{len(sections)} sections contain placeholder/degraded content, not actual analysis",
+            })
+            suggestions.append(f"Re-run research to generate actual content for {placeholder_count} sections")
+        
         # completeness only blocks on severe structural defects
         completeness_passed = len(sections) >= min_sections
         
@@ -457,6 +474,25 @@ class QualityCheckAgent(FixedAgent):
         import re
         from collections import Counter
         issues = []
+        
+        # Check for degradation placeholder content
+        placeholder_patterns = [
+            r'本章节数据不足，无法生成完整分析',
+            r'请检查上游数据采集是否完整',
+            r'数据不足.*无法生成',
+            r'Data insufficient.*cannot generate',
+        ]
+        for pp in placeholder_patterns:
+            m = re.search(pp, content)
+            if m:
+                matched_text = m.group()[:50]
+                issues.append({
+                    "type": "accuracy",
+                    "severity": "high",
+                    "message": f"检测到降级占位符内容: '{matched_text}'，章节内容未实际生成",
+                    "auto_fixable": False,
+                })
+                break
         
         compound_patterns = [
             (r'(\d+\.\d+)\s*万辆', '万辆'),

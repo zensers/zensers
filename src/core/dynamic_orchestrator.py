@@ -354,17 +354,23 @@ class DynamicPhaseOrchestrator:
         for i, section in enumerate(sections):
             agent_id = f"{phase_id}_agent_{i}"
             dc_dep = dc_agent_map.get(section.section_id, "")
+            resolved = [dc_dep] if dc_dep else []
+            content_deps = getattr(section, 'content_dependency', []) or []
+            for dep_sid in content_deps:
+                dep_aid = section_to_agent.get(dep_sid) or dc_agent_map.get(dep_sid)
+                if dep_aid and dep_aid not in resolved:
+                    resolved.append(dep_aid)
             agent = AgentSpec(
                 agent_id=agent_id,
                 agent_type=PhaseType.ANALYSIS.value,
                 section_ids=[section.section_id],
                 priority=i,
                 config={
-                    "content_dependency": [],
-                    "resolved_dependencies": [dc_dep] if dc_dep else [],
+                    "content_dependency": content_deps,
+                    "resolved_dependencies": resolved,
                 },
                 core_question=section.section_name,
-                dependencies=[dc_dep] if dc_dep else [],
+                dependencies=resolved,
             )
             agents.append(agent)
             section_to_agent[section.section_id] = agent_id

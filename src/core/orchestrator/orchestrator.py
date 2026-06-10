@@ -397,7 +397,7 @@ class ResearchOrchestrator:
             self._routing_adapter = routing_adapter
             logger.info(
                 "Orchestrator: using injected IntelligentRoutingAdapter")
-        else:
+        elif use_intelligent_routing:
             try:
                 from src.core.intelligent_routing_adapter import IntelligentRoutingAdapter
                 self._routing_adapter = IntelligentRoutingAdapter(
@@ -411,6 +411,8 @@ class ResearchOrchestrator:
                 logger.warning(
                     f"IntelligentRoutingAdapter import failed: {e}, routing analysis will use defaults")
                 self._routing_adapter = None
+        else:
+            self._routing_adapter = None
         self._use_intelligent_routing = self._routing_adapter is not None
 
         # Task history (backward compatibility)
@@ -1070,6 +1072,14 @@ class ResearchOrchestrator:
                                 if new_path and Path(new_path).exists():
                                     output_path = new_path
                                     logger.info(f"[{task_id}] Auto-repair: regenerated with {len(adjustments)} fixes")
+                                    # Copy repaired preview to serving directory
+                                    try:
+                                        PreviewStorage.copy_file(task_id, Path(output_path))
+                                        from src.core.session_streamer import SessionStreamer
+                                        preview_url = PreviewStorage.url(task_id)
+                                        SessionStreamer.push_preview_refresh(task_id, preview_url, 'v1')
+                                    except Exception as _pe:
+                                        logger.warning(f"[{task_id}] Failed to push preview refresh after auto-repair: {_pe}")
                                     continue  # re-check with regenerated HTML
                             else:
                                 logger.warning(f"[{task_id}] Auto-repair: regeneration failed, using original")
@@ -1561,6 +1571,17 @@ class ResearchOrchestrator:
                 topic=requirement.topic,
             )
 
+            # R-FIX-3/4: 缓存意图结果，供后续增量/重新分析融合使用
+            self._cache_intent_for_task(task_id, routing_result.intent_result)
+            from src.core.session_manager import SessionManager as _SM
+            _sess = _SM.get_instance().get(requirement.session_id) if hasattr(requirement, 'session_id') else None
+            if _sess:
+                _ctx = _sess.setdefault('research_context', {})
+                try:
+                    _ctx['_cached_intent_result'] = routing_result.intent_result.to_dict()
+                except Exception:
+                    pass
+
             logger.info(
                 f"[{task_id}] Intelligent routing analysis complete: "
                 f"{len(routing_result.task_structure.sections)} sections, "
@@ -2024,6 +2045,14 @@ class ResearchOrchestrator:
                                     if new_path and Path(new_path).exists():
                                         output_path = new_path
                                         logger.info(f"[{task_id}] Auto-repair: regenerated with {len(adjustments)} fixes")
+                                        # Copy repaired preview to serving directory
+                                        try:
+                                            PreviewStorage.copy_file(task_id, Path(output_path))
+                                            from src.core.session_streamer import SessionStreamer
+                                            preview_url = PreviewStorage.url(task_id)
+                                            SessionStreamer.push_preview_refresh(task_id, preview_url, 'v1')
+                                        except Exception as _pe:
+                                            logger.warning(f"[{task_id}] Failed to push preview refresh after auto-repair: {_pe}")
                                         continue
                                 else:
                                     logger.warning(f"[{task_id}] Auto-repair: regeneration failed")
@@ -2426,6 +2455,18 @@ class ResearchOrchestrator:
             "status": "replanned",
         }
 
+    def _cache_intent_for_task(self, task_id, intent_result):
+        """R-FIX-4: 缓存意图分析结果到内存"""
+        if not hasattr(self, '_intent_cache'):
+            self._intent_cache = {}
+        self._intent_cache[task_id] = intent_result
+
+    def _get_cached_intent_for_task(self, task_id):
+        """R-FIX-4: 获取已缓存的意图分析结果"""
+        if not hasattr(self, '_intent_cache'):
+            self._intent_cache = {}
+        return self._intent_cache.get(task_id)
+
     async def reanalyze(
         self,
         task_id: str,
@@ -2497,21 +2538,35 @@ class ResearchOrchestrator:
                 "preserved": list(completed_sections),
             }
 
-        # 4. Re-run intent analysis
+        # 4. R-FIX-4: Re-run intent analysis with existing intent fusion
         try:
             user_request = updated_requirement.get(
                 "user_request", "") or updated_requirement.get(
                 "topic", "")
 
-            routing_result = self._routing_adapter.analyze(
-                user_request=user_request,
-                requirement=updated_requirement,
-            )
+            existing_intent = self._get_cached_intent_for_task(task_id)
 
-            # P0-1 fix: primary_intent is in intent_result
+            if existing_intent is not None:
+                routing_result = self._routing_adapter.analyze_incremental(
+                    user_request=user_request,
+                    requirement=updated_requirement,
+                    completed_aspects=list(completed_sections),
+                    topic=user_request,
+                    existing_intent_result=existing_intent,
+                )
+                logger.info(f"[reanalyze] Used incremental analysis with existing intent fusion")
+            else:
+                logger.warning(f"[reanalyze] No cached intent found, falling back to full analysis")
+                routing_result = self._routing_adapter.analyze(
+                    user_request=user_request,
+                    requirement=updated_requirement,
+                )
+
+            self._cache_intent_for_task(task_id, routing_result.intent_result)
+
             primary_intent = routing_result.intent_result.primary_intent.value if hasattr(
                 routing_result, 'intent_result') else "unknown"
-            logger.info(f"[reanalyze] New intent analysis complete: {primary_intent}")
+            logger.info(f"[reanalyze] Intent analysis complete: {primary_intent}")
 
         except Exception as e:
             logger.error(f"[reanalyze] Intent analysis failed: {e}", exc_info=True)
@@ -3414,8 +3469,10 @@ class ResearchOrchestrator:
 
                     # Create agent, context includes dependency info for scheduler
                     context = dict(spec.context) if spec.context else {}
-                    if spec.output_keys:
+                    if getattr(spec, 'output_keys', None) and spec.output_keys:
                         context["section_id"] = spec.output_keys[0]
+                    elif getattr(spec, 'section_ids', None) and spec.section_ids:
+                        context["section_id"] = spec.section_ids[0]
                     context["depends_on"] = spec.dependencies
                     context["task_id"] = task_id
                     context["research_type"] = research_type or "market_research"
