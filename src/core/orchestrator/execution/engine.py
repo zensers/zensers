@@ -1253,6 +1253,15 @@ class ExecutionEngine:
                                         agent_id = agent_result.get("agent_id", "")
                                         agent = scheduler.get_agent_by_id(agent_id)
                                         section_id = self._get_section_id_from_agent(agent) if agent else self._get_section_id_from_agent_id(agent_id)
+                                        if not section_id or section_id == agent_id or (len(section_id) < 5 and "_agent_" in section_id):
+                                            _aspects = requirement.get("aspects", []) if isinstance(requirement, dict) else []
+                                            if _aspects and "_agent_" in agent_id:
+                                                try:
+                                                    _idx = int(agent_id.split("_agent_")[-1])
+                                                    if 0 <= _idx < len(_aspects):
+                                                        section_id = str(_aspects[_idx])
+                                                except (ValueError, IndexError):
+                                                    pass
                                         agent_result["section_id"] = section_id
                                         agent_result["_section_id"] = section_id  # R-FIX-13
                         continue
@@ -1320,6 +1329,17 @@ class ExecutionEngine:
                     # 注入 section_id 供下游聚合 key 映射使用
                     agent = scheduler.get_agent_by_id(agent_id)
                     section_id = self._get_section_id_from_agent(agent) if agent else self._get_section_id_from_agent_id(agent_id)
+                    # Fallback: when section_id is empty or meaningless (e.g. "2_agent" from phase_2_agent_0),
+                    # use aspect list index mapping: phase_1/2_agent_{i} -> aspects[i]
+                    if not section_id or section_id == agent_id or (len(section_id) < 5 and "_agent_" in section_id):
+                        _aspects = requirement.get("aspects", []) if isinstance(requirement, dict) else []
+                        if _aspects and "_agent_" in agent_id:
+                            try:
+                                _idx = int(agent_id.split("_agent_")[-1])
+                                if 0 <= _idx < len(_aspects):
+                                    section_id = str(_aspects[_idx])
+                            except (ValueError, IndexError):
+                                pass
                     agent_result["section_id"] = section_id
                     agent_result["_section_id"] = section_id  # R-FIX-13
                     if agent_result.get("success"):
@@ -2294,12 +2314,15 @@ class ExecutionEngine:
                                 "content": content[:50000],
                                 "success": True,
                                 "phase": stage_name,
+                                "section_id": r.get("section_id", ""),
                             }
                 
                 batch_completed = [{
                     "agent_id": r.get("agent_id", ""),
                     "success": r.get("success", False),
                     "phase": stage_name,
+                    "section_id": r.get("section_id", ""),
+                    "_section_id": r.get("_section_id", ""),
                 } for r in batch_results]
                 
                 if batch_data_points or batch_sources or agent_contents:

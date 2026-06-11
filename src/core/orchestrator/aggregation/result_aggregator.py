@@ -323,6 +323,11 @@ class AggregationResult:
                     else:
                         target_stages = ["analysis", "synthesis", "data_collection"]
                     
+                    # Include batch_* stages (engine uses f"batch_{i+1}" as stage_name)
+                    _all_layer_stages = list(self.layered_content.keys())
+                    _batch_stages = [s for s in _all_layer_stages if s.startswith("batch_") or s.startswith("phase_")]
+                    target_stages = target_stages + _batch_stages + [s for s in _all_layer_stages if s not in target_stages and s not in _batch_stages]
+                    
                     # 从目标阶段中查找内容
                     for stage in target_stages:
                         if stage not in self.layered_content:
@@ -407,6 +412,37 @@ class AggregationResult:
                                     content = cm_val
                                     matched_key = cm_key
                                     logger.debug(f"归一化匹配成功(fallback): '{section_name}' -> content_map key='{cm_key}'")
+                                    break
+                    
+                    # 回退：基于 agent_id 索引映射到 section
+                    # phase_2_agent_0..7 按索引顺序对应 section_details 中的 8 个 section
+                    if not content and section_name:
+                        _section_idx = None
+                        for _si, _sec in enumerate(self.section_details):
+                            _sn = _to_str(_sec.get("name", _sec.get("id", "")))
+                            if _sn == section_name or _to_str(_sec.get("id", "")) == section_id:
+                                _section_idx = _si
+                                break
+                        if _section_idx is not None:
+                            for _stage in target_stages:
+                                if _stage not in self.layered_content:
+                                    continue
+                                _layer = self.layered_content[_stage]
+                                for _agent_key, _agent_val in _layer.items():
+                                    if _agent_key in used_keys:
+                                        continue
+                                    if _agent_key.startswith("phase_2_agent_") or _agent_key.startswith("phase_1_agent_"):
+                                        try:
+                                            _idx = int(_agent_key.split("_agent_")[-1])
+                                        except (ValueError, IndexError):
+                                            continue
+                                        if _idx == _section_idx:
+                                            content = extract_content(_agent_val)
+                                            matched_key = _agent_key
+                                            matched_stage = _stage
+                                            logger.info(f"索引映射: '{section_name}' -> '{_agent_key}' (idx={_idx})")
+                                            break
+                                if content:
                                     break
                     
                     # 如果还是没有内容，阻断性错误（RG-FIX-1）
