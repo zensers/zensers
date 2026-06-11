@@ -84,7 +84,7 @@ for _sid, _session in list(_session_manager._sessions.items()):
 logger.info(f"ProgressStreamer recovered {_recovered_tasks} task states from disk")
 
 app = FastAPI(title="Zensers API", description="AI Market Research Platform RESTful API",
-              version="1.0.0", openapi_url="/api/v1/openapi.json",
+              version="1.0.2", openapi_url="/api/v1/openapi.json",
               docs_url="/api/v1/docs", redoc_url="/api/v1/redoc")
 
 _cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001").split(",")

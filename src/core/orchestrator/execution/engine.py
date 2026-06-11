@@ -874,6 +874,8 @@ class ExecutionEngine:
                 total_data_points += len(r.get("data_points", []))
                 total_sources += len(r.get("sources", []))
                 content = r.get("content", "") or r.get("result", "")
+                if isinstance(content, dict):
+                    content = str(content)
                 if isinstance(content, str):
                     total_content_length += len(content)
         
@@ -1221,10 +1223,16 @@ class ExecutionEngine:
                             cache_checker = self._select_checker_for_batch(batch_results)
                             if cache_checker:
                                 import datetime as _datetime
-                                _combined = "\n\n".join([
-                                    r.get("content","") or r.get("result","")
-                                    for r in batch_results if r.get("success")
-                                ])
+                                _cp = []
+                                for r in batch_results:
+                                    if not r.get("success"):
+                                        continue
+                                    _c = r.get("content","") or r.get("result","")
+                                    if isinstance(_c, dict):
+                                        _c = str(_c)
+                                    if _c:
+                                        _cp.append(str(_c))
+                                _combined = "\n\n".join(_cp)
                                 _sources = []
                                 _dps = []
                                 for r in batch_results:
@@ -1405,10 +1413,18 @@ class ExecutionEngine:
                             # Build check_data in the format checkers expect
                             # (AnalysisQualityChecker reads data["content"],
                             #  DataCollectionQualityChecker reads data["quality_metadata"])
-                            combined_content = "\n\n".join([
-                                r.get("content", "") or r.get("result", "")
-                                for r in batch_results if r.get("success")
-                            ])
+                            # R1-FIX: content/result may be dict (Phase1 metadata),
+                            # ensure str before join to avoid "expected str instance, dict found"
+                            _content_parts = []
+                            for r in batch_results:
+                                if not r.get("success"):
+                                    continue
+                                _c = r.get("content", "") or r.get("result", "")
+                                if isinstance(_c, dict):
+                                    _c = str(_c)
+                                if _c:
+                                    _content_parts.append(str(_c))
+                            combined_content = "\n\n".join(_content_parts)
                             all_sources = []
                             all_data_points = []
                             for r in batch_results:
@@ -1488,40 +1504,41 @@ class ExecutionEngine:
                         break
                     else:
                         logger.warning(f"Batch {batch_index + 1} partial failure ({total_count - success_count}/{total_count}), continuing")
-            
-            # Bug-3-4c: extend all_results + stage_results AFTER QC (avoid failed-result accumulation)
-            all_results.extend(batch_results)
-            result.stage_results[f"batch_{batch_index + 1}"] = batch_results
-            
-            # C-FIX-1: execute newly unlocked agents at batch end
-            if pending_unlocked and result.status != "failed":
-                logger.info(f"Re-executing {len(pending_unlocked)} newly unlocked agents")
-                _unlock_results = await self._execute_agents_batch(
-                    pending_unlocked, requirement, all_results,
-                    scheduler, f"batch_{batch_index+1}_unlock"
-                )
-                batch_results.extend(_unlock_results)
-                all_results.extend(_unlock_results)
-                pending_unlocked.clear()
-            
-            # M5-a: Enhanced consistency gate — fixes content + data_points via MetricExtractor
-            if result.status != "failed" and self.enable_quality_control and all_results and self._active_canonical_data:
-                try:
-                    from src.core.orchestrator.execution.calibration_gate import fix_content_from_canonical
-                    _target_cur = getattr(self, '_target_currency', 'CNY')
-                    _gate_result = fix_content_from_canonical(
-                        all_results, self._active_canonical_data, _target_cur
+                
+                # Bug-3-4c: extend all_results + stage_results AFTER QC (avoid failed-result accumulation)
+                # R2-FIX: 必须在 for 循环内（indent 16），否则只保存最后一个 batch 的结果
+                all_results.extend(batch_results)
+                result.stage_results[f"batch_{batch_index + 1}"] = batch_results
+                
+                # C-FIX-1: execute newly unlocked agents at batch end
+                if pending_unlocked and result.status != "failed":
+                    logger.info(f"Re-executing {len(pending_unlocked)} newly unlocked agents")
+                    _unlock_results = await self._execute_agents_batch(
+                        pending_unlocked, requirement, all_results,
+                        scheduler, f"batch_{batch_index+1}_unlock"
                     )
-                    all_results = _gate_result["all_results"]
-                    _cal_report = _gate_result["calibration_report"]
-                    if _cal_report["auto_fixed"] or _cal_report["currency_converted"]:
-                        logger.info(
-                            f"M5-a calibration gate: {len(_cal_report['auto_fixed'])} content fixes, "
-                            f"{len(_cal_report['currency_converted'])} currency conversions, "
-                            f"{_cal_report['total_metrics_checked']} metrics checked"
+                    batch_results.extend(_unlock_results)
+                    all_results.extend(_unlock_results)
+                    pending_unlocked.clear()
+                
+                # M5-a: Enhanced consistency gate — fixes content + data_points via MetricExtractor
+                if result.status != "failed" and self.enable_quality_control and all_results and self._active_canonical_data:
+                    try:
+                        from src.core.orchestrator.execution.calibration_gate import fix_content_from_canonical
+                        _target_cur = getattr(self, '_target_currency', 'CNY')
+                        _gate_result = fix_content_from_canonical(
+                            all_results, self._active_canonical_data, _target_cur
                         )
-                except ImportError:
-                    pass
+                        all_results = _gate_result["all_results"]
+                        _cal_report = _gate_result["calibration_report"]
+                        if _cal_report["auto_fixed"] or _cal_report["currency_converted"]:
+                            logger.info(
+                                f"M5-a calibration gate: {len(_cal_report['auto_fixed'])} content fixes, "
+                                f"{len(_cal_report['currency_converted'])} currency conversions, "
+                                f"{_cal_report['total_metrics_checked']} metrics checked"
+                            )
+                    except ImportError:
+                        pass
             
             # 构建最终结果（若 QC 在循环内已置为 failed，不再覆盖）
             if result.status != "failed":
@@ -1698,8 +1715,11 @@ class ExecutionEngine:
         # Count result types to infer the phase
         has_data_points = any(r.get("data_points") for r in batch_results if r.get("success"))
         has_sources = any(r.get("sources") for r in batch_results if r.get("success"))
+        # R1-FIX: result may be dict (metadata), only count as content if it's a non-trivial string
         has_content = any(
-            r.get("content") or r.get("result") for r in batch_results if r.get("success")
+            (isinstance(c, str) and len(c) > 50)
+            for r in batch_results if r.get("success")
+            for c in [r.get("content") or r.get("result") or ""]
         )
         has_validation = any(
             r.get("validation") for r in batch_results if r.get("success")
@@ -1784,7 +1804,10 @@ class ExecutionEngine:
         # 统计数据量
         total_data_points = sum(len(r.get("data_points", [])) for r in results if r.get("success"))
         total_sources = sum(len(r.get("sources", [])) for r in results if r.get("success"))
-        total_content = sum(len(r.get("content", "") or r.get("result", "")) for r in results if r.get("success"))
+        total_content = sum(
+            len(str(r.get("content", "") or r.get("result", "")))
+            for r in results if r.get("success")
+        )
         
         # 质量标准
         MIN_SUCCESS_RATE = 0.5
@@ -2239,10 +2262,36 @@ class ExecutionEngine:
                     agent_id = r.get("agent_id", "")
                     if agent_id and r.get("success"):
                         content = r.get("content") or r.get("result") or ""
+                        _content_from_dict = False
+                        # R3-FIX: content may be dict (Phase1 metadata), normalize to str
+                        if isinstance(content, dict):
+                            content = str(content)
+                            _content_from_dict = True
+                        if not content or (isinstance(content, str) and len(content) <= 50):
+                            _r_dp = r.get("data_points")
+                            if _r_dp and isinstance(_r_dp, list) and len(_r_dp) > 0:
+                                _fmt_parts = []
+                                for _dp_item in _r_dp[:80]:
+                                    if isinstance(_dp_item, dict):
+                                        _m = _dp_item.get("metric", _dp_item.get("title", ""))
+                                        _v = _dp_item.get("value", "")
+                                        _u = _dp_item.get("unit", "")
+                                        if _m and _v:
+                                            _line = f"- {_m}: {_v}"
+                                            if _u:
+                                                _line += f" ({_u})"
+                                            _fmt_parts.append(_line)
+                                    elif isinstance(_dp_item, str) and len(_dp_item) > 10:
+                                        _fmt_parts.append(f"- {_dp_item[:300]}")
+                                _fmt_text = "\n".join(_fmt_parts)
+                                if _content_from_dict and _fmt_parts:
+                                    content = _fmt_text
+                                elif len(_fmt_text) > len(content or ""):
+                                    content = _fmt_text
                         if content and isinstance(content, str) and len(content) > 50:
                             agent_contents[agent_id] = {
                                 "agent_id": agent_id,
-                                "content": content[:50000],  # cap per agent
+                                "content": content[:50000],
                                 "success": True,
                                 "phase": stage_name,
                             }
@@ -2622,6 +2671,8 @@ class ExecutionEngine:
                 # quality check on successful result
                 try:
                     combined = r.get("content", "") or r.get("result", "")
+                    if isinstance(combined, dict):
+                        combined = str(combined)
                     check_data = {
                         "content": combined,
                         "sources": r.get("sources", []),

@@ -314,11 +314,37 @@ class SemanticIntentAnalyzer:
         content = content.strip()
         if content.startswith("```json"):
             content = content[7:]
-        if content.startswith("```"):
+        elif content.startswith("```"):
             content = content[3:]
         if content.endswith("```"):
             content = content[:-3]
-        return json.loads(content.strip())
+        content = content.strip()
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            pass
+        import re
+        first_brace = content.find('{')
+        last_brace = content.rfind('}')
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            try:
+                return json.loads(content[first_brace:last_brace + 1])
+            except json.JSONDecodeError:
+                pass
+        fixed = content.replace("'", '"')
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        fixed = re.sub(r',\s*([}\]])', r'\1', content)
+        try:
+            return json.loads(fixed)
+        except json.JSONDecodeError:
+            pass
+        raise json.JSONDecodeError(
+            f"Failed to parse LLM JSON after all recovery attempts: {content[:200]}",
+            content, 0
+        )
 
     def _build_result(self, llm_output, model_used, raw_response, used_fallback):
         intent_str = llm_output.get("primary_intent", "open_ended")
@@ -381,6 +407,29 @@ class SemanticIntentAnalyzer:
             ],
             orchestration_strategy=llm_output.get("orchestration_strategy", "sequential"))
 
+    def _infer_skills_from_intent(self, intent: IntentType, hidden_requirements: List[str]) -> List[str]:
+        skills = []
+        if intent == IntentType.RESEARCH:
+            skills.extend(["search_skill", "llm_skill"])
+        elif intent == IntentType.EVALUATION:
+            skills.extend(["llm_skill", "search_skill"])
+        elif intent == IntentType.FIX:
+            skills.extend(["llm_skill"])
+        else:
+            skills.extend(["llm_skill"])
+        for req in hidden_requirements:
+            req_lower = req.lower()
+            if any(kw in req_lower for kw in ["收集", "数据", "搜索", "search", "data", "collect"]):
+                if "search_skill" not in skills:
+                    skills.append("search_skill")
+            if any(kw in req_lower for kw in ["报告", "文档", "report", "document", "docx", "生成报告"]):
+                if "docx_skill" not in skills:
+                    skills.append("docx_skill")
+            if any(kw in req_lower for kw in ["分析", "评估", "analysis", "evaluate"]):
+                if "llm_skill" not in skills:
+                    skills.append("llm_skill")
+        return list(dict.fromkeys(skills))
+
     def _analyze_with_keyword(self, user_request, requirement):
         """Keyword matching fallback for intent analysis."""
         _survey_kw = ["survey", "questionnaire", "poll", "consumer research",
@@ -390,4 +439,4 @@ class SemanticIntentAnalyzer:
             primary_intent=IntentType.RESEARCH, intent_confidence=0.5,
             intent_reasoning="Keyword matching fallback",
             requires_primary_data=_has_survey, complexity=TaskComplexity.SINGLE,
-            used_fallback=True)
+            used_fallback=True, llm_model_used="keyword_matching")

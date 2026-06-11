@@ -294,6 +294,8 @@ class ResearchAPI:
                 session.pop('_pending_clarification_id', None)
 
         mode = session.get('mode', 'chat')
+        from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
+        cm = get_cancel_manager()
         history = session.get('conversation_history', [])
         history.append({'role': 'user', 'content': user_input, 'timestamp': datetime.now().isoformat()})
         session['conversation_history'] = history
@@ -307,20 +309,14 @@ class ResearchAPI:
         input_lower = user_input.strip().lower()
         is_depth_command = any(kw in input_lower for kw in depth_keywords) and not any(input_lower.endswith(s) for s in question_suffixes)
         if is_depth_command and latest_context.get('topic') and mode != 'framework':
-            logger.info(f"Depth research keyword detected for {session_id}, entering framework mode directly")
             if mode == 'research':
-                from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
-                cm = get_cancel_manager()
-                cm.pause(session_id)
-                old = self._executor_tasks.pop(session_id, None)
-                if old and not old.done():
-                    old.cancel()
-                conv_machine = session.get('state_machine')
-                if conv_machine and conv_machine.current_state == ConversationState.EXECUTING:
-                    if conv_machine.can_transition_to(ConversationState.FRAMEWORK_CONFIRM):
-                        conv_machine.transition(ConversationState.FRAMEWORK_CONFIRM)
-                session['mode'] = 'chat'
-            return await self._enter_framework_mode(session_id, user_input)
+                # R-FIX-6: 研究正在运行，不走直接中断，走正常意图分析+约束层
+                # 消息会进入 _handle_research_msg() → _llm_converse() → _validate_action_for_state()
+                logger.info(f"Depth research keyword detected but already in research mode for {session_id}, "
+                             f"deferring to intent analysis + action constraint")
+            else:
+                logger.info(f"Depth research keyword detected for {session_id}, entering framework mode directly")
+                return await self._enter_framework_mode(session_id, user_input)
 
         if mode == 'framework':
             if user_input.strip().lower() == 'cancel research':
@@ -388,6 +384,21 @@ class ResearchAPI:
                 return await self.resume_research(session_id)
             if action == 'modify_research':
                 return await self._handle_modify_research(session_id=session_id, modifications=conv_result.get('modifications', {}), adjustment=conv_result.get('adjustment', user_input))
+            if action == 'enter_framework':
+                old = self._executor_tasks.pop(session_id, None)
+                if old and not old.done():
+                    old.cancel()
+                session['mode'] = 'chat'
+                context = session.get('research_context', {})
+                if conv_result.get('topic'):
+                    context['topic'] = conv_result['topic']
+                if conv_result.get('directions'):
+                    context['directions'] = conv_result.get('directions', [])
+                fw_sections = conv_result.get('framework_sections')
+                if fw_sections and isinstance(fw_sections, list) and len(fw_sections) > 0:
+                    context['_suggested_sections'] = fw_sections
+                session['research_context'] = context
+                return await self._enter_framework_mode(session_id, user_input)
             if action == 'regenerate_report':
                 return await self._regenerate_report(session_id)
             return await self._handle_chat_mode(session_id, user_input)
@@ -406,7 +417,10 @@ class ResearchAPI:
             return {'session_id': session_id, 'step': 0, 'mode': 'research', 'status': 'processing', 'message': conv_result.get('message', '正在处理您的请求...'), 'suggestions': [], 'next_step': 'tool_executing'}
 
         conv_machine = session.get('state_machine')
-        action = conv_result.get('action', 'continue_chat')
+        raw_action = conv_result.get('action', 'continue_chat')
+        action = self._validate_action_for_state(raw_action, conv_machine, user_input)
+        if action != raw_action:
+            logger.info(f"[R-FIX-1] Action constrained: {raw_action} → {action}")
 
         if action == 'inject_requirement':
             return await self._handle_inject_requirement(session_id=session_id, inject_ops=conv_result.get('inject_ops', []), user_message=user_input)
@@ -441,6 +455,59 @@ class ResearchAPI:
             return await self._enter_framework_mode(session_id, user_input)
 
         return {'session_id': session_id, 'step': session.get('current_step', 6), 'mode': 'research', 'status': 'running', 'message': conv_result.get('message', ''), 'suggestions': conv_result.get('suggestions', []), 'next_step': 'continue_research'}
+
+    def _validate_action_for_state(self, action: str, conv_machine, user_input: str) -> str:
+        """R-FIX-1: 根据当前状态机状态约束LLM返回的action。
+        EXECUTING状态下：重操作需用户明确关键词，否则降级；轻操作直接放行。
+        PAUSED状态下：所有action合法。
+        """
+        if not conv_machine:
+            return action
+        current_state = conv_machine.current_state
+        if current_state == ConversationState.PAUSED:
+            return action
+        if current_state == ConversationState.EXECUTING:
+            HEAVY_ACTIONS = {
+                'enter_framework': (
+                    '重新规划', '重新研究', '重新开始', '换个方向', '重新设计',
+                    'restart', 'redesign', 'start over', '重新来', '重做',
+                    '换个框架', '重新框架', '重新制定', '重新启动',
+                ),
+                'modify_research': (
+                    '修改', '调整', '改一下', '修订', '变更',
+                    'modify', 'adjust', 'revise', 'change',
+                ),
+            }
+            if action in HEAVY_ACTIONS:
+                confirm_keywords = HEAVY_ACTIONS[action]
+                text = user_input.strip().lower()
+                if any(kw in text for kw in confirm_keywords):
+                    return action
+                fallback = 'inject_requirement' if action == 'modify_research' else 'continue_chat'
+                logger.info(f"[R-FIX-1] {action} without explicit user intent, downgrading to {fallback}")
+                return fallback
+            return action
+        return action
+
+    def _get_cached_intent_result(self, session):
+        """R-FIX-3: 从session中获取已缓存的意图分析结果"""
+        context = session.get('research_context', {})
+        cached = context.get('_cached_intent_result')
+        if cached:
+            try:
+                from src.core.semantic_intent import DeepIntentResult
+                return DeepIntentResult.from_dict(cached)
+            except Exception as e:
+                logger.warning(f"Failed to restore cached intent result: {e}")
+        return None
+
+    def _cache_intent_result(self, session, intent_result):
+        """R-FIX-3: 缓存意图分析结果到session"""
+        context = session.setdefault('research_context', {})
+        try:
+            context['_cached_intent_result'] = intent_result.to_dict()
+        except Exception as e:
+            logger.warning(f"Failed to cache intent result: {e}")
 
     def _should_start_execution(self, user_input, mode, context, session_id):
         """confirm start"""
@@ -633,7 +700,7 @@ class ResearchAPI:
 
     def _build_dialogue_context(self, conversation_state):
         """Build dialogue phase guidance (without intent state injection)"""
-        state_guidance = {ConversationState.UNDERSTANDING: '## Current Dialogue Phase: Understanding\nFocus on understanding the user\'s research need.\n- If the request is vague, ask 1-2 targeted questions.\n- Do NOT propose a research framework yet.\n', ConversationState.CLARIFYING: '## Current Dialogue Phase: Clarifying\nThe topic is identified but details may be missing.\n- Ask focused questions about specific gaps. Max 2 per turn.\n- If enough information, you may propose a framework.\n', ConversationState.FRAMEWORK_CONFIRM: '## Current Dialogue Phase: Framework Confirmation\nRequirements are clear. Propose a research framework.\n- Use action="enter_framework" with framework_sections.\n', ConversationState.EXECUTING: '## Current Dialogue Phase: Research Executing\nResearch is actively running.\n- Treat user messages as supplementary information by default.\n- Only use enter_framework if user EXPLICITLY requests redesign.\n', ConversationState.PAUSED: '## Current Dialogue Phase: Research Paused\nResearch was interrupted. Cached data available.\n- Resume → resume_research; Modify → modify_research; Chat → continue_chat.\n', ConversationState.PREVIEWING: '## Current Dialogue Phase: Report Preview\nReport is being previewed.\n- Handle user feedback on the report.\n'}
+        state_guidance = {ConversationState.UNDERSTANDING: '## Current Dialogue Phase: Understanding\nFocus on understanding the user\'s research need.\n- If the request is vague, ask 1-2 targeted questions.\n- Do NOT propose a research framework yet.\n', ConversationState.CLARIFYING: '## Current Dialogue Phase: Clarifying\nThe topic is identified but details may be missing.\n- Ask focused questions about specific gaps. Max 2 per turn.\n- If enough information, you may propose a framework.\n', ConversationState.FRAMEWORK_CONFIRM: '## Current Dialogue Phase: Framework Confirmation\nRequirements are clear. Propose a research framework.\n- Use action="enter_framework" with framework_sections.\n', ConversationState.EXECUTING: '## Current Dialogue Phase: Research Executing\nResearch is actively running with professional agents working.\nCRITICAL RULES for action selection:\n- Default action: "continue_chat" — for confirmations, greetings, simple questions, status queries.\n- "inject_requirement" — ONLY when user clearly asks to add/remove/supplement sections.\n- "modify_research" — ONLY when user EXPLICITLY uses words like 修改/调整/修订/adjust/modify. Do NOT use this for vague suggestions.\n- "enter_framework" — ONLY when user EXPLICITLY uses words like 重新规划/重新开始/换个方向/restart/redesign. NEVER use this for simple messages like "继续" or "好的".\n- When in doubt, use "continue_chat" with a brief reassuring message.\n', ConversationState.PAUSED: '## Current Dialogue Phase: Research Paused\nResearch was interrupted. Cached data available.\n- Resume → resume_research; Modify → modify_research; Chat → continue_chat.\n', ConversationState.PREVIEWING: '## Current Dialogue Phase: Report Preview\nReport is being previewed.\n- Handle user feedback on the report.\n'}
         guidance = state_guidance.get(conversation_state, '')
         return f"""\n{guidance}\n"""
 
@@ -664,29 +731,82 @@ class ResearchAPI:
             conv_machine.force_set_state(ConversationState.FRAMEWORK_CONFIRM)
         session['state_machine'] = conv_machine
 
-    def _build_research_running_context(self, session):
-        """research_context"""
+    def _build_research_running_context(self, session, session_id=None):
+        """R-FIX-7b: 构建研究运行上下文，供LLM判断用户意图。"""
         mode = session.get('mode', 'chat')
         if mode != 'research':
             return ''
         research_context = session.get('research_context')
         if not research_context:
             return ''
-        research_result = session.get('research_result')
-        if not research_result or research_result.get('status') != 'completed':
-            return ''
         topic = research_context.get('topic', '')
         framework = research_context.get('framework', {})
         sections = framework.get('sections', [])
+        research_result = session.get('research_result')
+        if research_result and research_result.get('status') in ('completed', 'completed_with_warnings'):
+            if not sections:
+                return ''
+            sections_str = ', '.join(sections[:8]) + ('...' if len(sections) > 8 else '')
+            pending = session.get('_pending_section_injects', [])
+            inject_hint = f" (Pending injects: {len(pending)})" if pending else ''
+            return (
+                f"\n## Research Status: COMPLETED\n"
+                f"Topic: {topic}\n"
+                f"Sections: {sections_str}{inject_hint}\n"
+                f"The research has been completed. A report is available.\n"
+                f"Rules for changes during research:\n"
+                f"- New section, supplement, cancellation → `inject_requirement` (lightweight, no pause)\n"
+                f"- User EXPLICITLY says 修改/调整/修订 → `modify_research` (pause + re-plan)\n"
+                f"- User EXPLICITLY says 重新规划/重新开始/换个方向 → `enter_framework`\n"
+                f"- Simple messages (继续/好的/ok/等) → `continue_chat`\n"
+            )
         if not sections:
-            return ''
-        if len(sections) > 8:
-            sections_str = ', '.join(sections[:8]) + ', ...'
+            sections_str = '(sections being determined)'
         else:
-            sections_str = ', '.join(sections)
+            sections_str = ', '.join(sections[:8]) + ('...' if len(sections) > 8 else '')
+        task_progress = session.get('task_progress', {})
+        progress_pct = task_progress.get('progress', 0)
+        completed_agents = []
+        data_point_count = 0
+        if session_id:
+            try:
+                from src.core.storage.research_result_store import ResearchResultStore
+                store = ResearchResultStore(storage_path="data")
+                stored = store.load_result(session_id)
+                if stored:
+                    completed_agents = stored.get('completed_agents', [])
+                    data_point_count = len(stored.get('data_points', []))
+            except Exception:
+                pass
+        phase_1_done = sum(1 for ca in completed_agents if ca.get('agent_id', '').startswith('phase_1_') and ca.get('success'))
+        phase_2_done = sum(1 for ca in completed_agents if ca.get('agent_id', '').startswith('phase_2_') and ca.get('success'))
+        section_count = len(sections) if sections else 0
+        if phase_2_done > 0:
+            current_phase_desc = f"深度分析(Phase 2): {phase_2_done}/{section_count} sections done"
+        elif phase_1_done > 0:
+            current_phase_desc = f"数据采集(Phase 1): {phase_1_done}/{section_count} sections done"
+        else:
+            current_phase_desc = "编排/启动中"
+        completed_hint = ''
+        if phase_1_done > 0:
+            completed_hint = f"\nData collection completed for: {phase_1_done} sections"
+        if data_point_count > 0:
+            completed_hint += f"\nData points collected: {data_point_count}"
         pending = session.get('_pending_section_injects', [])
         inject_hint = f" (Pending injects: {len(pending)})" if pending else ''
-        return f"\n## Research Executing\nTopic: {topic}\nSections: {sections_str}{inject_hint}\nRules for changes during research:\n- New section, supplement, cancellation → `inject_requirement` (lightweight, no pause)\n- User explicitly says pause/stop → `modify_research` (pause + re-plan)\n- User wants to stop entirely → `enter_framework`\n"
+        return (
+            f"\n## Research Status: RUNNING ({progress_pct:.0%})\n"
+            f"Topic: {topic}\n"
+            f"Framework sections: {sections_str}{inject_hint}\n"
+            f"Current phase: {current_phase_desc}\n"
+            f"{completed_hint}\n"
+            f"Research is actively running. Agents are working on the above sections.\n"
+            f"Rules for changes during research:\n"
+            f"- New section, supplement, cancellation → `inject_requirement` (lightweight, no pause)\n"
+            f"- User EXPLICITLY says 修改/调整/修订 → `modify_research` (pause + re-plan)\n"
+            f"- User EXPLICITLY says 重新规划/重新开始/换个方向 → `enter_framework`\n"
+            f"- Simple messages (继续/好的/ok/等) → `continue_chat`\n"
+        )
 
     async def _llm_converse(self, session_id, user_input, conversation_state=None, temperature=None, _json_retry=False):
         """LLM driven dialogue with multi-turn tool loop (Phase 2)"""
@@ -773,7 +893,7 @@ class ResearchAPI:
                 logger.info(f"Cancelling loop iteration {iteration} — new message detected")
                 break
             if iteration == 0:
-                rrc = self._build_research_running_context(session)
+                rrc = self._build_research_running_context(session, session_id)
                 user_prompt = self._build_initial_prompt(current_date, current_time, current_year, history_text, context_summary, dialogue_context, paused_context, sections_context, post_research_hint, tools_section, domain_guard, user_input, rrc)
                 if _json_retry:
                     user_prompt = f"## CRITICAL: Your previous response contained errors.\nYou MUST respond with ONLY a valid JSON object. No markdown, no code fences, no explanation outside the JSON.\n\n{self._JSON_OUTPUT_SCHEMA}\n\n{user_prompt}"
@@ -2821,11 +2941,14 @@ class ResearchAPI:
         from src.core.intelligent_routing_adapter import IntelligentRoutingAdapter
         adapter = IntelligentRoutingAdapter(use_llm=True, fallback_to_keyword=True)
         topic = context.get('topic', '')
+        existing_intent = self._get_cached_intent_result(session)
         routing_result = adapter.analyze_incremental(
             user_request=adjustment,
             requirement={'topic': topic, 'aspects': current_sections},
             completed_aspects=completed_aspects or current_sections,
-            topic=topic)
+            topic=topic,
+            existing_intent_result=existing_intent,
+        )
         new_plan = {}
         if hasattr(routing_result, 'execution_plan'):
             plan = routing_result.execution_plan

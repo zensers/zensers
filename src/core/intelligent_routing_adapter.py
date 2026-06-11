@@ -154,28 +154,43 @@ class IntelligentRoutingAdapter:
         requirement: Dict[str, Any],
         completed_aspects: Optional[List[str]] = None,
         topic: Optional[str] = None,
+        existing_intent_result: Optional['DeepIntentResult'] = None,
     ) -> IntelligentRoutingResult:
         """
-        Incremental analysis: compare with completed work, mark skippable parts
-
-        Difference from analyze():
-        - completed_aspects lists completed sections
-        - skip_phases in result marks phases that can be skipped
-        - Semantic overlap detection: use keywords to determine if "competitive landscape" partially covers "company research"
+        R-FIX-2: Incremental analysis with intent fusion.
 
         Args:
-            user_request: User's original request
-            requirement: Parsed requirement dictionary
-            completed_aspects: List of completed sections (e.g., ["market size", "competitive landscape"])
-            topic: Report topic
-
-        Returns:
-            IntelligentRoutingResult: Routing result (with skip_phases markers)
+            existing_intent_result: Existing intent result for fusion
         """
-        # 1. First do complete analysis
         full_result = self.analyze(user_request, requirement, topic)
 
-        # 2. If no completed sections, return directly
+        if existing_intent_result is not None:
+            new_intent = full_result.intent_result
+            if new_intent.used_fallback and not existing_intent_result.used_fallback:
+                logger.info(
+                    f"[IntelligentRouting] Incremental: new intent used fallback "
+                    f"(conf={new_intent.intent_confidence:.2f}), keeping existing "
+                    f"(intent={existing_intent_result.primary_intent.value}, "
+                    f"conf={existing_intent_result.intent_confidence:.2f})"
+                )
+                full_result.intent_result = existing_intent_result
+            elif (new_intent.primary_intent != existing_intent_result.primary_intent
+                  and new_intent.intent_confidence < existing_intent_result.intent_confidence):
+                logger.info(
+                    f"[IntelligentRouting] Incremental: intent changed but lower confidence "
+                    f"({new_intent.primary_intent.value}:{new_intent.intent_confidence:.2f} "
+                    f"vs {existing_intent_result.primary_intent.value}:{existing_intent_result.intent_confidence:.2f}), "
+                    f"keeping existing"
+                )
+                full_result.intent_result = existing_intent_result
+            else:
+                if new_intent.primary_intent != existing_intent_result.primary_intent:
+                    logger.info(
+                        f"[IntelligentRouting] Incremental: intent changed with sufficient confidence "
+                        f"({existing_intent_result.primary_intent.value} → {new_intent.primary_intent.value}, "
+                        f"conf={new_intent.intent_confidence:.2f})"
+                    )
+
         if not completed_aspects:
             return full_result
 

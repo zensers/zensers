@@ -68,10 +68,7 @@ class TestResearchOrchestratorInit:
         )
         
         assert orchestrator.enable_dual_track == True
-        # 新 API 使用私有属性
-        assert orchestrator._intent_gate is not None
-        assert orchestrator._category_router is not None
-        # wisdom_store 注入后存储在 _wisdom_store 或通过 wisdom_recorder 访问
+        assert orchestrator._routing_adapter is not None
         assert orchestrator._wisdom_store is not None
     
     def test_init_without_dual_track(self):
@@ -81,9 +78,6 @@ class TestResearchOrchestratorInit:
         )
         
         assert orchestrator.enable_dual_track == False
-        # 新 API 仍然创建组件，只是不使用双轨学习功能
-        assert orchestrator._intent_gate is not None
-        assert orchestrator._category_router is not None
     
     @pytest.mark.skip(reason="inject_knowledge_components 方法已在新 API 中移除")
     def test_inject_knowledge_components(self, orchestrator):

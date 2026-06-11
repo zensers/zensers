@@ -993,13 +993,12 @@ class ResultAggregator:
             # Agent结果格式: {success, message, content, result, agent_id, ...}
             # 需要提取 content 或 result 字段作为实际数据
             
-            # 优先级：content > result > data > 整个result
+            # 优先级：content > result > data_points格式化 > 整个result
+            _content_from_dict_str = False
             actual_content = None
             if "content" in result and result["content"]:
-                # content 字段包含实际内容
                 actual_content = result["content"]
             elif "result" in result and result["result"]:
-                # result 字段包含实际内容
                 result_val = result["result"]
                 if isinstance(result_val, str):
                     actual_content = result_val
@@ -1007,6 +1006,44 @@ class ResultAggregator:
                     actual_content = result_val["content"]
                 else:
                     actual_content = str(result_val)
+                    _content_from_dict_str = True
+            
+            # R1-FIX: 当 actual_content 为空或过短（<100 chars，通常是元数据泄露），
+            # 尝试从 data_points 格式化结构化文本作为替代内容
+            if actual_content and not isinstance(actual_content, str):
+                actual_content = str(actual_content)
+            if not actual_content or (isinstance(actual_content, str) and len(actual_content) < 100):
+                data_points = result.get("data_points")
+                if data_points and isinstance(data_points, list) and len(data_points) > 0:
+                    formatted_parts = []
+                    for dp in data_points[:80]:
+                        if isinstance(dp, dict):
+                            metric = dp.get("metric", dp.get("title", ""))
+                            value = dp.get("value", "")
+                            unit = dp.get("unit", "")
+                            source = dp.get("source", "")
+                            if metric and value:
+                                line = f"- {metric}: {value}"
+                                if unit:
+                                    line += f" ({unit})"
+                                if source:
+                                    line += f" [来源: {source}]"
+                                formatted_parts.append(line)
+                        elif isinstance(dp, str) and len(dp) > 10:
+                            formatted_parts.append(f"- {dp[:300]}")
+                    formatted_text = "\n".join(formatted_parts)
+                    if _content_from_dict_str and formatted_parts:
+                        actual_content = formatted_text
+                        logger.info(
+                            f"R1-FIX: Replaced dict-str content with {len(formatted_parts)} data_points "
+                            f"for agent {agent_id} ({len(formatted_text)} chars)"
+                        )
+                    elif len(formatted_text) > len(actual_content or ""):
+                        actual_content = formatted_text
+                        logger.info(
+                            f"R1-FIX: Formatted {len(formatted_parts)} data_points as content "
+                            f"for agent {agent_id} ({len(formatted_text)} chars)"
+                        )
             
             if actual_content:
                 # 使用agent_id作为key，保留每个Agent的内容

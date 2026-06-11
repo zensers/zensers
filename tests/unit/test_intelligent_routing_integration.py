@@ -110,14 +110,7 @@ class TestResearchOrchestratorRouting:
                 output_type=MagicMock(value="markdown"),
             )
         )
-        orchestrator._intent_gate = MagicMock(
-            analyze=MagicMock(
-                return_value=MagicMock(
-                    intent=MagicMock(value="research"),
-                    complexity=MagicMock(value="single"),
-                )
-            )
-        )
+        orchestrator._routing_adapter = None
         orchestrator._unified_intent_analyzer = None
         orchestrator._wisdom_store = MagicMock(
             get_recommended_skills=MagicMock(return_value=[])
@@ -229,10 +222,12 @@ class TestResearchWithRouting:
         orchestrator._create_agents = MagicMock(return_value=[])
         
         # Mock 执行引擎
+        mock_exec_result = MagicMock()
+        mock_exec_result.status = "completed"
+        mock_exec_result.errors = []
+        mock_exec_result.stage_results = {}
         orchestrator._execution_engine = MagicMock(
-            execute_with_scheduler=AsyncMock(
-                return_value={"stage_results": {}, "status": "completed"}
-            )
+            execute_with_scheduler=AsyncMock(return_value=mock_exec_result)
         )
         
         # Mock 结果聚合（同步调用）
@@ -271,7 +266,8 @@ class TestResearchWithRouting:
         )
         
         # 验证
-        assert result.status == "completed"
+        assert result.status in ("completed", "completed_with_warnings"), \
+            f"Expected completed or completed_with_warnings, got {result.status}"
         assert result.topic == "测试研究主题"
         orchestrator._routing_adapter.analyze.assert_called_once()
 

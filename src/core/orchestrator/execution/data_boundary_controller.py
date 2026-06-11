@@ -229,7 +229,8 @@ def create_boundary_for_synthesis(
 def create_boundary_for_analysis(
     analysis_agent_id: str,
     target_aspect: str,
-    all_agent_ids: List[str]
+    all_agent_ids: List[str],
+    agent_section_map: Optional[Dict[str, str]] = None,
 ) -> DataBoundary:
     """
     为 analysis agent 创建数据边界
@@ -252,12 +253,13 @@ def create_boundary_for_analysis(
     allowed_agents = set()
     
     for agent_id in all_agent_ids:
-        # 只允许 research agent（新路径 phase_N_agent_M 也视为 research）
         if not agent_id.startswith("research_") and not agent_id.startswith("phase_"):
             continue
-        
-        # 提取 research agent 的章节名
-        agent_aspect = _extract_aspect_from_agent_id(agent_id)
+        # R-FIX-11: 优先使用 agent_section_map
+        if agent_section_map and agent_id in agent_section_map:
+            agent_aspect = agent_section_map[agent_id]
+        else:
+            agent_aspect = _extract_aspect_from_agent_id(agent_id)
         
         # DB-FIX-2: use substring matching (was exact match, failed for 424+ cases)
         if agent_aspect == aspect_to_match:

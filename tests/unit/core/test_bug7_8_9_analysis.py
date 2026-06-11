@@ -120,17 +120,23 @@ class TestBug7_DependenciesField:
             for spec in specs:
                 agent_deps[spec.agent_id] = spec.dependencies
 
-        # B: no deps
-        b = [k for k in agent_deps if "agent_0" in k][0]
-        assert agent_deps[b] == [], f"B should have no deps, got {agent_deps[b]}"
+        # B analysis agent (phase_2): depends on DC agent (phase_1)
+        b_analysis = [k for k in agent_deps if k.startswith("phase_2") and "agent_0" in k]
+        assert len(b_analysis) == 1, f"Expected 1 B analysis agent, got {b_analysis}"
+        assert len(agent_deps[b_analysis[0]]) >= 1, \
+            f"B analysis should depend on DC, got {agent_deps[b_analysis[0]]}"
 
-        # C: depends on B
-        c = [k for k in agent_deps if "agent_1" in k][0]
-        assert len(agent_deps[c]) > 0, f"C should have deps, got empty"
+        # C analysis agent (phase_2): depends on B's DC + B's analysis
+        c_analysis = [k for k in agent_deps if k.startswith("phase_2") and "agent_1" in k]
+        assert len(c_analysis) == 1, f"Expected 1 C analysis agent, got {c_analysis}"
+        assert len(agent_deps[c_analysis[0]]) > 0, \
+            f"C analysis should have deps, got empty"
 
-        # D: depends on B, C
-        d = [k for k in agent_deps if "agent_2" in k][0]
-        assert len(agent_deps[d]) >= 2, f"D should have 2 deps, got {agent_deps[d]}"
+        # D analysis agent (phase_2): depends on B + C
+        d_analysis = [k for k in agent_deps if k.startswith("phase_2") and "agent_2" in k]
+        assert len(d_analysis) == 1, f"Expected 1 D analysis agent, got {d_analysis}"
+        assert len(agent_deps[d_analysis[0]]) >= 2, \
+            f"D analysis should have 2+ deps, got {agent_deps[d_analysis[0]]}"
 
 
 # =============================================================================
@@ -142,8 +148,7 @@ class TestBug8_SectionIdNotSet:
     """验证 agent.section_id = "" 导致 _get_section_id_from_agent 返回 agent_id"""
 
     def test_output_keys_contain_section_id(self):
-        """验证 spec.output_keys 中包含 section_id，可以通过它设置 agent.section_id"""
-        from src.core.decomposition import AgentSpec as OriginalAgentSpec, ResearchPhase
+        """验证 spec.section_ids 包含 section_id，可用于设置 agent.section_id"""
         from src.core.dynamic_orchestrator import DynamicPhaseOrchestrator, AgentSpec as DynamicAgentSpec, ExecutionPhase
 
         # 构造一个 ExecutionPhase，其中 agent 有 section_ids
@@ -172,16 +177,15 @@ class TestBug8_SectionIdNotSet:
         plan = orchestrator.plan(ts, intent)
         decomp_plan = plan.to_decomposition_plan()
 
-        # 验证 non-report agent 的 output_keys 包含 section_id
+        # 验证 non-report, non-calibration agent 的 output_keys 包含 section_id
         found = False
         for phase_type, specs in decomp_plan.phases.items():
             for spec in specs:
-                if spec.agent_type == "report_generation":
+                if spec.agent_type in ("report_generation", "calibration"):
                     continue
                 found = True
                 assert "section_0_core_financial" in spec.output_keys, \
                     f"output_keys should contain section_id, got {spec.output_keys}"
-                # 验证 BUG 8 修复方案可行：agent.section_id = spec.output_keys[0]
                 assert spec.output_keys[0] == "section_0_core_financial", \
                     f"BUG 8 fix: expected section_0_core_financial, got {spec.output_keys[0]}"
 
@@ -212,7 +216,7 @@ class TestBug8_SectionIdNotSet:
             f"BUG 8: expected 'phase_2_agent_6' (agent_id fallback), got '{result}'"
 
     def test_content_lock_cannot_find_agent_id_as_section(self):
-        """内容锁注册表存的是 section_id（如 'section_0'），传 agent_id（'phase_2_agent_6'）查不到"""
+        """内容锁注册表存的是 section_id，传 agent_id 时走 not-registered 宽松路径"""
         from src.core.content_lock import ContentLockManager, SectionState
         from src.core.dynamic_orchestrator import ContentLockRule
 
@@ -232,13 +236,13 @@ class TestBug8_SectionIdNotSet:
 
         lock_manager = ContentLockManager(plan)
 
-        # 用 agent_id 查询 — 查不到！
+        # 用 agent_id 查询 — 不在注册表中，走宽松策略 (允许执行)
         can_exec, reason = lock_manager.can_execute("phase_2_agent_6")
-        assert not can_exec, "Should not be able to execute with agent_id as section_id"
-        assert "not found" in reason.lower(), \
-            f"BUG 8: expected 'not found' reason, got: {reason}"
+        assert can_exec, "Unregistered section_id should be allowed (permissive)"
+        assert "not registered" in reason.lower(), \
+            f"Expected 'not registered' reason, got: {reason}"
 
-        # 用正确的 section_id 查询 — 能找到
+        # 用正确的 section_id 查询 — 能找到且可执行
         can_exec, reason = lock_manager.can_execute("section_0_core_financial")
         assert can_exec, \
             f"Should be able to execute with correct section_id, but got: {reason}"

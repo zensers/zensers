@@ -305,6 +305,23 @@ class ResearchResultStore:
             merged_dps = new_dps
             merged_srcs = new_srcs
         
+        # R2-FIX: merge completed_agents and agent_contents instead of overwriting
+        new_completed = result.get("completed_agents", [])
+        new_agent_contents = result.get("agent_contents", {})
+        if existing:
+            exist_completed = existing.get("completed_agents", [])
+            exist_agent_contents = existing.get("agent_contents", {})
+            exist_agent_ids = {a.get("agent_id") for a in exist_completed if isinstance(a, dict)}
+            merged_completed = list(exist_completed)
+            for a in new_completed:
+                if isinstance(a, dict) and a.get("agent_id") not in exist_agent_ids:
+                    merged_completed.append(a)
+            merged_agent_contents = dict(exist_agent_contents)
+            merged_agent_contents.update(new_agent_contents)
+        else:
+            merged_completed = new_completed
+            merged_agent_contents = new_agent_contents
+        
         result_data = {
             "task_id": task_id,
             "title": result.get("title", ""),
@@ -313,7 +330,8 @@ class ResearchResultStore:
             "key_findings": result.get("key_findings", []),
             "data_points": merged_dps,
             "sources": merged_srcs,
-            "completed_agents": result.get("completed_agents", []),
+            "completed_agents": merged_completed,
+            "agent_contents": merged_agent_contents,
             "saved_at": datetime.now().isoformat()
         }
         

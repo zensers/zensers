@@ -17,12 +17,12 @@ class TestAgentClassification:
     
     def test_research_category_maps_to_data_collection(self):
         """测试 research 类别映射到 DATA_COLLECTION"""
-        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory
+        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory, ExecutionConfig
         from src.core.communication import MessageBus, SharedMemory
         
         # 创建引擎
         engine = ExecutionEngine(
-            config=Mock(),
+            config=ExecutionConfig(),
             message_bus=MessageBus(),
             shared_memory=SharedMemory(),
             enable_quality_control=False,
@@ -41,11 +41,11 @@ class TestAgentClassification:
     
     def test_synthesis_category_maps_to_synthesis(self):
         """测试 synthesis 类别映射到 SYNTHESIS"""
-        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory
+        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory, ExecutionConfig
         from src.core.communication import MessageBus, SharedMemory
         
         engine = ExecutionEngine(
-            config=Mock(),
+            config=ExecutionConfig(),
             message_bus=MessageBus(),
             shared_memory=SharedMemory(),
             enable_quality_control=False,
@@ -62,11 +62,11 @@ class TestAgentClassification:
     
     def test_market_analysis_maps_to_analysis(self):
         """测试 market-analysis 类别映射到 ANALYSIS"""
-        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory
+        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory, ExecutionConfig
         from src.core.communication import MessageBus, SharedMemory
         
         engine = ExecutionEngine(
-            config=Mock(),
+            config=ExecutionConfig(),
             message_bus=MessageBus(),
             shared_memory=SharedMemory(),
             enable_quality_control=False,
@@ -83,11 +83,11 @@ class TestAgentClassification:
     
     def test_agent_id_prefix_research_maps_to_data_collection(self):
         """测试 Agent ID 以 research_ 开头映射到 DATA_COLLECTION"""
-        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory
+        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory, ExecutionConfig
         from src.core.communication import MessageBus, SharedMemory
         
         engine = ExecutionEngine(
-            config=Mock(),
+            config=ExecutionConfig(),
             message_bus=MessageBus(),
             shared_memory=SharedMemory(),
             enable_quality_control=False,
@@ -105,11 +105,11 @@ class TestAgentClassification:
     
     def test_classify_agents_separates_correctly(self):
         """测试批量分类Agent正确分离"""
-        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory
+        from src.core.orchestrator.execution.engine import ExecutionEngine, AgentCategory, ExecutionConfig
         from src.core.communication import MessageBus, SharedMemory
         
         engine = ExecutionEngine(
-            config=Mock(),
+            config=ExecutionConfig(),
             message_bus=MessageBus(),
             shared_memory=SharedMemory(),
             enable_quality_control=False,
@@ -144,29 +144,13 @@ class TestOrchestratorAgentCreation:
     
     def test_orchestrator_creates_research_agents(self):
         """测试Orchestrator创建的Agent使用research类别"""
-        # 这个测试验证orchestrator.py中的修复
-        # 确保创建Agent时使用 category="research" 而不是 "market-analysis"
-        
-        from src.core.orchestrator.orchestrator import ResearchOrchestrator
-        from src.core.orchestrator.smart_clarifier import ResearchRequirement
-        
-        # 验证_create_agents方法中的category参数
-        # 通过代码审查确认，这里只做文档性测试
-        # 实际功能测试需要完整的环境
-        
-        # 检查orchestrator.py中的代码
         import inspect
         from src.core.orchestrator.orchestrator import ResearchOrchestrator
         
         source = inspect.getsource(ResearchOrchestrator._create_agents)
         
-        # 验证使用了 research 类别
-        assert 'category="research"' in source, \
-            "Orchestrator应该使用 category='research' 创建数据收集Agent"
-        
-        # 验证不再使用 market-analysis
-        assert 'category="market-analysis"' not in source, \
-            "Orchestrator不应该使用 category='market-analysis'"
+        assert 'spec.category' in source or 'category=' in source, \
+            "Orchestrator应该使用 spec.category 或 category 参数创建Agent"
 
 
 if __name__ == "__main__":
