@@ -56,6 +56,10 @@ class PersistentSessionDict(dict):
                     f"History is append-only."
                 )
         super().__setitem__(key, value)
+        # Sync display_history with conversation_history (never compressed)
+        # Use dict.__setitem__ to avoid re-triggering __setitem__ → infinite save loop
+        if key == "conversation_history" and isinstance(value, list):
+            dict.__setitem__(self, "display_history", list(value))
         self._manager._save_to_disk(self._session_id)
     
     def update(self, *args, **kwargs):
@@ -76,6 +80,9 @@ class PersistentSessionDict(dict):
                     f"{len(old)} -> {len(new_val)} items."
                 )
         super().update(*args, **kwargs)
+        # Sync display_history — use dict.__setitem__ to avoid re-triggering save
+        if "conversation_history" in merger and isinstance(merger["conversation_history"], list):
+            dict.__setitem__(self, "display_history", list(merger["conversation_history"]))
         self._manager._save_to_disk(self._session_id)
     
     def pop(self, key, *args):

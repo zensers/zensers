@@ -10,11 +10,16 @@ import { useEffect, useRef, useCallback } from 'react';
  * - Pause auto-scroll when user scrolls up to view history
  * - Resume auto-scroll when user scrolls back to bottom
  * - Provide "scroll to latest" button state
+ * - Trigger onScrollTop when user scrolls to top (for infinite scroll)
  */
-export function useChatScroll(deps: unknown[]) {
+export function useChatScroll(
+  deps: unknown[],
+  onScrollTop?: () => Promise<void>,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const isUserScrolling = useRef(false);
   const prevScrollTop = useRef(0);
+  const isLoadingRef = useRef(false);
 
   /**
    * Scroll event handler
@@ -25,6 +30,7 @@ export function useChatScroll(deps: unknown[]) {
 
     const { scrollTop, scrollHeight, clientHeight } = el;
     const atBottom = scrollHeight - scrollTop - clientHeight < 60;
+    const atTop = scrollTop < 60;
 
     // User scrolls up → mark
     if (!atBottom && scrollTop < prevScrollTop.current) {
@@ -36,8 +42,21 @@ export function useChatScroll(deps: unknown[]) {
       isUserScrolling.current = false;
     }
 
+    // User scrolls to top → load older messages
+    if (atTop && onScrollTop && !isLoadingRef.current) {
+      isLoadingRef.current = true;
+      const prevHeight = el.scrollHeight;
+      onScrollTop().finally(() => {
+        requestAnimationFrame(() => {
+          const newHeight = el.scrollHeight;
+          el.scrollTop = newHeight - prevHeight;
+          isLoadingRef.current = false;
+        });
+      });
+    }
+
     prevScrollTop.current = scrollTop;
-  }, []);
+  }, [onScrollTop]);
 
   // Deps change → auto-scroll (unless user is scrolling up)
   useEffect(() => {

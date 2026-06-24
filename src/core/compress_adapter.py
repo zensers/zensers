@@ -78,6 +78,7 @@ class SessionHistoryCompressor:
         Check and compress conversation_history if it exceeds thresholds.
 
         Triggers when EITHER step count or size exceeds limit.
+        display_history is always preserved (never compressed).
         """
         history = session.get("conversation_history")
         if not history or not isinstance(history, list):
@@ -95,14 +96,16 @@ class SessionHistoryCompressor:
             user_id = session.get("user_id", "default")
             compressor = self._get_compressor(session_id, user_id)
             result = compressor.compress(history)
-            # Use dict.__setitem__ to bypass PersistentSessionDict auto-save
-            # which would trigger infinite recursion
+            # Save full history to display_history BEFORE compression
+            dict.__setitem__(session, "display_history", list(history))
+            # Compress conversation_history (for LLM context only)
             dict.__setitem__(session, "conversation_history", result["history"])
             dict.__setitem__(session, "_compressed", True)
             logger.info(
                 f"History compressed: {session_id} "
                 f"({len(history)} -> {len(result['history'])} steps, "
-                f"ratio={result['compression_ratio']:.1%})"
+                f"ratio={result['compression_ratio']:.1%}), "
+                f"display_history preserved ({len(history)} items)"
             )
         except Exception as e:
             logger.warning(f"History compression failed for {session_id}: {e}")

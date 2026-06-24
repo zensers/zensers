@@ -81,7 +81,9 @@ export async function restoreSession(id: string): Promise<void> {
 
     const msgs: ChatMessage[] = (detail.messages || []).map((m: any) => ({
       id: m.id || nanoid(),
-      role: m.role as 'user' | 'assistant',
+      role: (m.role === 'user' || m.role === 'assistant' || m.role === 'agent'
+        ? m.role
+        : 'assistant') as ChatMessage['role'],
       content: m.content,
       timestamp: m.timestamp || new Date().toISOString(),
     }));
@@ -253,11 +255,10 @@ export const useSessionStore = create<SessionRegistry>()(
               };
               return weight(b) - weight(a);
             })
-            .slice(-50)
+            .slice(-200)
             .map(([k, v]) => [k, {
               ...v,
               result: undefined,
-              agentMessages: undefined,
               qualityState: undefined,
               pendingInput: undefined,
             }])

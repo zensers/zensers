@@ -2,8 +2,8 @@
 
 'use client';
 
-import { useRef, useEffect } from 'react';
-import type { AgentMessageData, SelectOption } from '@/types/api';
+import { useRef, useEffect, useState, useCallback } from 'react';
+import type { AgentMessageData, ChatMessage, SelectOption } from '@/types/api';
 import { nanoid } from 'nanoid';
 import { useChatStore } from '@/store/useChatStore';
 import { useResearchStore } from '@/store/useResearchStore';
@@ -109,7 +109,53 @@ export function ChatPanel() {
     return () => clearTimeout(searchStateTimerRef.current);
   }, []);
 
-  const { containerRef, handleScroll, scrollToBottom, isAtBottom } = useChatScroll([messages]);
+  // Infinite scroll: load older messages on scroll-to-top
+  const [hasMoreMessages, setHasMoreMessages] = useState(true);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+  const messageOffsetRef = useRef(0);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (isLoadingMessages || !hasMoreMessages) return;
+    const store = useSessionStore.getState();
+    const activeId = store.activeId;
+    if (!activeId) return;
+
+    setIsLoadingMessages(true);
+    try {
+      const result = await api.getMessages(activeId, messageOffsetRef.current, 50);
+      if (result.messages.length === 0) {
+        setHasMoreMessages(false);
+      } else {
+        const olderMsgs: ChatMessage[] = result.messages.map((m: any) => ({
+          id: m.id || nanoid(),
+          role: (m.role === 'user' || m.role === 'assistant' || m.role === 'agent'
+            ? m.role
+            : 'assistant') as ChatMessage['role'],
+          content: m.content,
+          timestamp: m.timestamp || new Date().toISOString(),
+        }));
+        useChatStore.getState().prependMessages(olderMsgs);
+        messageOffsetRef.current += result.messages.length;
+        if (!result.has_more) {
+          setHasMoreMessages(false);
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load older messages:', e);
+    } finally {
+      setIsLoadingMessages(false);
+    }
+  }, [isLoadingMessages, hasMoreMessages]);
+
+  useEffect(() => {
+    messageOffsetRef.current = 0;
+    setHasMoreMessages(true);
+  }, [useSessionStore.getState().activeId]);
+
+  const { containerRef, handleScroll, scrollToBottom, isAtBottom } = useChatScroll(
+    [messages],
+    loadOlderMessages,
+  );
 
   // hasActiveResearch removed — ProgressPanel replaced by inline agent messages
   const isChatMode = currentStep === null || currentStep === 0;
@@ -472,6 +518,12 @@ export function ChatPanel() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {isLoadingMessages && (
+          <div className="flex justify-center py-2">
+            <span className="text-xs text-muted-foreground animate-pulse">Loading earlier messages...</span>
           </div>
         )}
 

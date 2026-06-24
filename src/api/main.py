@@ -601,12 +601,12 @@ async def get_research_detail(task_id: str):
     }
 
     messages = []
-    history = session.get("conversation_history", [])
+    history = session.get("display_history") or session.get("conversation_history", [])
     for msg in history:
-        if isinstance(msg, dict) and "role" in msg and "content" in msg:
+        if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
             messages.append({
                 "id": msg.get("id", f"msg_{len(messages)}"),
-                "role": msg["role"],
+                "role": msg.get("role", msg.get("type", "unknown")),
                 "content": msg["content"],
                 "timestamp": msg.get("timestamp", created_at or ""),
             })
@@ -615,6 +615,47 @@ async def get_research_detail(task_id: str):
         "output_type": meta.get("output_type", "report"),
         "template": "consulting", "sections": [],
     }}
+
+
+@app.get("/api/v1/research/{task_id}/messages")
+async def get_research_messages(
+    task_id: str,
+    offset: int = 0,
+    limit: int = 50,
+):
+    """Paginated message history for a research session.
+    
+    Uses display_history (full, never compressed) when available,
+    falls back to conversation_history.
+    """
+    session = session_manager.get(task_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    offset = max(0, offset)
+    limit = max(1, limit)
+    
+    source = session.get("display_history") or session.get("conversation_history", [])
+    total = len(source)
+    page = source[offset:offset + limit]
+    
+    messages = []
+    for msg in page:
+        if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
+            messages.append({
+                "id": msg.get("id", f"msg_{offset + len(messages)}"),
+                "role": msg.get("role", msg.get("type", "unknown")),
+                "content": msg["content"],
+                "timestamp": msg.get("timestamp", ""),
+            })
+    
+    return {
+        "messages": messages,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
+    }
 
 
 @app.post("/api/v1/upload")
