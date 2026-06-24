@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Callable, Dict, List, Optional, Set, TYPE_CHECKING
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
 from src.survey.models import SurveyTask, SurveyStatus, SurveyResponse
 from src.survey.backends.factory import BackendFactory
 
@@ -120,7 +121,7 @@ class TaskCoordinator:
             return
         
         self._running = True
-        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        self._cleanup_task = safe_create_task(self._cleanup_loop(), name="task_coordinator.cleanup_loop")
         
         # 自动恢复
         if self._config.enable_auto_recovery:
@@ -228,8 +229,9 @@ class TaskCoordinator:
             monitor._registered = True
         
         # 然后启动后台监控（此时monitor已注册）
-        monitor._asyncio_task = asyncio.create_task(
-            self._monitor_survey_task(survey_task, on_completion)
+        monitor._asyncio_task = safe_create_task(
+            self._monitor_survey_task(survey_task, on_completion),
+            name="task_coordinator.monitor_survey_task",
         )
         
         logger.info(f"Launched survey task {task_id} (status=WAITING, backend={survey_task.backend_type})")
@@ -519,8 +521,9 @@ class TaskCoordinator:
             self._monitor_tasks[task_id] = monitor
         
         # 然后启动监控
-        monitor._asyncio_task = asyncio.create_task(
-            self._monitor_survey_task(survey_task, on_completion)
+        monitor._asyncio_task = safe_create_task(
+            self._monitor_survey_task(survey_task, on_completion),
+            name="task_coordinator.resume_monitoring",
         )
         
         logger.info(f"Resumed monitoring for survey task {task_id}")
@@ -592,8 +595,9 @@ class TaskCoordinator:
                         self._monitor_tasks[task.task_id] = monitor
                     
                     # 注册后再启动
-                    monitor._asyncio_task = asyncio.create_task(
-                        self._monitor_survey_task(task)
+                    monitor._asyncio_task = safe_create_task(
+                        self._monitor_survey_task(task),
+                        name="task_coordinator.recovery_monitor",
                     )
                     results["waiting"].append(task.task_id)
                     
@@ -645,7 +649,7 @@ class TaskCoordinator:
                 return (task_id, None)
         
         # 并行获取所有结果
-        tasks = [asyncio.create_task(get_result(tid)) for tid in task_ids]
+        tasks = [safe_create_task(get_result(tid), name="task_coordinator.merge_results") for tid in task_ids]
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
         
         # 合并结果

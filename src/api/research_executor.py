@@ -176,7 +176,7 @@ class ResearchExecutor:
                             timeout=orchestrator_timeout,
                         )
                         session = session_manager.get(session_id)
-                        if session and result and result.status == "completed":
+                        if session and result and result.status in ("completed", "completed_with_warnings"):
                             original = session.get("research_result", {})
                             original_report = original.get("report", {}) if isinstance(original.get("report"), dict) else {}
                             original_sections = original_report.get("sections", [])
@@ -191,9 +191,14 @@ class ResearchExecutor:
                             merged_report = dict(original_report)
                             merged_report["sections"] = merged_sections
 
+                            _original_status = original.get("status", "completed")
+                            _inject_status = result.status
+                            _merged_status = "completed_with_warnings" if (
+                                _original_status == "completed_with_warnings" or _inject_status == "completed_with_warnings"
+                            ) else "completed"
                             session["research_result"] = {
                                 "task_id": original.get("task_id") or original_task_id,
-                                "status": "completed",
+                                "status": _merged_status,
                                 "output_path": original.get("output_path", ""),
                                 "document_path": original.get("document_path", ""),
                                 "topic": result.topic,
@@ -332,6 +337,8 @@ class ResearchExecutor:
                 "topic": topic or user_input,
                 "output_type": output_type,
                 "aspects": framework.get("sections", None),
+                "sections_tree": plan.get("sections_tree"),
+                "section_details": plan.get("section_details", []),
             }
             # 从 session 读取动态参数（由 quick_start 存入）
             param_keys = ("region", "time_range", "depth", "company_name",
@@ -470,6 +477,25 @@ class ResearchExecutor:
                     f"{orchestrator_result.stages_completed} stages completed, "
                     f"{_section_count} sections generated."
                 )
+                _suggestions = [
+                    {"id": "view_report", "label": "View Report", "example": "Show me the full report"},
+                ]
+                if orchestrator_result.status == "completed_with_warnings":
+                    _final_msg = (
+                        f"**Research Complete** ⚠️\n\n"
+                        f"Quality score: {getattr(orchestrator_result, 'quality_score', 0):.1f} — "
+                        f"report has quality issues but is available for preview.\n\n"
+                        f"{_summary_text[:800]}"
+                    ) if _summary_text else (
+                        f"**Research Complete** ⚠️\n\n"
+                        f"Research on 「{topic}」has been completed with quality warnings. "
+                        f"Quality score: {getattr(orchestrator_result, 'quality_score', 0):.1f}. "
+                        f"You can preview the report and request revisions.\n"
+                    )
+                    _suggestions = [
+                        {"id": "view_report", "label": "View Report", "example": "Show me the full report"},
+                        {"id": "improve_quality", "label": "Improve Quality", "example": "Please improve the report quality"},
+                    ]
                 try:
                     from src.core.progress_streamer import push_chat_response
                     push_chat_response(session_id, {
@@ -477,9 +503,7 @@ class ResearchExecutor:
                         "action": "continue_chat",
                         "topic": topic,
                         "directions": [],
-                        "suggestions": [
-                            {"id": "view_report", "label": "View Report", "example": "Show me the full report"},
-                        ],
+                        "suggestions": _suggestions,
                     })
                 except ImportError:
                     pass

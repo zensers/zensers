@@ -378,35 +378,53 @@ class SkillRegistry:
     
     def load_skills_for_category(self, category: str) -> List[str]:
         """
-        Load LangChain Skills by category on demand
+        Load Skills by category on demand (supports builtin, factory, and LangChain skills)
         
         Args:
-            category: Category name (e.g. "market-analysis", "academic-research")
+            category: Category name (e.g. "market-analysis", "financial-analysis", "research")
             
         Returns:
             List of successfully loaded Skill names
         """
         # Phase 4: category_router removed, using built-in mapping
-        CATEGORY_TO_LANGCHAIN_SKILLS = {
-            "market-analysis": ["lc_tavily_search", "lc_wikipedia", "llm_skill"],
+        CATEGORY_TO_SKILLS = {
+            "market-analysis": ["market_analysis", "lc_tavily_search", "lc_wikipedia", "llm_skill"],
             "data-collection": ["lc_tavily_search", "lc_wikipedia"],
             "academic-research": ["lc_arxiv", "lc_wikipedia", "llm_skill"],
-            "financial-analysis": ["lc_tavily_search", "lc_wikipedia", "llm_skill"],
-            "data-analysis": ["lc_python_repl", "llm_skill"],
+            "financial-analysis": ["stock_data", "stock_analysis", "lc_tavily_search", "lc_wikipedia", "llm_skill"],
+            "data-analysis": ["data_analysis", "lc_python_repl", "llm_skill"],
             "report-generation": ["llm_skill"],
             "quality-check": ["llm_skill"],
             "visual-engineering": [],
+            "research": ["lc_tavily_search", "lc_wikipedia", "llm_skill"],
+            "synthesis": ["llm_skill"],
+            "calibration": ["llm_skill"],
         }
         
-        needed_skills = CATEGORY_TO_LANGCHAIN_SKILLS.get(category, [])
+        needed_skills = CATEGORY_TO_SKILLS.get(category, [])
         loaded = []
         
         for skill_name in needed_skills:
-            if self.load_langchain_skill(skill_name):
+            if skill_name in self._skills:
                 loaded.append(skill_name)
+                continue
+            if skill_name in self._factories:
+                skill = self.get(skill_name)
+                if skill:
+                    loaded.append(skill_name)
+                continue
+            if skill_name.startswith("lc_"):
+                if self.load_langchain_skill(skill_name):
+                    loaded.append(skill_name)
+                continue
+            if skill_name == "llm_skill":
+                if skill_name not in self._skills:
+                    self.register_core_skills()
+                if skill_name in self._skills:
+                    loaded.append(skill_name)
         
         if loaded:
-            logger.info(f"Loaded {len(loaded)} LangChain skills for category: {category}")
+            logger.info(f"Loaded {len(loaded)} skills for category: {category}")
         
         return loaded
     
@@ -443,16 +461,16 @@ class SkillRegistry:
         
         if auto_load:
             for skill_name in matched:
-                # Check built-in Skills directly
                 if skill_name in self._skills:
                     loaded.append(skill_name)
-                # Try to load LangChain Skills
+                elif skill_name in self._factories:
+                    skill = self.get(skill_name)
+                    if skill:
+                        loaded.append(skill_name)
                 elif skill_name.startswith("lc_"):
                     if self.load_langchain_skill(skill_name):
                         loaded.append(skill_name)
-                # Special handling for llm_skill
                 elif skill_name == "llm_skill":
-                    # Ensure it is registered
                     if skill_name not in self._skills:
                         self.register_core_skills()
                     if skill_name in self._skills:

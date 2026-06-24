@@ -13,6 +13,7 @@
 设计文档: docs/KNOWLEDGE_BASE/02_ARCHITECTURE/ORCHESTRATOR_REDESIGN.md
 """
 import asyncio
+import copy
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -568,14 +569,15 @@ class ExecutionEngine:
         if len(parts) < 2:
             return agent_id
         
-        # 英文→中文映射
         aspect_mapping = {
             "summary": "执行摘要", "executivesummary": "执行摘要",
             "execsummary": "执行摘要", "conclusion": "研究结论",
             "findings": "研究结论", "recommendation": "建议",
         }
         
-        # 判断最后一段是否为索引/ID (数字 / UUID / 字母数字ID)
+        if len(parts) >= 4 and parts[-2] == "agent" and parts[0] in ("phase", "batch"):
+            return agent_id
+        
         last = parts[-1]
         is_index = last.isdigit() or (
             len(last) >= 6
@@ -583,14 +585,17 @@ class ExecutionEngine:
         )
         
         if is_index and len(parts) >= 3:
-            # 去掉前缀 + 索引，取中间部分
             middle = "_".join(parts[1:-1])
-            # 检查中间部分是否有英文映射
             if middle.lower() in aspect_mapping:
                 return aspect_mapping[middle.lower()]
             return middle
         
-        # 最后一段不是索引：尝试映射，否则直接返回
+        if parts[0] in ("inject", "replan") and len(parts) >= 3:
+            middle = "_".join(parts[1:-1])
+            if middle.lower() in aspect_mapping:
+                return aspect_mapping[middle.lower()]
+            return middle
+        
         if last.lower() in aspect_mapping:
             return aspect_mapping[last.lower()]
         return last
@@ -779,6 +784,8 @@ class ExecutionEngine:
                 r.get("output") or
                 ""
             )
+            if isinstance(content, dict):
+                content = str(content)
             if not content or not isinstance(content, str):
                 continue
             
@@ -1055,6 +1062,10 @@ class ExecutionEngine:
             from src.core.data.canonical_registry import CanonicalDataRegistry
             self._canonical_registry = CanonicalDataRegistry()
             self._active_canonical_data: Dict = {}
+            self._section_data_specs = (getattr(decomposition_plan, 'section_data_specs', []) or []) if decomposition_plan else []
+            if self._section_data_specs and isinstance(self._section_data_specs[0], dict):
+                from src.core.decomposition.strategies import _convert_specs_from_dicts
+                self._section_data_specs = _convert_specs_from_dicts(self._section_data_specs)
             # Determine target currency from report region: zh→CNY, en→USD
             _region = (requirement.get("region") or "") if isinstance(requirement, dict) else getattr(requirement, 'region', '')
             self._target_currency = {"中国": "CNY", "China": "CNY", "美国": "USD", "United States": "USD",
@@ -1068,10 +1079,12 @@ class ExecutionEngine:
             # 按批次执行（每批次内并行，批次间串行）
             # C-FIX-1: build section_id→agent mapping from all agents
             _section_to_agent = {}
+            self._agent_id_to_section_id: Dict[str, str] = {}
             for _a in agents:
                 _sid = self._get_section_id_from_agent(_a)
                 if _sid:
                     _section_to_agent[_sid] = _a
+                    self._agent_id_to_section_id[_a.agent_id] = _sid
             
             for batch_index, batch_agent_ids in enumerate(execution_batches):
                 logger.info(f"[批次{batch_index + 1}/{len(execution_batches)}] 执行: {batch_agent_ids}")
@@ -1114,13 +1127,13 @@ class ExecutionEngine:
                         logger.info(
                             f"[批次{batch_index + 1}] Loaded {len(cached_by_aspect)} cached aspects"
                         )
-                    # CR-FIX-2: fallback to disk recovery
+                        # CR-FIX-2: fallback to disk recovery
                     from pathlib import Path
                     _reg_path = Path("data") / "registries" / f"{requirement.get('task_id','')}.json"
                     if _reg_path.exists():
                         try:
                             from src.core.agents.agent_session import AgentSessionRegistry
-                            _loaded = AgentSessionRegistry.load(str(_reg_path))
+                            _loaded = AgentSessionRegistry.load(_reg_path)
                             if _loaded:
                                 for _child in _loaded.child_sessions.values():
                                     if _child.status == getattr(AgentSessionStatus, 'COMPLETED', None):
@@ -1147,6 +1160,8 @@ class ExecutionEngine:
                         cached_result = cached_by_aspect.get(agent_aspect) if agent_aspect else None
                         if cached_result:
                             content = cached_result.get("content") or cached_result.get("result") or ""
+                            if isinstance(content, dict):
+                                content = str(content)
                             logger.info(
                                 f"[批次{batch_index + 1}] Agent {agent_id} aspect '{agent_aspect}' "
                                 f"cached, skipping execution ({len(content)} chars)"
@@ -1167,6 +1182,8 @@ class ExecutionEngine:
                         # 检查内容锁（如果启用）
                         if content_lock is not None:
                             section_id = self._get_section_id_from_agent(agent)
+                            if not section_id and hasattr(self, '_agent_id_to_section_id'):
+                                section_id = self._agent_id_to_section_id.get(agent_id, "")
                             can_execute, lock_reason = content_lock.can_execute(section_id)
                             if not can_execute:
                                 logger.info(f"[批次{batch_index + 1}] [内容锁] Agent {agent_id} 对应章节 {section_id} 被锁定: {lock_reason}")
@@ -1197,8 +1214,9 @@ class ExecutionEngine:
                                 agent = scheduler.get_agent_by_id(agent_result.get("agent_id", ""))
                                 if agent:
                                     section_id = self._get_section_id_from_agent(agent)
-                                    agent_result["_section_id"] = section_id  # R-FIX-13
-                                    # R-FIX-10: 缓存路径也需要 category 区分
+                                    if not section_id and hasattr(self, '_agent_id_to_section_id'):
+                                        section_id = self._agent_id_to_section_id.get(agent_id, "")
+                                    agent_result["_section_id"] = section_id
                                     _cat = agent.config.get("category", "") if agent else ""
                                     if not _cat and agent:
                                         _aid = agent.agent_id or ""
@@ -1412,6 +1430,27 @@ class ExecutionEngine:
                     except Exception as _sce:
                         logger.warning(f"S-FIX-2: canonical data extraction failed: {_sce}")
                 
+                # === Phase C/D: 对账 + 补充搜索（仅 DATA_COLLECTION batch 完成后） ===
+                _batch_is_dc = any(
+                    (scheduler.get_agent_by_id(aid) and 
+                     getattr(scheduler.get_agent_by_id(aid).config if scheduler.get_agent_by_id(aid) else {}, 'get', lambda k, d=None: d)('category', '') == 'research')
+                    for aid in batch_agent_ids
+                )
+                if _batch_is_dc and hasattr(self, '_section_data_specs') and self._section_data_specs:
+                    try:
+                        supplement_results = await self._supplement_missing_data(batch_results, requirement)
+                        if supplement_results:
+                            for need, supp in supplement_results.items():
+                                for _res in batch_results:
+                                    agent_id = _res.get("agent_id", "")
+                                    spec = self._get_section_spec_by_agent_id(agent_id)
+                                    if spec and need in spec.all_data_needs:
+                                        _res.setdefault("data_points", []).extend(supp.get("data_points", []))
+                                        _res.setdefault("sources", []).extend(supp.get("sources", []))
+                            logger.info(f"[Phase D] supplemented {len(supplement_results)} missing data needs")
+                    except Exception as _supp_err:
+                        logger.warning(f"[Phase D] supplement search failed: {_supp_err}")
+                
                 # Output structure validation (ported from PhaseOrchestrator SchemaValidator)
                 # Ensures each agent result has the minimum required fields
                 for agent_result in batch_results:
@@ -1539,6 +1578,24 @@ class ExecutionEngine:
                     )
                     batch_results.extend(_unlock_results)
                     all_results.extend(_unlock_results)
+                    # E-P1-9 FIX: inject section_id for unlocked agents
+                    _ul_aspects = requirement.get("aspects", []) if isinstance(requirement, dict) else []
+                    for _ur in _unlock_results:
+                        _uaid = _ur.get("agent_id", "")
+                        if _ur.get("section_id"):
+                            continue
+                        _uagent = scheduler.get_agent_by_id(_uaid)
+                        _usid = self._get_section_id_from_agent(_uagent) if _uagent else self._get_section_id_from_agent_id(_uaid)
+                        if not _usid or _usid == _uaid or (len(_usid) < 5 and "_agent_" in _usid):
+                            if _ul_aspects and "_agent_" in _uaid:
+                                try:
+                                    _uidx = int(_uaid.split("_agent_")[-1])
+                                    if 0 <= _uidx < len(_ul_aspects):
+                                        _usid = str(_ul_aspects[_uidx])
+                                except (ValueError, IndexError):
+                                    pass
+                        _ur["section_id"] = _usid
+                        _ur["_section_id"] = _usid
                     pending_unlocked.clear()
                 
                 # M5-a: Enhanced consistency gate — fixes content + data_points via MetricExtractor
@@ -1737,7 +1794,7 @@ class ExecutionEngine:
         has_sources = any(r.get("sources") for r in batch_results if r.get("success"))
         # R1-FIX: result may be dict (metadata), only count as content if it's a non-trivial string
         has_content = any(
-            (isinstance(c, str) and len(c) > 50)
+            (isinstance(c, str) and len(c) > 50) or (isinstance(c, dict) and len(str(c)) > 50)
             for r in batch_results if r.get("success")
             for c in [r.get("content") or r.get("result") or ""]
         )
@@ -1867,6 +1924,18 @@ class ExecutionEngine:
         Returns:
             执行结果列表
         """
+        # === 统一查询规划（ISSUE-H: 通过 agent category 判断 DATA_COLLECTION） ===
+        preloaded_data: Dict[str, List[Dict]] = {}
+        _is_data_collection = any(
+            getattr(getattr(a, 'config', None), 'get', lambda k, d=None: d)('category', '') == 'research'
+            for a in agents
+        )
+        if _is_data_collection and hasattr(self, '_section_data_specs') and self._section_data_specs:
+            try:
+                preloaded_data = await self._unified_search(agents, requirement)
+            except Exception as e:
+                logger.warning(f"[_execute_batch] unified search failed: {e}")
+        
         # **关键修复**：提取并合并前序结果中的数据
         # 这是数据传递链路的关键环节！
         # **重要**: 即使前序结果失败，也要提取其中已收集的数据
@@ -2146,6 +2215,10 @@ class ExecutionEngine:
                         "target_currency": self._target_currency,
                     }
                     
+                    # Inject preloaded search results (Phase B: unified query planning)
+                    if agent.agent_id in preloaded_data:
+                        task["preloaded_search_results"] = preloaded_data[agent.agent_id]
+                    
                     # P1-1: Enhanced data injection for agents with no dependencies.
                     # Attempts to recover data from ResearchResultStore (persisted by
                     # understanding phase or previous batch saves).
@@ -2218,9 +2291,10 @@ class ExecutionEngine:
                 agent_task_map[task_id] = agent.agent_id
             except Exception as e:
                 logger.error(f"分发任务失败 {agent.agent_id}: {e}")
-                # ER-FIX-2: add error result so downstream can detect failure
                 error_result = {"success": False, "error": f"Task dispatch failed: {e}",
                                 "agent_id": agent.agent_id, "action": task.get("action", "")}
+                batch_results.append(error_result)
+                scheduler.mark_failed(agent.agent_id, str(e))
         
         # 等待完成
         results = await self._coordinator.wait_for_completion(task_ids)
@@ -2261,6 +2335,26 @@ class ExecutionEngine:
                 if "agent_id" not in task_result:
                     task_result["agent_id"] = agent_task_map.get(task_id, "")
                 batch_results.append(task_result)
+        
+        # E-P1-5/E-P1-6 FIX: Inject section_id BEFORE persistence
+        # so ResearchResultStore gets the correct mapping
+        _aspects = requirement.get("aspects", []) if isinstance(requirement, dict) else []
+        for _ar in batch_results:
+            _aid = _ar.get("agent_id", "")
+            if _ar.get("section_id") or _ar.get("_section_id"):
+                continue
+            _agent = scheduler.get_agent_by_id(_aid)
+            _sid = self._get_section_id_from_agent(_agent) if _agent else self._get_section_id_from_agent_id(_aid)
+            if not _sid or _sid == _aid or (len(_sid) < 5 and "_agent_" in _sid):
+                if _aspects and "_agent_" in _aid:
+                    try:
+                        _idx = int(_aid.split("_agent_")[-1])
+                        if 0 <= _idx < len(_aspects):
+                            _sid = str(_aspects[_idx])
+                    except (ValueError, IndexError):
+                        pass
+            _ar["section_id"] = _sid
+            _ar["_section_id"] = _sid
         
         # A-1修复：将批次结果持久化到 ResearchResultStore（JSON文件）
         try:
@@ -2584,8 +2678,7 @@ class ExecutionEngine:
         if hasattr(agent, 'section_id') and agent.section_id:
             return agent.section_id
         
-        # 回退到 agent_id
-        return agent.agent_id
+        return ""
     
     def _get_section_id_from_agent_id(self, agent_id: str) -> str:
         """
@@ -2602,16 +2695,19 @@ class ExecutionEngine:
         # 我们需要提取中间的章节名
         
         parts = agent_id.split("_")
-        if len(parts) >= 4 and parts[0] == "phase" and parts[-2] == "agent":
-            # phase_N_agent_M 格式：无意义章节名，返回自身
+        if len(parts) >= 4 and parts[-2] == "agent" and parts[0] in ("phase", "batch"):
+            # phase_N_agent_M / batch_N_agent_M 格式：无意义章节名，返回自身
             return agent_id
         if len(parts) >= 3:
-            # 检查最后一部分是否是数字索引
-            if parts[-1].isdigit():
-                # 旧格式: research_市场规模_2 → 市场规模
+            last = parts[-1]
+            is_index = last.isdigit() or (
+                len(last) >= 6 and all(c in '0123456789abcdef' for c in last.lower())
+            )
+            if is_index:
                 return "_".join(parts[1:-1])
             else:
-                # 新格式: deep_analysis_0_市场规模 → 市场规模
+                if parts[0] in ("inject", "replan"):
+                    return "_".join(parts[1:-1])
                 return parts[-1]
         elif len(parts) == 2:
             # 格式: type_aspect → aspect
@@ -2793,3 +2889,233 @@ class ExecutionEngine:
         if relevant:
             return relevant
         return data_points[:200]
+
+    async def _unified_search(
+        self,
+        agents: List["IAgent"],
+        requirement: Dict[str, Any],
+    ) -> Dict[str, List[Dict]]:
+        from src.core.search.query_deduplicator import SearchQueryDeduplicator
+        from src.core.decomposition.strategies import SectionDataSpec
+        from datetime import datetime
+
+        self._search_deduplicator = SearchQueryDeduplicator()
+        deduplicator = self._search_deduplicator
+        topic = requirement.get("topic", "")
+        current_year = str(datetime.now().year)
+
+        search_skill = self._get_search_skill()
+        if not search_skill:
+            logger.warning("[_unified_search] no search skill available")
+            return {}
+
+        section_spec_map = self._get_section_spec_map()
+        unique_queries: Dict[str, tuple] = {}
+        agent_section_map: Dict[str, str] = {}
+        search_topic = self._extract_keywords(topic)
+
+        for agent in agents:
+            section_id = self._get_section_id_from_agent(agent)
+            section_spec = section_spec_map.get(section_id)
+            if not section_spec:
+                continue
+            agent_section_map[agent.agent_id] = section_id
+            for need in section_spec.search_data_needs:
+                q1 = f"{search_topic} {need} {current_year}"
+                q2 = f"{search_topic} {need} 数据"
+                for q in [q1, q2]:
+                    normalized = deduplicator._normalize_query(q)
+                    if normalized not in unique_queries:
+                        unique_queries[normalized] = (q, [section_id])
+                    else:
+                        existing = unique_queries[normalized]
+                        unique_queries[normalized] = (existing[0], existing[1] + [section_id])
+            q_agg = f"{search_topic} {section_spec.name} {current_year}"
+            norm_agg = deduplicator._normalize_query(q_agg)
+            if norm_agg not in unique_queries:
+                unique_queries[norm_agg] = (q_agg, [section_id])
+
+        async def _search_one(original_query, section_ids, skill):
+            result = await deduplicator.search(original_query, section_ids[0], skill)
+            return original_query, section_ids, result
+
+        search_tasks = [
+            _search_one(q, sids, search_skill)
+            for q, (q, sids) in unique_queries.items()
+        ]
+        if search_tasks:
+            all_search_results = await asyncio.gather(*search_tasks)
+        else:
+            all_search_results = []
+
+        preloaded_data: Dict[str, List[Dict]] = {}
+        for original_query, section_ids, result in all_search_results:
+            is_shared = len(section_ids) > 1
+            for agent_id, sec_id in agent_section_map.items():
+                if sec_id in section_ids:
+                    results_list = result.get("results", [])
+                    entry = {"query": original_query, "results": copy.deepcopy(results_list)}
+                    preloaded_data.setdefault(agent_id, []).append(entry)
+
+        shared = deduplicator.get_shared_queries()
+        if shared:
+            logger.info(f"[_unified_search] {len(shared)} queries shared across sections")
+
+        return preloaded_data
+
+    def _get_search_skill(self) -> Any:
+        if hasattr(self, '_skill_registry') and self._skill_registry:
+            for name in ["web_search", "multi_search", "search_skill"]:
+                skill = self._skill_registry.get(name)
+                if skill:
+                    return skill
+        return None
+
+    def _extract_keywords(self, topic: str) -> str:
+        if not topic:
+            return ""
+        keywords = topic.strip()
+        for suffix in ["行业研究报告", "行业研究", "研究报告", "分析报告", "报告", "研究", "分析"]:
+            if keywords.endswith(suffix):
+                keywords = keywords[:-len(suffix)].strip()
+                break
+        return keywords
+
+    def _get_section_spec_map(self) -> Dict[str, Any]:
+        from src.core.decomposition.strategies import SectionDataSpec
+        return {spec.section_id: spec for spec in self._section_data_specs}
+
+    def _get_section_spec(self, agent: Any) -> Any:
+        from src.core.decomposition.strategies import SectionDataSpec
+        section_id = self._get_section_id_from_agent(agent)
+        spec_map = self._get_section_spec_map()
+        return spec_map.get(section_id)
+
+    def _get_section_spec_by_agent_id(self, agent_id: str) -> Any:
+        if not hasattr(self, '_section_data_specs') or not self._section_data_specs:
+            return None
+        spec_map = self._get_section_spec_map()
+        if hasattr(self, '_agent_id_to_section_id') and agent_id in self._agent_id_to_section_id:
+            section_id = self._agent_id_to_section_id[agent_id]
+            if section_id in spec_map:
+                return spec_map[section_id]
+        section_id = self._get_section_id_from_agent_id(agent_id)
+        if section_id and section_id in spec_map:
+            return spec_map[section_id]
+        if section_id:
+            for sid, spec in spec_map.items():
+                if section_id in sid or sid in section_id:
+                    return spec
+        return None
+
+    def _get_covered_needs(self, section_data_needs: List[str], data_points: List[Dict]) -> set:
+        covered = set()
+        dp_texts = []
+        for dp in data_points:
+            t = dp.get("content", "") + dp.get("title", "")
+            if t:
+                dp_texts.append(t)
+        for need in section_data_needs:
+            if len(need) < 2:
+                continue
+            for text in dp_texts:
+                if need in text:
+                    covered.add(need)
+                    break
+        return covered
+
+    async def _supplement_missing_data(
+        self,
+        batch_results: List[Dict],
+        requirement: Dict[str, Any],
+        max_rounds: int = 2,
+        coverage_threshold: float = 0.8,
+    ) -> Dict[str, Dict]:
+        from src.core.decomposition.strategies import SectionDataSpec
+        from datetime import datetime
+
+        if not hasattr(self, '_section_data_specs') or not self._section_data_specs:
+            return {}
+
+        deduplicator = getattr(self, '_search_deduplicator', None)
+        if not deduplicator:
+            from src.core.search.query_deduplicator import SearchQueryDeduplicator
+            deduplicator = SearchQueryDeduplicator()
+            self._search_deduplicator = deduplicator
+
+        topic = requirement.get("topic", "")
+        current_year = str(datetime.now().year)
+        search_topic = self._extract_keywords(topic)
+        search_skill = self._get_search_skill()
+        if not search_skill:
+            return {}
+
+        deduplicator = SearchQueryDeduplicator()
+        all_data_points = []
+        for r in batch_results:
+            if r.get("success"):
+                all_data_points.extend(r.get("data_points", []))
+        for r in getattr(self, '_previous_all_results', []):
+            if isinstance(r, dict) and r.get("success"):
+                all_data_points.extend(r.get("data_points", []))
+
+        supplement_results: Dict[str, Dict] = {}
+        for round_idx in range(max_rounds):
+            total_needs = 0
+            total_covered = 0
+            needs_to_supplement = []
+
+            for spec in self._section_data_specs:
+                search_needs = spec.search_data_needs
+                if not search_needs:
+                    continue
+                covered = self._get_covered_needs(search_needs, all_data_points)
+                missing = [n for n in search_needs if n not in covered]
+                total_needs += len(search_needs)
+                total_covered += len(covered)
+                for need in missing:
+                    if need not in supplement_results:
+                        needs_to_supplement.append((need, spec.section_id))
+
+            if total_needs == 0:
+                break
+            coverage = total_covered / total_needs
+            if coverage >= coverage_threshold:
+                logger.info(f"[Phase D] coverage {coverage:.1%} >= {coverage_threshold:.0%}, stopping")
+                break
+            if not needs_to_supplement:
+                break
+
+            logger.info(f"[Phase D] round {round_idx + 1}: {len(needs_to_supplement)} needs missing, coverage {coverage:.1%}")
+
+            async def _supp_search_one(need, section_id, skill):
+                query = f"{search_topic} {need} {current_year}"
+                try:
+                    result = await deduplicator.search(query, section_id, skill)
+                    return need, result
+                except Exception as e:
+                    logger.warning(f"[Phase D] supplement search failed for '{need}': {e}")
+                    return need, None
+
+            search_tasks = [_supp_search_one(n, sid, search_skill) for n, sid in needs_to_supplement]
+            results = await asyncio.gather(*search_tasks)
+
+            for need, result in results:
+                if result and result.get("results"):
+                    supplement_results[need] = {
+                        "data_points": [{
+                            "title": f"Supplement: {search_topic} {need}",
+                            "content": item.get("body", "") or item.get("snippet", ""),
+                            "url": item.get("href", "") or item.get("url", ""),
+                            "quality_score": item.get("quality_score", 0),
+                            "credibility": "supplement_search",
+                        } for item in result.get("results", [])],
+                        "sources": [{
+                            "title": f"Supplement: {search_topic} {need}",
+                            "url": item.get("href", "") or item.get("url", ""),
+                            "type": "web",
+                        } for item in result.get("results", [])],
+                    }
+                    all_data_points.extend(supplement_results[need]["data_points"])
+
+        return supplement_results

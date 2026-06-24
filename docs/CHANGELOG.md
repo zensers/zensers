@@ -4,6 +4,234 @@
 
 ---
 
+## [1.0.4] - 2026-06-24
+
+### Skill Dynamic Loading Fixes (FIX-1~4)
+
+#### FIX-1: 分析 skill 走 `register_factory()` 懒加载 + `_validate_and_normalize_skills` 修复 (P0, 原子变更)
+
+**Problem**: 7 个分析 skill 在 `orchestrator.py:280-288` 直接赋值 `_skills` dict，绕过 `register()` 路径；`factory.py:195` 的 `_validate_and_normalize_skills` 只检查 `_skills` keys 不检查 `_factories` keys。改为 `register_factory` 后 skill 被 factory 验证误判为 unknown 丢弃。
+
+**Fix**:
+- `orchestrator.py`: 7 个分析 skill 改用 `register_factory(name, cls)` 懒加载（首次 `get()` 时实例化）
+- `factory.py:195`: `_validate_and_normalize_skills` 同时检查 `_skills` 和 `_factories` keys
+
+**Effect**: DATA_COLLECTION 阶段的 `stock_data` 不再被 factory 验证丢弃 → akshare 可被调用；DEEP_ANALYSIS 阶段的分析 skill 不再丢弃。
+
+**Files Changed**:
+- `src/core/orchestrator/orchestrator.py:276-289` — register_factory 替代直接赋值
+- `src/core/agents/factory.py:195` — registered_names 包含 _factories
+
+#### FIX-2: `load_skills_for_category()` 支持分析 skill + 扩展 category 映射 (P1)
+
+**Problem**: `CATEGORY_TO_LANGCHAIN_SKILLS` 不含分析 skill；缺少 `research`、`synthesis`、`calibration` category；加载逻辑只处理 `lc_*`。
+
+**Fix**:
+- 重命名为 `CATEGORY_TO_SKILLS`，含所有 category 映射（含分析 skill）
+- 加载逻辑支持 factory skill（`skill in _factories` → `get()` 触发实例化）
+- 新增 `research`, `synthesis`, `calibration` category
+
+**Files Changed**:
+- `src/skills/registry.py:379-429` — CATEGORY_TO_SKILLS + factory-aware loading
+
+#### FIX-3: `SKILL_KEYWORDS` 增加分析 skill 关键词 + `discover_skills` 支持工厂 (P1)
+
+**Problem**: `SKILL_KEYWORDS` 只覆盖 `lc_*` LangChain skill；`discover_skills()` 发现不了分析 skill；auto_load 路径不支持 factory 注册的 skill。
+
+**Fix**:
+- `skill_keywords.py`: 新增 7 个分析 skill 的中英文关键词映射
+- `registry.py`: auto_load 路径增加 `skill_name in _factories` 分支
+
+**Files Changed**:
+- `src/skills/skill_keywords.py:30-96` — 新增 7 个分析 skill 关键词
+- `src/skills/registry.py:462-477` — discover_skills factory 支持
+
+#### FIX-4: `add_skill()` 运行时扩展 + `discover_skills` 执行条件修复 (P2, 主流程不可达)
+
+**Problem**: `_available_skills` 创建后不可变；`discover_skills` 分支要求 `skill_name in available_skills or skill_name.startswith("lc_")`，分析 skill 两个条件都不满足。
+
+**Fix**:
+- `generic_agent.py`: 新增 `add_skill(skill_name)` 方法，动态扩展 `_available_skills`，含 registry 验证和 session 同步
+- `generic_agent.py:924-933`: `discover_skills` 分支改为先 `add_skill()` 再执行，移除 `available_skills/lc_` 限制
+
+**Files Changed**:
+- `src/core/agents/generic_agent.py:1141-1158` — add_skill() 方法
+- `src/core/agents/generic_agent.py:924-933` — discover_skills 分支修复
+
+**Tests**: `tests/unit/test_skill_dynamic_loading.py` — 35 tests (FIX-1~4 全覆盖)
+
+---
+
+## [1.0.3] - 2026-06-22
+
+### Code Review Audit Fixes
+
+#### CRA-1: KeywordRegistry 封装破坏 — analyzer 直接访问 `_raw` (严重)
+
+**Problem**: `revision_intent_analyzer.py` 直接读取 `registry._raw` 拼接正则，绕过公共 API。YAML 加载失败时 `_raw` 为空，降级为空匹配而非原硬编码，与 `revision_intent_mapper.py` 的 `_fallback_hardcoded()` 行为不一致。
+
+**Fix**: 新增 `get_implicit_pattern_strings()` 和 `get_global_feedback_pattern_strings()` 公共方法；analyzer 改用公共 API；`get_revision_pattern_strings()` 改为从已编译 `_revision_patterns` 构建，不再重读 `_raw`。
+
+**Files Changed**:
+- `src/core/intent/keyword_registry.py` — 新增 2 个公共方法，`get_revision_pattern_strings()` 改用缓存
+- `src/core/intent/revision_intent_analyzer.py` — 去除 `_raw` 访问
+
+#### CRA-2: `safe_create_task` 全项目未使用 — 62 处裸 `asyncio.create_task` (严重)
+
+**Problem**: `task_utils.py` 创建了 `safe_create_task`，但全项目 62 处仍使用裸 `asyncio.create_task`，P1 修复（852x 异常丢失）实际未生效。
+
+**Fix**: 替换 29 处关键 `asyncio.create_task` 为 `safe_create_task`（research_api 7处、communication 2处、agent_coordinator 4处、cancel_manager 3处、task_coordinator 5处、background 3处、heartbeat 1处、result_collector 1处、document_generation_agent 1处、dream_scheduler 1处、document_api 1处、main.py 1处）。其余为低风险内部调用。
+
+**Files Changed**:
+- 12 个文件，见 git diff
+
+#### CRA-3: `register_global_exception_handler` 未被调用 (严重)
+
+**Problem**: `task_utils.py` 定义了全局 asyncio 异常处理器注册函数，但全项目无任何调用点。
+
+**Fix**: 在 `main.py` 的 `startup_event` 中注册全局异常处理器。
+
+**Files Changed**:
+- `src/api/main.py` — startup_event 增加注册调用
+
+#### CRA-4: `_is_likely_company_name` 逻辑错误 (中等)
+
+**Problem**: `_is_likely_company_name(chinese_text, full_topic)` 只检查 `full_topic` 是否含公司关键词，忽略 `chinese_text`。例如 topic="比亚迪财务分析"，chinese_text="财务分析" → 错误地用"财务分析"去 akshare 查股票代码。
+
+**Fix**: 改为先查 `chinese_text`，再查 `full_topic`。
+
+**Files Changed**:
+- `src/core/agents/generic_agent.py` — `_is_likely_company_name`
+
+#### CRA-5: 循环导入 — task_utils 顶层导入触发 (严重)
+
+**Problem**: `communication.py` 和 `document_generation_agent.py` 顶层导入 `task_utils` → `orchestrator/__init__` → `orchestrator` → 回到 `communication/document_generation_agent`，形成循环导入。
+
+**Fix**: 改为函数内延迟导入。
+
+**Files Changed**:
+- `src/core/communication.py` — 延迟导入 safe_create_task
+- `src/agents/fixed_agents/document_generation_agent.py` — 延迟导入 safe_create_task
+
+#### CRA-6: YAML 重复标题行 + 缓存清理 (低)
+
+**Problem**: `keyword_mappings.yaml` 有两行重复标题；`_STOCK_CODE_CACHE` 类级可变默认跨测试泄漏。
+
+**Fix**: 删除 YAML 重复行；所有测试类 `setup_method` 增加 `_STOCK_CODE_CACHE.clear()`。
+
+#### CRA-7: 全局反馈关键词未隐含修改意图 (严重)
+
+**Problem**: "整体评分只有52.4" 无显式动词也无隐含意图匹配，`_degrade_unknown_intent` 返回 `is_global_feedback=False`——全局反馈关键词（整体/总体/overall）未作为隐含修改意图的信号。
+
+**Fix**: `_fallback_to_regex` 增加 `elif is_global: matched_type = MODIFY`，使全局反馈关键词隐含修改意图。
+
+**Files Changed**:
+- `src/core/intent/revision_intent_analyzer.py` — `_fallback_to_regex` 全局反馈→MODIFY
+
+#### CRA-8: regex 优先级同分时通用模式抢占具体模式 (中等)
+
+**Problem**: "调整顺序" 匹配为 MODIFY 而非 REORDER——同分时 first-match-wins，更通用的 "调整" 抢了更具体的 "调整顺序"。
+
+**Fix**: 优先级相同时比较匹配长度 `match_len`，更长的匹配胜出（"调整顺序" len=4 > "调整" len=2）。
+
+**Files Changed**:
+- `src/core/intent/revision_intent_analyzer.py` — `_fallback_to_regex` 增加 `best_match_len` 比较
+
+#### CRA-9: `_resolve_company_to_code` 整段中文查 akshare 匹配失败 (严重)
+
+**Problem**: `_extract_stock_symbol("比亚迪财务分析")` 将整个中文片段 "比亚迪财务分析" 传给 `_resolve_company_to_code`，akshare `str.contains("比亚迪财务分析")` 匹配不到 "比亚迪" 行，返回空。
+
+**Fix**: `_resolve_company_to_code` 依次尝试完整名称、注册表中包含的子串名称（"比亚迪财务分析" → 先查全串，再查 "比亚迪"）。
+
+**Files Changed**:
+- `src/core/agents/generic_agent.py` — `_resolve_company_to_code` 子串回退
+
+### Bug Fixes
+
+#### BF-P0-1: 隐含意图识别失败 — 对话 Agent 无法处理用户隐含不满
+
+**Problem**: 用户问 "为什么整体评分只有52.4"，系统返回 "未能理解您的修订意图"。修订管道只识别显式动词(修改/删除/添加)，无法从隐含意图推理出修改操作。
+
+**Root Cause**: (1) `_REVISION_SYSTEM_PROMPT` 没有引导 LLM 推理隐含意图；(2) `INTENT_TO_REVISION_MAP_V2` regex fallback 只匹配显式动词；(3) `is_global_feedback` 字段存在但 prompt 未引导使用；(4) `RevisionIntentMapper` 的 FIX 意图关键词缺少质量不满模式。
+
+**Fix**: (1) prompt 增加 `IMPORTANT - Implicit intent inference` 段落；(2) regex fallback 增加隐含意图模式(为什么/不好/不够/太差/why.*low/poor.*quality)；(3) `_fallback_to_regex` 检测全局反馈关键词设置 `is_global_feedback`；(4) `RevisionIntentMapper` FIX 意图增加质量不满→`IMPROVE_CLARITY` 映射。
+
+**Files Changed**:
+- `src/core/intent/revision_intent_analyzer.py` — prompt + regex + is_global_feedback
+- `src/core/adjustment/revision_intent_mapper.py` — 隐含意图关键词映射
+
+**Tests**: `tests/unit/test_p0_implicit_intent_fix.py` (20 tests)
+
+#### BF-P0-2: akshare 未调用 — 公司名→股票代码解析缺失
+
+**Problem**: `_extract_stock_symbol` 只做正则提取中文(返回"比亚迪")，akshare 需要数字代码("002594")，调用失败被静默吞掉。
+
+**Root Cause**: 缺少公司名→股票代码的解析能力。系统已有 `_is_listed_company_topic` 和 `StockDataSkill`，但三层能力之间没有连接。
+
+**Fix**: 重写 `_extract_stock_symbol`：6位数字直接透传→文本中嵌入数字提取→中文公司名通过 `_is_listed_company_topic` 判断→`_resolve_company_to_code` 调用 akshare `stock_zh_a_spot_em()` 解析；增加类级缓存 `_STOCK_CODE_CACHE`；`_fetch_structured_data` 增加 symbol 解析日志。
+
+**Files Changed**:
+- `src/core/agents/generic_agent.py` — `_extract_stock_symbol`, `_is_likely_company_name`, `_resolve_company_to_code`, `_fetch_structured_data`
+
+**Tests**: `tests/unit/test_p0_stock_symbol_fix.py` (16 tests)
+
+#### BF-P1-1: asyncio 任务异常未回收 (852次)
+
+**Problem**: 852 次 "Task exception was never retrieved" 错误，异步任务异常被静默吞掉。
+
+**Fix**: 新建 `task_utils.py`，提供 `safe_create_task`（自动添加 done callback 记录异常）和全局 asyncio 异常处理器。
+
+**Files Changed**:
+- `src/core/orchestrator/execution/task_utils.py` — 新文件
+
+**Tests**: `tests/unit/test_p1_asyncio_and_disk_fix.py` (5 tests)
+
+#### BF-P1-2: CR-FIX-2 磁盘恢复类型错误
+
+**Problem**: `AgentSessionRegistry.load` 期望 `Path` 参数，但 `engine.py` 传入 `str(_reg_path)`，导致 `'str' object has no attribute 'exists'`。
+
+**Fix**: `load(str(_reg_path))` → `load(_reg_path)`，直接传 Path 对象。
+
+**Files Changed**:
+- `src/core/orchestrator/execution/engine.py` — L1136 去掉 str() 包装
+
+#### BF-P2-1: 报告质量低 — 缺乏跨章节因果链引导 + 日期约束不足
+
+**Problem**: 分析深度 10-13/25，逻辑一致性 5-7/15；LLM 编造 2027/2028 年数据。
+
+**Root Cause**: Agent prompt 只引导聚焦单维度，没引导跨章节因果链推理；日期约束不够强。
+
+**Fix**: `_get_professional_role_prompt` 增加跨章节因果链分析要求段落 + 日期约束段落（不得编造未来确定数据）。
+
+**Files Changed**:
+- `src/core/agents/generic_agent.py` — `_get_professional_role_prompt`
+
+**Tests**: `tests/unit/test_p2_quality_and_date_fix.py` (3 tests)
+
+#### BF-P2-2: Scrapling 废弃 API 警告 (2,578次)
+
+**Problem**: `AsyncFetcher() + .adaptive = True` 是旧 API，每次爬取产生废弃警告。
+
+**Fix**: 迁移到 `AsyncFetcher.configure(adaptive=True)`。
+
+**Files Changed**:
+- `src/skills/web_scraper_skill.py` — `_fetch_html`
+
+**Tests**: `tests/unit/test_p2_scrapling_api_fix.py` (2 tests)
+
+#### BF-P3-1: ResearchAPI._background_tasks 属性缺失导致 shutdown 清理失败
+
+**Problem**: `main.py` shutdown 访问 `ResearchAPI._background_tasks` 作为类属性，但它是实例属性，导致 AttributeError。
+
+**Fix**: 将 `_background_tasks` 和 `_background_task_gen` 从实例属性改为类属性，实例与类共享同一字典。
+
+**Files Changed**:
+- `src/api/research_api.py` — 类属性声明 + 移除 __init__ 中的重新赋值
+
+**Tests**: `tests/unit/test_p3_background_tasks_fix.py` (4 tests)
+
+---
+
 ## [1.0.1] - 2026-06-02
 
 ### Bug Fixes

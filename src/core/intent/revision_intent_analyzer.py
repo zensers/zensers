@@ -38,6 +38,14 @@ Available revision operations:
 - add_element: Add a table or image to a section. Set "content" to the Markdown. Heavy track.
 - translate: Translate the report content. Set parameters["target_lang"] to "en"/"zh"/"ja"/etc. Heavy track.
 
+IMPORTANT - Implicit intent inference:
+Users often express revision needs implicitly rather than with explicit action verbs. You MUST infer implicit revision intents:
+- If the user questions report quality (e.g. "为什么评分低", "why is the score so low", "这个章节写得不好"), this implies dissatisfaction and desire to improve. Map to "modify" for the relevant sections.
+- If the user expresses that something is insufficient (e.g. "深度不够", "数据不足", "not enough detail"), infer the intent to improve/expand the relevant content. Map to "modify".
+- If the user asks "why" about a poor metric or low score, infer the intent to investigate and improve. Map to "modify" with the relevant section as target.
+- When the user's feedback applies to the report as a whole (e.g. "整体评分只有52.4", "overall quality is poor"), set "is_global_feedback" to true.
+- Do NOT return empty intents for such requests — instead, map them to appropriate revision operations (e.g. "modify" for the relevant sections with "is_global_feedback"=true).
+
 IMPORTANT - Target specification rules:
 For "add" operations:
 - Set "target.raw_text" to the NEW section title you want to add
@@ -144,21 +152,40 @@ REVISION_JSON_SCHEMA: Dict[str, Any] = {
 }
 
 
-INTENT_TO_REVISION_MAP_V2: Dict[str, RevisionOpType] = {
-    r"修改|改写|更改|更新|修正|调整|润色|优化|补充|modify|update|change|revise|edit|rewrite|polish": RevisionOpType.MODIFY,
-    r"删除|移除|去掉|删掉|清除|剔除|移除掉|delete|remove|drop|erase|strip": RevisionOpType.DELETE,
-    r"添加|增加|新增|加入|插入|追加|add|insert|append|new": RevisionOpType.ADD,
-    r"复制|拷贝|复用|借鉴|引用|copy|duplicate|reference": RevisionOpType.COPY,
-    r"合并|整合|融合|组合|归并|merge|combine|consolidate|integrate": RevisionOpType.MERGE,
-    r"拆分|分割|分开|切分|分解|split|divide|separate": RevisionOpType.SPLIT,
-    r"交换|互换|对调|替换|swap|exchange|switch|replace": RevisionOpType.SWAP,
-    r"重排|排序|移动|调整顺序|重新排序|上移|下移|reorder|sort|move|shift": RevisionOpType.REORDER,
-    r"去重|去重复|删除重复|合并重复|dedup|deduplicate": RevisionOpType.DEDUP,
-    r"样式|格式|风格|字体|颜色|对齐|缩进|排版|style|format|color|font|align": RevisionOpType.STYLE,
-    r"表格|表\s*\d|行|列|单元格|table": RevisionOpType.MODIFY_TABLE,
-    r"图\s*\d|图表|图片|图片替换|换图|chart|figure|image": RevisionOpType.MODIFY_CHART,
-    r"翻译|译成|translate|translation": RevisionOpType.TRANSLATE,
-}
+INTENT_TO_REVISION_MAP_V2: Dict[str, RevisionOpType] = {}
+
+_IMPLICIT_INTENT_PATTERNS = regex_module.compile(r"placeholder_not_used", regex_module.IGNORECASE)
+
+_GLOBAL_FEEDBACK_PATTERNS = regex_module.compile(r"placeholder_not_used", regex_module.IGNORECASE)
+
+
+def _init_patterns_from_registry() -> None:
+    from ..intent.keyword_registry import get_registry
+    registry = get_registry()
+    global INTENT_TO_REVISION_MAP_V2, _IMPLICIT_INTENT_PATTERNS, _GLOBAL_FEEDBACK_PATTERNS
+
+    INTENT_TO_REVISION_MAP_V2.clear()
+    for pattern_str, action_type_str in registry.get_revision_pattern_strings().items():
+        try:
+            op_type = RevisionOpType(action_type_str)
+            INTENT_TO_REVISION_MAP_V2[pattern_str] = op_type
+        except (ValueError, TypeError):
+            continue
+
+    ii = registry.get_implicit_pattern_strings()
+    zh_parts = "|".join(ii.get("chinese", []))
+    en_parts = "|".join(ii.get("english", []))
+    combined = zh_parts + "|" + en_parts if zh_parts and en_parts else zh_parts or en_parts or "placeholder"
+    _IMPLICIT_INTENT_PATTERNS = regex_module.compile(combined, regex_module.IGNORECASE)
+
+    gf = registry.get_global_feedback_pattern_strings()
+    zh_gf = "|".join(gf.get("chinese", []))
+    en_gf = "|".join(gf.get("english", []))
+    combined_gf = zh_gf + "|" + en_gf if zh_gf and en_gf else zh_gf or en_gf or "placeholder"
+    _GLOBAL_FEEDBACK_PATTERNS = regex_module.compile(combined_gf, regex_module.IGNORECASE)
+
+
+_init_patterns_from_registry()
 
 _REF_TYPE_MAP: Dict[str, RefType] = {
     "uuid": RefType.UUID,
@@ -381,19 +408,30 @@ class RevisionIntentAnalyzer:
     async def _fallback_to_regex(self, user_message: str) -> AnalysisResult:
         matched_type = RevisionOpType.UNKNOWN
         max_priority = -1
+        best_match_len = 0
 
         for pattern, op_type in INTENT_TO_REVISION_MAP_V2.items():
             try:
-                if regex_module.search(pattern, user_message):
+                match = regex_module.search(pattern, user_message)
+                if match:
                     priority_score = len(regex_module.findall(pattern, user_message))
-                    if priority_score > max_priority:
+                    match_len = len(match.group(0))
+                    if priority_score > max_priority or (priority_score == max_priority and match_len > best_match_len):
                         max_priority = priority_score
+                        best_match_len = match_len
                         matched_type = op_type
             except regex_module.error:
                 continue
 
+        is_global = bool(_GLOBAL_FEEDBACK_PATTERNS.search(user_message))
+
         if matched_type == RevisionOpType.UNKNOWN:
-            return self._degrade_unknown_intent(None)
+            if _IMPLICIT_INTENT_PATTERNS.search(user_message):
+                matched_type = RevisionOpType.MODIFY
+            elif is_global:
+                matched_type = RevisionOpType.MODIFY
+            else:
+                return self._degrade_unknown_intent(None)
 
         action = RevisionAction(
             action_id=str(uuid4()),
@@ -415,7 +453,7 @@ class RevisionIntentAnalyzer:
             clarification_questions=[],
             is_uncertain=True,
             suggested_section=None,
-            is_global_feedback=False,
+            is_global_feedback=is_global,
             confidence=0.25,
         )
 

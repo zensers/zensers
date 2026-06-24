@@ -298,12 +298,33 @@ class GenericAgent(
                     
                     # Phase 1: DATA_COLLECTION - search only, return raw data, no LLM analysis
                     if agent_category == "research":
+                        data_points = []
+                        sources = []
+
+                        if "stock_data" in available_skills and skill_registry:
+                            stock_skill = skill_registry.get("stock_data")
+                            if stock_skill:
+                                try:
+                                    structured = await self._fetch_structured_data(stock_skill, topic, aspect)
+                                    data_points.extend(structured.get("data_points", []))
+                                    sources.extend(structured.get("sources", []))
+                                    if self._shared_memory and hasattr(self._shared_memory, 'write_canonical'):
+                                        for metric, value in structured.get("canonical_metrics", {}).items():
+                                            await self._shared_memory.write_canonical(
+                                                metric=metric, value=value,
+                                                caliber="structured_source",
+                                                source="akshare",
+                                                publisher=self.agent_id,
+                                            )
+                                except Exception as struct_err:
+                                    logger.warning(f"GenericAgent {self.agent_id}: structured data fetch failed: {struct_err}")
+
                         if topic and "search_skill" in available_skills and skill_registry:
+                            preloaded = task.get("preloaded_search_results")
                             search_results = await self._do_deep_research(
                                 topic=topic, aspect=aspect, aspects=aspects, skill_registry=skill_registry,
+                                preloaded_search_results=preloaded,
                             )
-                            data_points = []
-                            sources = []
                             for search in search_results.get("searches", []):
                                 for item in search.get("results", []):
                                     data_points.append({
@@ -403,6 +424,7 @@ class GenericAgent(
                             logger.info(f"GenericAgent {self.agent_id}: 无上游数据，降级执行搜索")
                             _sr = await self._do_deep_research(
                                 topic=topic, aspect=aspect, aspects=aspects, skill_registry=self._skill_registry,
+                                preloaded_search_results=task.get("preloaded_search_results"),
                             )
                             if _sr and _sr.get("searches"):
                                 for _search in _sr["searches"]:
@@ -457,6 +479,7 @@ class GenericAgent(
                                 core_question=core_question,
                                 role_in_report=role_in_report,
                                 sibling_aspects=sibling_aspects,
+                                sub_aspects=self._context.get("sub_aspects"),
                             )
                         else:
                             prompt = self._build_basic_research_prompt(
@@ -530,6 +553,7 @@ class GenericAgent(
                                         core_question=core_question,
                                         role_in_report=role_in_report,
                                         sibling_aspects=sibling_aspects,
+                                        sub_aspects=self._context.get("sub_aspects"),
                                     )
                                     revised = await skill.execute(prompt=prompt2, system_prompt=system_prompt)
 
@@ -897,16 +921,15 @@ class GenericAgent(
                 result = await skill.execute(**parameters)
                 return self._ensure_standard_result(result, action)
         
-        # 动态发现：尝试智能匹配 LangChain Skills
+        # 动态发现：尝试智能匹配 Skills（含分析 skill）
         if skill_registry and action not in ["", "default"]:
             discovered = skill_registry.discover_skills(action, auto_load=True)
             for skill_name in discovered:
-                if skill_name in available_skills or skill_name.startswith("lc_"):
-                    skill = skill_registry.get(skill_name)
-                    if skill:
-                        logger.info(f"GenericAgent {self.agent_id}: 动态发现 Skill '{skill_name}' for action '{action}'")
-                        result = await skill.execute(**parameters)
-                        return self._ensure_standard_result(result, action)
+                skill = skill_registry.get(skill_name)
+                if skill:
+                    self.add_skill(skill_name)
+                    result = await skill.execute(**parameters)
+                    return self._ensure_standard_result(result, action)
         
         # LLM fallback: use llm_skill for unhandled actions.
         # P0-3: Before generating, attempt a search so we have real data,
@@ -1114,6 +1137,25 @@ class GenericAgent(
             "aspect": self._context.get("aspect", ""),
         })
     
+    def add_skill(self, skill_name: str) -> bool:
+        """Dynamically add a skill to _available_skills with registry validation and session sync."""
+        if skill_name not in self._available_skills:
+            if self._skill_registry and self._skill_registry.get(skill_name) is None:
+                logger.warning(
+                    f"GenericAgent {self.agent_id}: cannot add skill '{skill_name}', "
+                    f"not found in registry"
+                )
+                return False
+            self._available_skills.append(skill_name)
+            if self._session and hasattr(self._session, 'agent_template') and self._session.agent_template:
+                template = self._session.agent_template
+                if "skill_names" in template:
+                    if skill_name not in template["skill_names"]:
+                        template["skill_names"].append(skill_name)
+            logger.info(f"GenericAgent {self.agent_id}: dynamically added skill '{skill_name}'")
+            return True
+        return False
+
     def _ensure_standard_result(self, result: Dict[str, Any], action: str) -> Dict[str, Any]:
         """
         确保返回标准格式结果
@@ -1390,12 +1432,148 @@ class GenericAgent(
     
     # === 深度研究方法 ===
     
+    async def _fetch_structured_data(
+        self,
+        stock_skill: Any,
+        topic: str,
+        aspect: str,
+    ) -> Dict[str, Any]:
+        result = {"data_points": [], "sources": [], "canonical_metrics": {}}
+        try:
+            symbol = self._extract_stock_symbol(topic)
+            logger.info(
+                f"GenericAgent {self.agent_id}: _fetch_structured_data "
+                f"topic='{topic}' → symbol='{symbol}'"
+            )
+            if not symbol:
+                return result
+            actions = self._infer_stock_actions(aspect)
+            for action in actions:
+                try:
+                    skill_result = await stock_skill.execute(
+                        action=action, symbol=symbol,
+                    )
+                    if skill_result and skill_result.get("success"):
+                        data = skill_result.get("data", {})
+                        if isinstance(data, dict):
+                            result["data_points"].append({
+                                "title": f"{symbol} {action}",
+                                "content": str(data),
+                                "url": f"akshare://{symbol}/{action}",
+                                "quality_score": 95,
+                                "credibility": "structured_source",
+                            })
+                            result["sources"].append({
+                                "title": f"akshare {symbol} {action}",
+                                "url": f"akshare://{symbol}/{action}",
+                                "type": "structured",
+                                "quality_score": 95,
+                            })
+                            for key, val in data.items():
+                                if isinstance(val, (int, float)):
+                                    result["canonical_metrics"][key] = val
+                except Exception as action_err:
+                    logger.warning(f"GenericAgent {self.agent_id}: stock_data action '{action}' failed: {action_err}")
+        except Exception as e:
+            logger.warning(f"GenericAgent {self.agent_id}: _fetch_structured_data failed: {e}")
+        return result
+
+    _STOCK_CODE_CACHE: Dict[str, str] = {}
+
+    def _extract_stock_symbol(self, topic: str) -> str:
+        if not topic:
+            return ""
+        import re
+        if re.match(r'^\d{6}$', topic.strip()):
+            return topic.strip()
+        m = re.search(r'\d{6}', topic)
+        if m:
+            return m.group(0)
+        chinese_m = re.search(r'[\u4e00-\u9fff]+', topic)
+        if not chinese_m:
+            return ""
+        company_name = chinese_m.group(0)
+        if not self._is_likely_company_name(company_name, topic):
+            return ""
+        cached = self._STOCK_CODE_CACHE.get(company_name)
+        if cached:
+            return cached
+        code = self._resolve_company_to_code(company_name)
+        if code:
+            self._STOCK_CODE_CACHE[company_name] = code
+            return code
+        return ""
+
+    def _is_likely_company_name(self, chinese_text: str, full_topic: str) -> bool:
+        from src.core.decomposition.strategies import _is_listed_company_topic
+        if _is_listed_company_topic(chinese_text):
+            return True
+        return _is_listed_company_topic(full_topic)
+
+    def _resolve_company_to_code(self, company_name: str) -> str:
+        try:
+            import akshare as ak
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                name_col = None
+                code_col = None
+                for col in df.columns:
+                    col_lower = str(col).lower()
+                    if "名称" in str(col) or "name" in col_lower:
+                        name_col = col
+                    if "代码" in str(col) or "code" in col_lower or "symbol" in col_lower:
+                        code_col = col
+                if name_col and code_col:
+                    search_names = [company_name]
+                    try:
+                        from src.core.intent.keyword_registry import get_registry
+                        for name in get_registry()._listed_company_names:
+                            if name in company_name and name != company_name:
+                                search_names.append(name)
+                    except Exception:
+                        pass
+                    for search_name in search_names:
+                        matches = df[df[name_col].astype(str).str.contains(
+                            search_name, na=False
+                        )]
+                        if not matches.empty:
+                            code = str(matches.iloc[0][code_col])
+                            logger.info(
+                                f"GenericAgent {self.agent_id}: resolved company "
+                                f"'{company_name}' (matched '{search_name}') → stock code '{code}'"
+                            )
+                            return code
+        except ImportError:
+            logger.warning(f"GenericAgent {self.agent_id}: akshare not installed, cannot resolve company name")
+        except Exception as e:
+            logger.warning(
+                f"GenericAgent {self.agent_id}: failed to resolve company "
+                f"'{company_name}' to stock code: {e}"
+            )
+        return ""
+
+    def _infer_stock_actions(self, aspect: str) -> List[str]:
+        aspect_lower = (aspect or "").lower()
+        actions = []
+        if any(kw in aspect_lower for kw in ["财务", "盈利", "利润", "营收", "收入", "研发", "技术", "创新"]):
+            actions.append("financials")
+        if any(kw in aspect_lower for kw in ["估值", "价值", "pe", "pb", "回报", "roe", "roa", "roic"]):
+            actions.append("key_metrics")
+        if any(kw in aspect_lower for kw in ["杠杆", "负债", "资本结构", "稳健", "风险"]):
+            actions.append("financials")
+        if any(kw in aspect_lower for kw in ["行业", "对比", "竞争"]):
+            actions.append("industry_comparison")
+        if not actions:
+            actions = ["company_info", "financials"]
+        return list(dict.fromkeys(actions))
+
     async def _do_deep_research(
         self,
         topic: str,
         aspect: str,
         aspects: List[str],
         skill_registry: Any,
+        preloaded_search_results: Optional[List[Dict]] = None,
     ) -> Dict[str, Any]:
         """
         执行深度研究：两阶段搜索策略 + 多轮搜索获取实时数据，带质量评估循环
@@ -1448,6 +1626,14 @@ class GenericAgent(
             logger.warning(f"GenericAgent {self.agent_id}: web_scraper不可用，仅使用搜索摘要")
         
         all_results = {"searches": [], "total_sources": 0, "quality_stats": {}}
+        
+        if preloaded_search_results:
+            for pr in preloaded_search_results:
+                if isinstance(pr, dict) and "results" in pr:
+                    all_results["searches"].append(pr)
+                elif isinstance(pr, dict) and "searches" in pr:
+                    all_results["searches"].extend(pr.get("searches", []))
+            logger.info(f"GenericAgent {self.agent_id}: injected {len(preloaded_search_results)} preloaded search results")
         
         # 构建质量过滤上下文
         quality_context = {
@@ -1528,6 +1714,10 @@ class GenericAgent(
                     logger.info(f"GenericAgent {self.agent_id}: LLM 扩展了 {len(llm_queries)} 个新查询, 总计 {len(queries)} 个")
             
             executed_queries = set()
+            if preloaded_search_results:
+                for pr in preloaded_search_results:
+                    if isinstance(pr, dict):
+                        executed_queries.add(pr.get("query", ""))
             iteration = 0
             best_quality_score = 0.0
             stagnation_count = 0
@@ -2452,7 +2642,14 @@ class GenericAgent(
         is_generic_data_focus = False
         is_data_focus_irrelevant_to_aspect = False
         
-        if role_info:
+        context_data_needs = self._context.get("data_needs", []) if self._context else []
+        if context_data_needs:
+            for need in context_data_needs:
+                queries.append(f"{search_topic} {need} {current_year}")
+                queries.append(f"{search_topic} {need} 数据")
+            queries.append(f"{search_topic} {aspect} {current_year}")
+            logger.info(f"GenericAgent {self.agent_id}: using data_needs ({len(context_data_needs)} needs) for queries, skipping data_focus")
+        elif role_info:
             data_focus = role_info.get('data_focus', [])
             from src.core.search.domain_role_inferrer import DomainRoleInferrer
             default_focus = DomainRoleInferrer.DEFAULT_TEMPLATE.get("data_focus", {}).get("zh", [])
@@ -2489,8 +2686,8 @@ class GenericAgent(
                 queries.append(f"{search_topic} {req} {current_year}")
                 queries.append(f"{search_topic} {req}")
         
-        # v3.4 R2: Expertise-driven queries
-        if role_info:
+        # v3.4 R2: Expertise-driven queries (skip when data_needs present)
+        if not context_data_needs and role_info:
             expertise = role_info.get('expertise', [])
             if expertise:
                 expertise_str = expertise[0] if isinstance(expertise, list) else expertise
@@ -3109,6 +3306,19 @@ class GenericAgent(
         lang_instruction = get_language_instruction()
         base = profile.system_prompt + '\n\n' + spec + '\n' + lang_instruction
 
+        base += (
+            "\n\n## 跨章节因果链分析要求\n"
+            "在分析本维度时，必须思考你的结论如何与其他维度关联。"
+            "例如：如果你分析'研发投入'，需要说明研发投入如何影响'财务预测'的营收增长假设；"
+            "如果你分析'供应链成本'，需要解释降本如何传导至'核心财务指标'的利润率。"
+            "在每个分析段落结尾，用1-2句话说明与其他章节的因果联系。\n"
+            "\n## 日期约束\n"
+            "当前日期为 {current_date}。不得编造超过当前日期的确定数据。"
+            "当需要预测未来时，使用'预计'、'有望'等措辞，"
+            "不要编造具体未来年份的确定数据（如'2028年营收将达到XX'是禁止的，"
+            "应写为'预计未来2-3年营收有望达到XX'）。"
+        ).format(current_date=_current_date)
+
         enrichment = getattr(self, '_knowledge_enrichment', {})
 
         entities = enrichment.get("entities", [])
@@ -3279,6 +3489,7 @@ class GenericAgent(
         core_question: str = "",
         role_in_report: str = "",
         sibling_aspects: Optional[List[str]] = None,
+        sub_aspects: Optional[List[str]] = None,
     ) -> str:
         """Build analysis prompt using pre-collected data points.
         
@@ -3336,7 +3547,7 @@ class GenericAgent(
         lang_inst = get_language_instruction()
         sibling_str = "、".join(sibling_aspects) if sibling_aspects else ""
         framework_context = ""
-        if core_question or role_in_report or sibling_str:
+        if core_question or role_in_report or sibling_str or sub_aspects:
             parts = ["\n\n## 研究框架"]
             if core_question:
                 parts.append(f"核心问题：{core_question}")
@@ -3344,6 +3555,10 @@ class GenericAgent(
                 parts.append(f"你在报告中的角色：{role_in_report}")
             if sibling_str:
                 parts.append(f"协作维度：{sibling_str}")
+            if sub_aspects:
+                parts.append("子主题（必须按此结构输出分析）：")
+                for idx, sa in enumerate(sub_aspects, 1):
+                    parts.append(f"  {idx}. {sa}")
             framework_context = "\n".join(parts)
 
         if aspect:

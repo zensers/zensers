@@ -1,8 +1,214 @@
 # Keyword Mapping Configuration
-# Keyword Mapping Configuration
 #
 # Used for intelligent routing, Skill inference, chapter classification, etc.
 # Supports dynamic extension without code modification.
+
+# ============================================================
+# Revision Intent Keywords
+# ============================================================
+# Used by RevisionIntentAnalyzer (regex fallback) and RevisionIntentMapper.
+# Single source of truth — code reads from here, no hardcoded keywords.
+revision_intents:
+  modify:
+    patterns:
+      - "修改|改写|更改|更新|修正|调整|润色|优化|补充"
+      - "modify|update|change|revise|edit|rewrite|polish"
+  delete:
+    patterns:
+      - "删除|移除|去掉|删掉|清除|剔除|移除掉"
+      - "delete|remove|drop|erase|strip"
+  add:
+    patterns:
+      - "添加|增加|新增|加入|插入|追加"
+      - "add|insert|append|new"
+  copy:
+    patterns:
+      - "复制|拷贝|复用|借鉴|引用"
+      - "copy|duplicate|reference"
+  merge:
+    patterns:
+      - "合并|整合|融合|组合|归并"
+      - "merge|combine|consolidate|integrate"
+  split:
+    patterns:
+      - "拆分|分割|分开|切分|分解"
+      - "split|divide|separate"
+  swap:
+    patterns:
+      - "交换|互换|对调|替换"
+      - "swap|exchange|switch|replace"
+  reorder:
+    patterns:
+      - "重排|排序|移动|调整顺序|重新排序|上移|下移"
+      - "reorder|sort|move|shift"
+  dedup:
+    patterns:
+      - "去重|去重复|删除重复|合并重复"
+      - "dedup|deduplicate"
+  style:
+    patterns:
+      - "样式|格式|风格|字体|颜色|对齐|缩进|排版"
+      - "style|format|color|font|align"
+  modify_table:
+    patterns:
+      - "表格|表\\s*\\d|行|列|单元格"
+      - "table"
+  modify_chart:
+    patterns:
+      - "图\\s*\\d|图表|图片|图片替换|换图"
+      - "chart|figure|image"
+  translate:
+    patterns:
+      - "翻译|译成"
+      - "translate|translation"
+
+# ============================================================
+# Implicit Intent Keywords (quality dissatisfaction, not explicit action verbs)
+# ============================================================
+# Used when regex fallback finds no explicit verb match.
+# These patterns indicate user dissatisfaction → infer modify intent.
+implicit_intent:
+  chinese:
+    - "为什么"
+    - "怎么.*低"
+    - "怎么.*差"
+    - "如何.*低"
+    - "不好"
+    - "不够"
+    - "不足"
+    - "太差"
+    - "很差"
+    - "较差"
+    - "太弱"
+    - "较弱"
+    - "很弱"
+    - "太低"
+    - "不准确"
+    - "不完整"
+  english:
+    - "why.*poor"
+    - "why.*low"
+    - "why.*bad"
+    - "how.*poor"
+    - "how.*low"
+    - "too.*low"
+    - "too.*bad"
+    - "not.*enough"
+    - "insufficient"
+    - "inadequate"
+    - "too.*weak"
+    - "poor.*quality"
+    - "bad.*quality"
+  fallback_action: "modify"
+
+# ============================================================
+# Global Feedback Keywords (applies to the whole report)
+# ============================================================
+global_feedback:
+  chinese:
+    - "整体"
+    - "总体"
+    - "全部"
+    - "全局"
+  english:
+    - "overall"
+    - "whole"
+    - "entire"
+    - "global"
+
+# ============================================================
+# Revision Intent Mapper Keywords (IntentType → RevisionIntentType)
+# ============================================================
+revision_intent_mapper:
+  FIX:
+    keywords:
+      correct_error:
+        patterns:
+          - "错别字|错字|拼写|措辞|表达"
+      rewrite_text:
+        patterns:
+          - "重写|改写|重新写"
+      improve_clarity:
+        patterns:
+          - "更详细|更清晰|更清楚|详细说明"
+          - "为什么.*低|为什么.*差|不好|不够|不足|太差|很差|较差|太弱|较弱|很弱|不准确|不完整"
+          - "why.*low|why.*poor|why.*bad|too.*low|too.*bad|not.*enough|insufficient|inadequate|too.*weak|poor.*quality|bad.*quality"
+      update_data:
+        patterns:
+          - "修正数据|更正数据|修改数据"
+    default: "correct_error"
+  EVALUATION:
+    keywords:
+      verify_data:
+        patterns:
+          - "核实|验证|检查|确认|核对"
+      update_data:
+        patterns:
+          - "更新数据|修改数据|最新数据"
+      compare_sections:
+        patterns:
+          - "对比|比较|差异"
+      check_consistency:
+        patterns:
+          - "一致性|矛盾|冲突"
+    default: "verify_data"
+  RESEARCH:
+    keywords:
+      add_data:
+        patterns:
+          - "新增|添加|补充|增加"
+      update_data:
+        patterns:
+          - "更新|最新|刷新"
+      add_section:
+        patterns:
+          - "新增章节|添加章节|新章节"
+    default: "update_data"
+  INVESTIGATION:
+    keywords:
+      compare_sections:
+        patterns:
+          - "对比|比较"
+      check_consistency:
+        patterns:
+          - "一致性|矛盾"
+      verify_data:
+        patterns:
+          - "核实|验证"
+    default: "verify_data"
+
+# ============================================================
+# Listed Company Indicators
+# ============================================================
+# Used by _is_listed_company_topic() to detect listed company topics.
+# Extend this list when new companies need stock data support.
+listed_company_indicators:
+  suffixes:
+    - "公司"
+    - "集团"
+    - "股份"
+    - "有限"
+  names:
+    - "比亚迪"
+    - "腾讯"
+    - "阿里巴巴"
+    - "华为"
+    - "茅台"
+    - "宁德"
+    - "万科"
+    - "字节"
+    - "蔚来"
+    - "小鹏"
+    - "理想"
+    - "京东"
+    - "拼多多"
+    - "美团"
+    - "小米"
+    - "网易"
+    - "百度"
+    - "中芯"
+    - "海尔"
+    - "格力"
 
 # ============================================================
 # Section Role Keywords

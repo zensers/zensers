@@ -59,6 +59,7 @@ class DeepIntentResult:
     sub_intents: List[SubIntent] = field(default_factory=list)
     orchestration_strategy: str = "sequential"
     core_question: str = ""
+    section_data_specs: list = field(default_factory=list)
 
     def to_intent_analysis_result(self) -> IntentAnalysisResult:
         """Convert to compatible IntentAnalysisResult."""
@@ -118,7 +119,8 @@ class DeepIntentResult:
                      "dependency": s.dependency}
                     for s in self.sub_intents
                 ],
-                "orchestration_strategy": self.orchestration_strategy}
+                "orchestration_strategy": self.orchestration_strategy,
+                "section_data_specs": self.section_data_specs}
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DeepIntentResult":
@@ -175,6 +177,7 @@ class DeepIntentResult:
             is_composite=data.get("is_composite", False),
             sub_intents=sub_intents,
             orchestration_strategy=data.get("orchestration_strategy", "sequential"),
+            section_data_specs=data.get("section_data_specs", []),
             analysis_timestamp=datetime.fromisoformat(data["analysis_timestamp"]) if data.get("analysis_timestamp") else datetime.now(),
         )
 
@@ -376,6 +379,26 @@ class SemanticIntentAnalyzer:
         if any(rt.is_primary_research() for rt in research_types):
             requires_primary = True
 
+        section_data_specs = []
+        for i, sds in enumerate(llm_output.get("section_data_specs", [])):
+            if not isinstance(sds, dict):
+                continue
+            sub_sections = []
+            for j, sub in enumerate(sds.get("sub_sections", [])):
+                if not isinstance(sub, dict):
+                    continue
+                sub_sections.append({
+                    "sub_section_id": sub.get("sub_section_id", f"sub_{i}_{j}"),
+                    "name": sub.get("name", ""),
+                    "data_needs": sub.get("data_needs", []),
+                    "data_source_type": sub.get("data_source_type", "search"),
+                })
+            section_data_specs.append({
+                "section_id": sds.get("section_id", f"section_{i}"),
+                "name": sds.get("name", ""),
+                "sub_sections": sub_sections,
+            })
+
         return DeepIntentResult(
             primary_intent=primary_intent, intent_confidence=llm_output.get("confidence", 0.7),
             intent_reasoning=llm_output.get("reasoning", ""),
@@ -405,7 +428,8 @@ class SemanticIntentAnalyzer:
                 for i, s in enumerate(llm_output.get("sub_intents", []))
                 if isinstance(s, dict)
             ],
-            orchestration_strategy=llm_output.get("orchestration_strategy", "sequential"))
+            orchestration_strategy=llm_output.get("orchestration_strategy", "sequential"),
+            section_data_specs=section_data_specs)
 
     def _infer_skills_from_intent(self, intent: IntentType, hidden_requirements: List[str]) -> List[str]:
         skills = []

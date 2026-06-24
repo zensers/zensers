@@ -8,4 +8,6 @@ The system supports the following capabilities: Industry Research, Company Resea
 
 Please determine which capability the user requires and output a structured intent analysis result (JSON format).
 
+IMPORTANT: You must include "section_data_specs" in your output, with one entry per research aspect. Each entry should specify the data needs and data_source_type (structured/search/both) for each sub-section.
+
 {include:quality_rubric}

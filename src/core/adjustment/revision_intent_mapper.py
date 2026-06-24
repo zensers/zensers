@@ -79,50 +79,82 @@ class RevisionIntentMapper:
     """
     
     # Level 1 → Level 2 映射规则
-    INTENT_TO_REVISION_MAP: Dict[IntentType, Dict[str, Any]] = {
-        IntentType.FIX: {
-            "keywords": {
-                # 文本级操作
-                r"错别字|错字|拼写|措辞|表达": RevisionIntentType.CORRECT_ERROR,
-                r"重写|改写|重新写": RevisionIntentType.REWRITE_TEXT,
-                r"更详细|更清晰|更清楚|详细说明": RevisionIntentType.IMPROVE_CLARITY,
-                # 数据级操作
-                r"修正数据|更正数据|修改数据": RevisionIntentType.UPDATE_DATA,
+    INTENT_TO_REVISION_MAP: Dict[IntentType, Dict[str, Any]] = {}
+
+    @classmethod
+    def _init_from_registry(cls) -> None:
+        try:
+            from src.core.intent.keyword_registry import get_registry
+            registry = get_registry()
+            mapper_config = registry.get_mapper_config()
+        except Exception:
+            mapper_config = {}
+
+        if not mapper_config:
+            cls.INTENT_TO_REVISION_MAP = cls._fallback_hardcoded()
+            return
+
+        result: Dict[IntentType, Dict[str, Any]] = {}
+        for intent_name, spec in mapper_config.items():
+            try:
+                intent_type = IntentType(intent_name.lower())
+            except (ValueError, TypeError):
+                continue
+            kw_map: Dict[str, RevisionIntentType] = {}
+            for rev_name, rev_spec in spec.get("keywords", {}).items():
+                try:
+                    rev_type = RevisionIntentType(rev_name)
+                except (ValueError, TypeError):
+                    continue
+                patterns = rev_spec.get("patterns", [])
+                for p in patterns:
+                    kw_map[p] = rev_type
+            default_str = spec.get("default", "correct_error")
+            try:
+                default_type = RevisionIntentType(default_str)
+            except (ValueError, TypeError):
+                default_type = RevisionIntentType.CORRECT_ERROR
+            result[intent_type] = {"keywords": kw_map, "default": default_type}
+        cls.INTENT_TO_REVISION_MAP = result
+
+    @classmethod
+    def _fallback_hardcoded(cls) -> Dict[IntentType, Dict[str, Any]]:
+        return {
+            IntentType.FIX: {
+                "keywords": {
+                    r"错别字|错字|拼写|措辞|表达": RevisionIntentType.CORRECT_ERROR,
+                    r"重写|改写|重新写": RevisionIntentType.REWRITE_TEXT,
+                    r"更详细|更清晰|更清楚|详细说明": RevisionIntentType.IMPROVE_CLARITY,
+                    r"修正数据|更正数据|修改数据": RevisionIntentType.UPDATE_DATA,
+                },
+                "default": RevisionIntentType.CORRECT_ERROR,
             },
-            "default": RevisionIntentType.CORRECT_ERROR,
-        },
-        IntentType.EVALUATION: {
-            "keywords": {
-                # 数据级操作
-                r"核实|验证|检查|确认|核对": RevisionIntentType.VERIFY_DATA,
-                r"更新数据|修改数据|最新数据": RevisionIntentType.UPDATE_DATA,
-                # 分析级操作
-                r"对比|比较|差异": RevisionIntentType.COMPARE_SECTIONS,
-                r"一致性|矛盾|冲突": RevisionIntentType.CHECK_CONSISTENCY,
+            IntentType.EVALUATION: {
+                "keywords": {
+                    r"核实|验证|检查|确认|核对": RevisionIntentType.VERIFY_DATA,
+                    r"更新数据|修改数据|最新数据": RevisionIntentType.UPDATE_DATA,
+                    r"对比|比较|差异": RevisionIntentType.COMPARE_SECTIONS,
+                    r"一致性|矛盾|冲突": RevisionIntentType.CHECK_CONSISTENCY,
+                },
+                "default": RevisionIntentType.VERIFY_DATA,
             },
-            "default": RevisionIntentType.VERIFY_DATA,
-        },
-        IntentType.RESEARCH: {
-            "keywords": {
-                # 数据级操作
-                r"新增|添加|补充|增加": RevisionIntentType.ADD_DATA,
-                r"更新|最新|刷新": RevisionIntentType.UPDATE_DATA,
-                # 结构级操作
-                r"新增章节|添加章节|新章节": RevisionIntentType.ADD_SECTION,
+            IntentType.RESEARCH: {
+                "keywords": {
+                    r"新增|添加|补充|增加": RevisionIntentType.ADD_DATA,
+                    r"更新|最新|刷新": RevisionIntentType.UPDATE_DATA,
+                    r"新增章节|添加章节|新章节": RevisionIntentType.ADD_SECTION,
+                },
+                "default": RevisionIntentType.UPDATE_DATA,
             },
-            "default": RevisionIntentType.UPDATE_DATA,
-        },
-        IntentType.INVESTIGATION: {
-            "keywords": {
-                # 分析级操作
-                r"对比|比较": RevisionIntentType.COMPARE_SECTIONS,
-                r"一致性|矛盾": RevisionIntentType.CHECK_CONSISTENCY,
-                # 数据级操作
-                r"核实|验证": RevisionIntentType.VERIFY_DATA,
+            IntentType.INVESTIGATION: {
+                "keywords": {
+                    r"对比|比较": RevisionIntentType.COMPARE_SECTIONS,
+                    r"一致性|矛盾": RevisionIntentType.CHECK_CONSISTENCY,
+                    r"核实|验证": RevisionIntentType.VERIFY_DATA,
+                },
+                "default": RevisionIntentType.VERIFY_DATA,
             },
-            "default": RevisionIntentType.VERIFY_DATA,
-        },
-    }
+        }
     
     # Level 2 → Level 3 路由映射
     REVISION_TO_ROUTE_MAP: Dict[RevisionIntentType, Dict[str, Any]] = {
@@ -308,3 +340,6 @@ class RevisionIntentMapper:
             {"route": "incremental", "type": "section", "skip_phases": [], "reason": "default"}
         )
         return RouteDecision(**route_config)
+
+
+RevisionIntentMapper._init_from_registry()

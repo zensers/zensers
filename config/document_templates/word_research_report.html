@@ -133,6 +133,14 @@
             margin-top: 12pt;
             margin-bottom: 6pt;
         }
+        h4.sub-subsection-title {
+            color: #3A3A3A;
+            font-size: 10pt;
+            font-family: 'SimHei', sans-serif;
+            font-weight: bold;
+            margin-top: 10pt;
+            margin-bottom: 4pt;
+        }
         
         /* ===== 正文 ===== */
         p {
@@ -303,6 +311,20 @@
     <div class="toc-item">
         <a href="#{{ section.id }}">{{ section.title }}</a>
     </div>
+    {% if section.subsections %}
+    {% for subsection in section.subsections %}
+    <div class="toc-item" style="margin-left: 20px;">
+        <a href="#{{ subsection.id }}">{{ subsection.index }} {{ subsection.title }}</a>
+    </div>
+    {% if subsection.points %}
+    {% for pt in subsection.points %}
+    <div class="toc-item" style="margin-left: 40px; font-size: 10pt;">
+        {{ subsection.index }}.{{ loop.index }} {{ pt }}
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+    {% endif %}
     {% endfor %}
 </div>
 
@@ -313,17 +335,32 @@
     <section id="{{ section.id }}">
         <h1 class="chapter-title">{{ section.title }}</h1>
         
-        {% if section.subsections %}
-        {% for subsection in section.subsections %}
-        <div id="{{ subsection.id }}">
-            <h2 class="section-title">{{ subsection.title }}</h2>
-            <div>{{ subsection.content }}</div>
-        </div>
-        {% endfor %}
-        {% else %}
+        {% if section.content %}
         <div class="section-content">
             {{ section.content }}
         </div>
+        {% endif %}
+        
+        {% if section.subsections %}
+        {% for subsection in section.subsections %}
+        <div id="{{ subsection.id }}">
+            <h3 class="subsection-title">{{ subsection.title }}</h3>
+            {% if subsection.points %}
+            {% for pt_sec in subsection.point_sections %}
+            <h4 class="sub-subsection-title">{{ pt_sec.index }} {{ pt_sec.title }}</h4>
+            {% if pt_sec.content %}
+            <div class="section-content">
+                {{ pt_sec.content }}
+            </div>
+            {% endif %}
+            {% endfor %}
+            {% else %}
+            <div class="section-content">
+                {{ subsection.content }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
         {% endif %}
         
         {% for chart in section.charts %}

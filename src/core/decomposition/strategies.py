@@ -47,9 +47,9 @@ ASPECT_SKILL_MAP = {
     "Competitive Landscape": ["llm_skill", "market_analysis"],
     "Industry Trends": ["llm_skill", "data_analysis"],
     "Development Trends": ["llm_skill", "data_analysis"],
-    "Financial Analysis": ["llm_skill", "stock_data", "stock_analysis", "data_analysis"],
+    "Financial Analysis": ["llm_skill", "stock_analysis", "data_analysis"],
     "Valuation Analysis": ["llm_skill", "stock_analysis", "data_analysis"],
-    "Company Analysis": ["llm_skill", "stock_data", "stock_analysis", "market_analysis"],
+    "Company Analysis": ["llm_skill", "stock_analysis", "market_analysis"],
     "Policy Environment": ["llm_skill", "policy_analysis"],
     "Technology Trends": ["llm_skill", "tech_trend"],
     "Industry Chain": ["llm_skill", "market_analysis"],
@@ -94,6 +94,164 @@ def get_skills_for_aspect(aspect: str) -> List[str]:
     return DEFAULT_ASPECT_SKILLS.copy()
 
 
+DATA_SOURCE_SKILL_MAP = {
+    "financial": ["stock_data"],
+    "valuation": ["stock_data"],
+    "company": ["stock_data"],
+    "market_size": ["stock_data"],
+    "competitive": [],
+    "policy": [],
+    "technology": [],
+    "risk": [],
+}
+
+
+def _get_data_collection_skills(aspect: str, topic: str = "", intent_result: Any = None) -> List[str]:
+    skills = ["search_skill", "news_search", "llm_skill"]
+    aspect_lower = aspect.lower()
+    for keyword, extra_skills in DATA_SOURCE_SKILL_MAP.items():
+        if keyword in aspect_lower:
+            skills.extend(extra_skills)
+    if intent_result:
+        primary_type = getattr(intent_result, 'primary_research_type', None)
+        if primary_type and getattr(primary_type, 'value', '') in (
+            "company_research", "investment", "competitive_analysis"
+        ):
+            if "stock_data" not in skills:
+                skills.append("stock_data")
+    return list(dict.fromkeys(skills))
+
+
+@dataclass
+class SubSectionSpec:
+    sub_section_id: str
+    name: str
+    data_needs: List[str]
+    data_source_type: str = "search"
+
+
+@dataclass
+class SectionDataSpec:
+    section_id: str
+    name: str
+    sub_sections: List[SubSectionSpec] = field(default_factory=list)
+
+    @property
+    def all_data_needs(self) -> List[str]:
+        needs = []
+        for sub in self.sub_sections:
+            needs.extend(sub.data_needs)
+        return list(dict.fromkeys(needs))
+
+    @property
+    def search_data_needs(self) -> List[str]:
+        needs = []
+        for sub in self.sub_sections:
+            if sub.data_source_type in ("search", "both"):
+                needs.extend(sub.data_needs)
+        return list(dict.fromkeys(needs))
+
+    @property
+    def structured_data_needs(self) -> List[str]:
+        needs = []
+        for sub in self.sub_sections:
+            if sub.data_source_type in ("structured", "both"):
+                needs.extend(sub.data_needs)
+        return list(dict.fromkeys(needs))
+
+
+STRUCTURED_DATA_CAPABILITIES = {
+    "stock_data": {
+        "zh": ["营收", "净利润", "毛利率", "净利率", "ROE", "ROA", "ROIC",
+               "资产负债率", "流动比率", "速动比率", "现金流", "研发费用",
+               "销量", "产量", "市场份额", "PE", "PB", "利润表", "资产负债表", "现金流量表"],
+    },
+}
+
+
+def _is_listed_company_topic(topic: str) -> bool:
+    if not topic:
+        return False
+    try:
+        from src.core.intent.keyword_registry import get_registry
+        return get_registry().is_listed_company_topic(topic)
+    except Exception:
+        company_indicators = ["公司", "集团", "股份", "有限", "比亚迪", "腾讯", "阿里巴巴",
+                              "华为", "茅台", "宁德", "万科", "字节"]
+        return any(ind in topic for ind in company_indicators)
+
+
+def derive_data_source_type(data_need: str, topic: str = "", intent_result: Any = None) -> str:
+    for skill_name, capabilities in STRUCTURED_DATA_CAPABILITIES.items():
+        for lang, keywords in capabilities.items():
+            if data_need in keywords:
+                return "structured"
+    if _is_listed_company_topic(topic):
+        FINANCIAL_KEYWORDS = ["营收", "利润", "率", "费用", "ROE", "ROA", "ROIC", "PE", "PB", "DCF"]
+        if any(kw in data_need for kw in FINANCIAL_KEYWORDS):
+            return "both"
+    return "search"
+
+
+def validate_section_data_specs(
+    specs: List[SectionDataSpec],
+    section_names: List[str],
+) -> Tuple[List[SectionDataSpec], bool]:
+    import re
+    valid = True
+    for spec in specs:
+        if not re.match(r'section_\d+', spec.section_id):
+            valid = False
+        if not spec.all_data_needs:
+            valid = False
+    if len(specs) != len(section_names):
+        valid = False
+    if not valid:
+        specs = _fallback_specs_from_names(section_names)
+    return specs, valid
+
+
+def _fallback_specs_from_names(section_names: List[str]) -> List[SectionDataSpec]:
+    specs = []
+    for i, name in enumerate(section_names):
+        specs.append(SectionDataSpec(
+            section_id=f"section_{i}",
+            name=name,
+            sub_sections=[SubSectionSpec(
+                sub_section_id=f"sub_{i}_0",
+                name=name,
+                data_needs=[name],
+                data_source_type="search",
+            )],
+        ))
+    return specs
+
+
+def _convert_specs_from_dicts(spec_dicts: List[Dict]) -> List[SectionDataSpec]:
+    specs = []
+    for i, sd in enumerate(spec_dicts):
+        if not isinstance(sd, dict):
+            continue
+        sub_sections = []
+        for j, sub in enumerate(sd.get("sub_sections", [])):
+            if not isinstance(sub, dict):
+                continue
+            sub_sections.append(SubSectionSpec(
+                sub_section_id=sub.get("sub_section_id", f"sub_{i}_{j}"),
+                name=sub.get("name", ""),
+                data_needs=sub.get("data_needs", []),
+                data_source_type=sub.get("data_source_type", "search"),
+            ))
+        specs.append(SectionDataSpec(
+            section_id=sd.get("section_id", f"section_{i}"),
+            name=sd.get("name", ""),
+            sub_sections=sub_sections if sub_sections else [
+                SubSectionSpec(f"sub_{i}_0", sd.get("name", ""), [sd.get("name", "")], "search")
+            ],
+        ))
+    return specs
+
+
 @dataclass
 class AgentSpec:
     """Agent specification definition"""
@@ -120,9 +278,10 @@ class DecompositionPlan:
     task_id: str
     phases: Dict[ResearchPhase, List[AgentSpec]]
     execution_order: List[ResearchPhase]
-    quality_gates: Dict[ResearchPhase, float]  # Quality threshold per phase
+    quality_gates: Dict[ResearchPhase, float]
     estimated_agents: int
     estimated_duration: str
+    section_data_specs: List[SectionDataSpec] = field(default_factory=list)
     
     def get_agents_for_phase(self, phase: ResearchPhase) -> List[AgentSpec]:
         """Get Agent list for specified phase"""
@@ -267,6 +426,25 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
         aspects = requirement.aspects
         topic = requirement.topic
         
+        section_data_specs = getattr(intent_result, 'section_data_specs', []) or []
+        if section_data_specs and isinstance(section_data_specs[0], dict):
+            section_data_specs = _convert_specs_from_dicts(section_data_specs)
+
+        # P0 alignment: override section_data_specs with framework_tree when available
+        sections_tree = None
+        if hasattr(requirement, 'dynamic_fields') and requirement.dynamic_fields and requirement.dynamic_fields.get('sections_tree'):
+            sections_tree = requirement.dynamic_fields['sections_tree']
+        elif hasattr(requirement, 'section_details') and requirement.section_details:
+            for sd in requirement.section_details:
+                if isinstance(sd, dict) and sd.get('sub_sections'):
+                    sections_tree = requirement.section_details
+                    break
+        if sections_tree and section_data_specs:
+            section_data_specs = self._align_section_data_specs_with_tree(section_data_specs, sections_tree)
+
+        section_spec_by_id = {spec.section_id: spec for spec in section_data_specs} if section_data_specs else {}
+        section_spec_by_name = {spec.name: spec for spec in section_data_specs} if section_data_specs else {}
+        
         # Separate normal sections and dependent sections
         normal_aspects = []
         dependent_aspects = []
@@ -277,8 +455,10 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
                 normal_aspects.append((i, aspect))
         
         # === Phase 1: Data Collection ===
-        for i, aspect in normal_aspects:
+        for seq_idx, (i, aspect) in enumerate(normal_aspects):
             agent_id = self._create_agent_id(ResearchPhase.DATA_COLLECTION, i, aspect.lower().replace(" ", "_"))
+            section_id = f"section_{seq_idx}"
+            matched_spec = section_spec_by_id.get(section_id) or section_spec_by_name.get(aspect)
             
             spec = AgentSpec(
                 agent_id=agent_id,
@@ -292,9 +472,13 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
                 parallel_group=0,  # Same group runs in parallel
                 quality_threshold=0.7,
                 max_retries=complexity_params["max_retries"],
-                skills=["search_skill", "news_search", "llm_skill"],
-                system_prompt=self._build_data_collection_prompt(topic, aspect, framework_config),
-                context={"aspect": aspect, "topic": topic},
+                skills=_get_data_collection_skills(aspect, topic),
+                system_prompt=self._build_data_collection_prompt(topic, aspect, framework_config, sub_aspects=[sub.name for sub in matched_spec.sub_sections] if matched_spec and matched_spec.sub_sections else None),
+                context={"aspect": aspect, "topic": topic,
+                         "section_id": section_id,
+                         "data_needs": matched_spec.all_data_needs if matched_spec else [aspect],
+                         "search_data_needs": matched_spec.search_data_needs if matched_spec else [aspect],
+                         "sub_aspects": [sub.name for sub in matched_spec.sub_sections] if matched_spec and matched_spec.sub_sections else []},
             )
             phases[ResearchPhase.DATA_COLLECTION].append(spec)
         
@@ -326,6 +510,7 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
         for i, aspect in normal_aspects:
             validation_agent_id = self._create_agent_id(ResearchPhase.DATA_VALIDATION, i, aspect.lower().replace(" ", "_"))
             agent_id = self._create_agent_id(ResearchPhase.DEEP_ANALYSIS, i, aspect.lower().replace(" ", "_"))
+            da_matched_spec = section_spec_by_name.get(aspect)
             
             spec = AgentSpec(
                 agent_id=agent_id,
@@ -340,8 +525,9 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
                 quality_threshold=0.75,
                 max_retries=complexity_params["max_retries"],
                 skills=get_skills_for_aspect(aspect),
-                system_prompt=self._build_analysis_prompt(topic, aspect, framework_config),
-                context={"aspect": aspect, "topic": topic},
+                system_prompt=self._build_analysis_prompt(topic, aspect, framework_config, sub_aspects=[sub.name for sub in da_matched_spec.sub_sections] if da_matched_spec and da_matched_spec.sub_sections else None),
+                context={"aspect": aspect, "topic": topic,
+                         "sub_aspects": [sub.name for sub in da_matched_spec.sub_sections] if da_matched_spec and da_matched_spec.sub_sections else []},
             )
             phases[ResearchPhase.DEEP_ANALYSIS].append(spec)
         
@@ -416,13 +602,23 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
             quality_gates=quality_gates,
             estimated_agents=sum(len(agents) for agents in phases.values()),
             estimated_duration=self._estimate_duration(len(aspects), complexity_value),
+            section_data_specs=section_data_specs,
         )
     
-    def _build_data_collection_prompt(self, topic: str, aspect: str, framework_config: Any) -> str:
+    def _build_data_collection_prompt(self, topic: str, aspect: str, framework_config: Any, sub_aspects: Optional[List[str]] = None) -> str:
         """Build data collection prompt from external file"""
         focus_areas = framework_config.get_focus_areas() if framework_config else []
         priority_sources = framework_config.get_priority_sources() if framework_config else []
         lang_inst = get_language_instruction()
+        
+        sub_aspects_section = ""
+        if sub_aspects:
+            from src.core.i18n import get_language, Language
+            lang = get_language()
+            if lang == Language.ZH:
+                sub_aspects_section = "\n\n## 数据采集子主题\n请按以下子主题分别搜索数据：\n" + "\n".join(f"- {sa}" for sa in sub_aspects)
+            else:
+                sub_aspects_section = "\n\n## Sub-topics for Data Collection\nPlease collect data separately for each sub-topic:\n" + "\n".join(f"- {sa}" for sa in sub_aspects)
         
         try:
             pm = PromptManager()
@@ -434,7 +630,7 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
                 aspect=aspect,
                 focus_areas="\n".join("- " + area for area in focus_areas[:5]) if focus_areas else "Comprehensive data collection",
                 priority_sources="\n".join("- " + src for src in priority_sources[:8]) if priority_sources else "Prioritize authoritative data sources",
-            ) + '\n' + lang_inst
+            ) + sub_aspects_section + '\n' + lang_inst
         except Exception as e:
             logger.warning(f"Failed to load data_collection.md, using fallback: {e}")
             focus_areas_str = "\n".join("- " + area for area in focus_areas[:5]) if focus_areas else "Comprehensive data collection"
@@ -450,6 +646,7 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
 
 ## Priority Data Sources
 {priority_sources_str}
+{sub_aspects_section}
 
 ## Collection Requirements
 1. Multi-source data collection to ensure comprehensive coverage
@@ -481,18 +678,16 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
 4. Label data quality level
 """
 
-    def _build_analysis_prompt(self, topic: str, aspect: str, framework_config: Any) -> str:
+    def _build_analysis_prompt(self, topic: str, aspect: str, framework_config: Any, sub_aspects: Optional[List[str]] = None) -> str:
         """Build analysis prompt from external file"""
         depth = framework_config.get_analysis_depth() if framework_config else "deep"
         metrics = framework_config.get_key_metrics() if framework_config else []
         lang_inst = get_language_instruction()
         
-        # Determine if inline citations are needed (academic reports need them)
         require_inline_citations = False
         if framework_config and hasattr(framework_config, 'requires_inline_citations'):
             require_inline_citations = framework_config.requires_inline_citations()
         
-        # Generate citation instruction based on requirements
         if require_inline_citations:
             citation_instruction = """- Data must be annotated with sources (use [Source X] format, e.g., "2024 sales 12.8 million units [Source 15]")
 - Each data point followed immediately by source annotation"""
@@ -500,6 +695,15 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
             citation_instruction = """- **Strictly no source markers in text** (e.g., "【source:xxx】", "【source15】", "(source:xxx)" formats)
 - Present data directly; sources will be listed in "Data Sources" section at report end
 - Do not add any form of source explanation after data"""
+        
+        sub_aspects_section = ""
+        if sub_aspects:
+            from src.core.i18n import get_language, Language
+            lang = get_language()
+            if lang == Language.ZH:
+                sub_aspects_section = "\n\n## 分析子主题（必须按此结构输出分析）\n请按以下子主题分别分析，每个子主题使用 ### 标题：\n" + "\n".join(f"### {sa}" for sa in sub_aspects)
+            else:
+                sub_aspects_section = "\n\n## Sub-topics (MUST structure your analysis accordingly)\nPlease analyze each sub-topic separately, using ### headings:\n" + "\n".join(f"### {sa}" for sa in sub_aspects)
         
         try:
             pm = PromptManager()
@@ -511,7 +715,7 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
                 aspect=aspect,
                 metrics="\n".join("- " + m for m in metrics[:10]) if metrics else "Extract key metrics based on research content",
                 citation_instruction=citation_instruction,
-            ) + '\n' + lang_inst
+            ) + sub_aspects_section + '\n' + lang_inst
         except Exception as e:
             logger.warning(f"Failed to load deep_analysis.md, using fallback: {e}")
             return f"""# Deep Analysis Task
@@ -521,6 +725,7 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
 
 ## Research Dimension
 {aspect}
+{sub_aspects_section}
 
 ## Analysis Requirements
 Provide deep analysis meeting international consulting standards.
@@ -535,6 +740,43 @@ Provide deep analysis meeting international consulting standards.
 {chr(10).join('- ' + m for m in metrics[:10]) if metrics else 'Extract key metrics based on research content'}
 {lang_inst}
 """
+
+    def _align_section_data_specs_with_tree(self, section_data_specs, sections_tree):
+        """Override section_data_specs sub_sections with framework_tree when available.
+
+        Ensures sub-section names and data_needs match the user-confirmed framework.
+        """
+        if not sections_tree or not section_data_specs:
+            return section_data_specs
+
+        for tree_section in sections_tree:
+            tree_name = tree_section.get('name', '') if isinstance(tree_section, dict) else ''
+            if not tree_name:
+                continue
+            for spec in section_data_specs:
+                if spec.name != tree_name:
+                    continue
+                tree_subs = tree_section.get('sub_sections', [])
+                if not tree_subs:
+                    continue
+                for j, tree_sub in enumerate(tree_subs):
+                    tree_sub_name = tree_sub.get('name', '') if isinstance(tree_sub, dict) else ''
+                    if not tree_sub_name:
+                        continue
+                    tree_points = tree_sub.get('points', []) if isinstance(tree_sub, dict) else []
+                    if j < len(spec.sub_sections):
+                        spec.sub_sections[j].name = tree_sub_name
+                        if tree_points:
+                            spec.sub_sections[j].data_needs = tree_points
+                    else:
+                        spec.sub_sections.append(SubSectionSpec(
+                            sub_section_id=f"sub_{spec.section_id}_{j}",
+                            name=tree_sub_name,
+                            data_needs=tree_points,
+                            data_source_type="search"
+                        ))
+                break
+        return section_data_specs
 
     _SYNTHESIS_HARD_CONSTRAINT = """
 

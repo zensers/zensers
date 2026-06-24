@@ -15,6 +15,8 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Set, Union, Awaitable
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,7 +118,7 @@ class HeartbeatMonitor:
             return
         
         self._running = True
-        self._monitor_task = asyncio.create_task(self._monitor_loop())
+        self._monitor_task = safe_create_task(self._monitor_loop(), name="heartbeat_monitor.monitor_loop")
         
         logger.info("HeartbeatMonitor started")
     

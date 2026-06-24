@@ -49,6 +49,42 @@ Always include these keys in "domain_context" when available:
 - "geographic_scope": geographic scope if mentioned
 - "time_range": time range if mentioned
 
+## section_data_specs Generation
+
+For each research section, generate structured data specifications describing what data each section needs:
+
+    "section_data_specs": [
+      {
+        "section_id": "section_0",
+        "name": "Financial Analysis",
+        "sub_sections": [
+          {
+            "sub_section_id": "sub_0_0",
+            "name": "Revenue & Profitability",
+            "data_needs": ["营收", "净利润", "毛利率", "净利率"],
+            "data_source_type": "structured"
+          },
+          {
+            "sub_section_id": "sub_0_1",
+            "name": "Market Position",
+            "data_needs": ["市场份额", "竞争格局"],
+            "data_source_type": "search"
+          }
+        ]
+      }
+    ]
+
+Rules for `data_source_type`:
+- **"structured"**: Numeric metrics available from structured data APIs (e.g., stock financial data: 营收, 净利润, 毛利率, ROE, PE, PB, 资产负债率, etc.)
+- **"search"**: Qualitative or non-structured information (e.g., 竞争格局, 政策解读, 技术趋势, 行业前景)
+- **"both"**: Data that benefits from both structured and search sources (e.g., 市场份额 where structured data provides numbers and search provides context)
+
+Rules:
+- Generate one `section_data_specs` entry per section in `domain_context.aspects`
+- Each section must have at least one `sub_section` with non-empty `data_needs`
+- `section_id` must follow the pattern `section_0`, `section_1`, etc.
+- `data_needs` should be specific keywords/metrics, not vague descriptions
+
 ## Composite Example Output
 
     {
@@ -67,7 +103,37 @@ Always include these keys in "domain_context" when available:
       ],
       "orchestration_strategy": "hybrid",
       "domain_context": {"topic": "Pet cat market and consumer survey", "aspects": ["market size", "competition", "breed preference", "spending habits"]},
-      "core_question": "What is the size and growth trend of China's pet cat market, and what are consumers' breed and spending preferences?"
-}
+      "core_question": "What is the size and growth trend of China's pet cat market, and what are consumers' breed and spending preferences?",
+      "section_data_specs": [
+        {
+          "section_id": "section_0",
+          "name": "Market Size",
+          "sub_sections": [
+            {"sub_section_id": "sub_0_0", "name": "Market Size Data", "data_needs": ["市场规模", "增长率", "行业产值"], "data_source_type": "search"}
+          ]
+        },
+        {
+          "section_id": "section_1",
+          "name": "Competition",
+          "sub_sections": [
+            {"sub_section_id": "sub_1_0", "name": "Competitive Landscape", "data_needs": ["竞争格局", "主要企业", "市场份额"], "data_source_type": "search"}
+          ]
+        },
+        {
+          "section_id": "section_2",
+          "name": "Breed Preference",
+          "sub_sections": [
+            {"sub_section_id": "sub_2_0", "name": "Breed Data", "data_needs": ["品种偏好", "消费金额"], "data_source_type": "search"}
+          ]
+        },
+        {
+          "section_id": "section_3",
+          "name": "Spending Habits",
+          "sub_sections": [
+            {"sub_section_id": "sub_3_0", "name": "Spending Data", "data_needs": ["消费习惯", "月均支出"], "data_source_type": "search"}
+          ]
+        }
+      ]
+    }
 
 {include:quality_rubric}

@@ -40,6 +40,16 @@ export interface PreviewResponse {
 
 // ============ API Request/Response Types ============
 
+export interface FrameworkSubSection {
+  name: string;
+  points?: string[];
+}
+
+export interface FrameworkSection {
+  name: string;
+  sub_sections?: FrameworkSubSection[];
+}
+
 export interface ResearchFramework {
   topic: string;
   sections: string[];
@@ -47,6 +57,7 @@ export interface ResearchFramework {
   depth: string;
   region: string;
   time_range: string;
+  sections_tree?: FrameworkSection[];
 }
 
 /** POST /api/v1/research/start response */

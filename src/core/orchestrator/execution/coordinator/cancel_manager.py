@@ -13,6 +13,8 @@ from asyncio import Condition
 from enum import Enum
 from typing import Dict
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
+
 
 class CancelReason(Enum):
     """取消原因（保留供 AgentCoordinator 等使用）"""
@@ -59,7 +61,7 @@ class CancelManager:
                 async with cond:
                     cond.notify_all()
             try:
-                t = asyncio.create_task(_notify())
+                t = safe_create_task(_notify(), name="cancel_manager.cancel_notify")
                 self._notify_tasks[task_id] = t
                 t.add_done_callback(lambda _: self._notify_tasks.pop(task_id, None))
             except RuntimeError:
@@ -88,7 +90,7 @@ class CancelManager:
                 async with cond:
                     cond.notify_all()
             try:
-                t = asyncio.create_task(_notify())
+                t = safe_create_task(_notify(), name="cancel_manager.resume_notify")
                 self._notify_tasks[task_id] = t
                 t.add_done_callback(lambda _: self._notify_tasks.pop(task_id, None))
             except RuntimeError:
@@ -144,7 +146,7 @@ class CancelManager:
                 async with cond:
                     cond.notify_all()
             try:
-                t = asyncio.create_task(_notify())
+                t = safe_create_task(_notify(), name="cancel_manager.cleanup_notify")
                 self._notify_tasks[f"{task_id}_cleanup"] = t
                 t.add_done_callback(lambda _: self._notify_tasks.pop(f"{task_id}_cleanup", None))
             except RuntimeError:

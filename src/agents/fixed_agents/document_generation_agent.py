@@ -634,18 +634,49 @@ class DocumentGenerationAgent(FixedAgent):
             for subsection in subsections:
                 sub_title = subsection.get("title", "")
                 sub_content = subsection.get("content", "")
+                sub_points = subsection.get("points", []) or []
                 
                 if sub_title:
                     generator.add_heading(sub_title, level=2)
                 
-                if sub_content:
+                if sub_points:
+                    for pt in sub_points:
+                        generator.add_heading(pt, level=3)
+                        pt_content = self._extract_point_text(sub_content, pt)
+                        if pt_content:
+                            cleaned = self._clean_llm_content(pt_content)
+                            elements = self._process_markdown_content(cleaned)
+                            for element in elements:
+                                if element["type"] == "heading":
+                                    continue
+                                elif element["type"] == "paragraph":
+                                    generator.add_paragraph(element["text"])
+                                elif element["type"] == "list":
+                                    for item in element["items"]:
+                                        generator.add_paragraph(f"• {item}")
+                                elif element["type"] == "ordered_list":
+                                    for j, item in enumerate(element["items"], 1):
+                                        generator.add_paragraph(f"{j}. {item}")
+                                elif element["type"] == "table":
+                                    if len(element["rows"]) > 1:
+                                        headers = element["rows"][0]
+                                        rows = element["rows"][1:]
+                                        rows = [r for r in rows if not all(
+                                            (c is None) or (c.replace("-", "").replace(":", "") == "")
+                                            for c in r
+                                        )]
+                                        if rows:
+                                            generator.add_table(headers, rows)
+                elif sub_content:
                     cleaned_content = self._clean_llm_content(sub_content)
                     elements = self._process_markdown_content(cleaned_content)
                     
                     for element in elements:
                         if element["type"] == "heading":
-                            # Skip: sub_title already added as heading at line 591
-                            continue
+                            heading_text = element.get("text", "").strip()
+                            if heading_text == sub_title:
+                                continue
+                            generator.add_heading(heading_text, level=3)
                         elif element["type"] == "paragraph":
                             generator.add_paragraph(element["text"])
                         elif element["type"] == "list":
@@ -658,7 +689,6 @@ class DocumentGenerationAgent(FixedAgent):
                             if len(element["rows"]) > 1:
                                 headers = element["rows"][0]
                                 rows = element["rows"][1:]
-                            # Filter out separator rows (like |---|---|) and empty value rows
                                 rows = [r for r in rows if not all(
                                     (c is None) or (c.replace("-", "").replace(":", "") == "") 
                                     for c in r
@@ -697,6 +727,31 @@ class DocumentGenerationAgent(FixedAgent):
                     generator.add_paragraph(f"[{i}] {url}")
                 elif title:
                     generator.add_paragraph(f"[{i}] {title}")
+    
+    @staticmethod
+    def _extract_point_text(full_content: str, point_title: str) -> str:
+        """Extract text belonging to a specific point from subsection content.
+        
+        Searches for the point heading in markdown content and returns the
+        text between this heading and the next heading or end of content.
+        """
+        if not full_content or not point_title:
+            return ""
+        import re
+        escaped = re.escape(point_title)
+        pattern = rf'^#{{1,4}}\s+{escaped}\s*$'
+        lines = full_content.split('\n')
+        capturing = False
+        captured = []
+        for line in lines:
+            if re.match(pattern, line.strip(), re.IGNORECASE):
+                capturing = True
+                continue
+            if capturing:
+                if re.match(r'^#{1,4}\s+', line.strip()):
+                    break
+                captured.append(line)
+        return '\n'.join(captured).strip()
     
     def _strip_duplicate_title(self, content: str, section_title: str) -> str:
         """
@@ -1796,7 +1851,8 @@ class DocumentGenerationAgent(FixedAgent):
         # Send revision notification to MessageBus (if available)
         if self._message_bus:
             from src.core.communication import Event
-            asyncio.create_task(self._message_bus.publish(
+            from src.core.orchestrator.execution.task_utils import safe_create_task
+            safe_create_task(self._message_bus.publish(
                 topic="document.adjusted",
                 event=Event(
                     type="document.adjusted",
@@ -1811,7 +1867,7 @@ class DocumentGenerationAgent(FixedAgent):
                     },
                     source=self.agent_id,
                 )
-            ))
+            ), name="document_agent.publish_adjusted")
         
         # Build result message
         if apply_success:

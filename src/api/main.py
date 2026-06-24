@@ -8,6 +8,7 @@ import json
 import logging, os, uuid
 from pathlib import Path
 from datetime import datetime
+from src.core.orchestrator.execution.task_utils import safe_create_task as safe_create_task_main
 from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
@@ -562,7 +563,7 @@ async def get_research_detail(task_id: str):
     preview_url = None
     download_url = None
     research_result = session.get("research_result", {})
-    has_valid_result = bool(research_result and research_result.get("status") == "completed")
+    has_valid_result = bool(research_result and research_result.get("status") in ("completed", "completed_with_warnings"))
     
     # Check for preview HTML file (only for sessions with valid completed research)
     if has_valid_result:
@@ -870,6 +871,9 @@ _scheduled_dream_task = None
 async def startup_event():
     logger.info("Zensers API started")
 
+    from src.core.orchestrator.execution.task_utils import register_global_exception_handler
+    register_global_exception_handler()
+
     global _scheduled_dream_task, _dream_scheduler, _dream_cfg
 
     # DreamModeScheduler 后台循环（始终启动，驱动研究提取 + 可选目录扫描）
@@ -896,7 +900,7 @@ async def startup_event():
             except Exception as e:
                 logger.warning(f"Scheduled DreamMode failed: {e}")
 
-        _scheduled_dream_task = asyncio.create_task(_scheduled_dream())
+        _scheduled_dream_task = safe_create_task_main(_scheduled_dream(), name="scheduled_dream")
         logger.info("Scheduled DreamMode task created (every 24h)")
 
 @app.on_event("shutdown")

@@ -27,6 +27,8 @@ from typing import Dict, Any, Optional, Callable, List, Set
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -510,7 +512,7 @@ class DreamModeScheduler:
     def start_background(self):
         """启动后台任务"""
         if self._background_task is None or self._background_task.done():
-            self._background_task = asyncio.create_task(self.start_background_loop())
+            self._background_task = safe_create_task(self.start_background_loop(), name="dream_scheduler.background_loop")
             logger.info("Background task started")
 
     def stop_background(self):

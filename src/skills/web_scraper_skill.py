@@ -174,8 +174,7 @@ class WebScraperSkill(Skill):
         """Fetch a static HTML page via Scrapling (auto anti-bot detection)."""
         from scrapling.fetchers.requests import AsyncFetcher
 
-        fetcher = AsyncFetcher()
-        fetcher.adaptive = True
+        fetcher = AsyncFetcher.configure(adaptive=True)
         response = await fetcher.get(url)
         if response.status >= 400:
             raise IOError(f"HTTP {response.status} {response.reason}: {url}")

@@ -599,9 +599,10 @@ class DocumentAPI:
                 if cache_path.exists():
                     with open(cache_path, "r", encoding="utf-8") as _f:
                         _cached = _json.load(_f)
-                    import asyncio
-                    _task = asyncio.get_running_loop().create_task(
-                        self._knowledge_deposit_callback(task_id, _cached)
+                    from src.core.orchestrator.execution.task_utils import safe_create_task
+                    _task = safe_create_task(
+                        self._knowledge_deposit_callback(task_id, _cached),
+                        name=f"knowledge_deposit_{task_id}"
                     )
                     self._background_tasks.add(_task)
                     _task.add_done_callback(self._background_tasks.discard)

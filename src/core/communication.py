@@ -2,10 +2,13 @@
 Core Communication Module - MessageBus and SharedMemory
 """
 import asyncio
+import logging
 import time
 from typing import Any, Callable, Dict, List, Optional
 from dataclasses import dataclass
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 
 class DataEventType:
@@ -91,12 +94,14 @@ class MessageBus:
         tasks = []
         for handler in handlers:
             if asyncio.iscoroutinefunction(handler):
-                tasks.append(asyncio.create_task(handler(event)))
+                from src.core.orchestrator.execution.task_utils import safe_create_task
+                tasks.append(safe_create_task(handler(event), name="messagebus.publish_handler"))
             else:
-                # Run sync handlers in thread pool
+                from src.core.orchestrator.execution.task_utils import safe_create_task
                 loop = asyncio.get_running_loop()
-                tasks.append(asyncio.create_task(
-                    loop.run_in_executor(None, handler, event)
+                tasks.append(safe_create_task(
+                    loop.run_in_executor(None, handler, event),
+                    name="messagebus.publish_sync_handler",
                 ))
         
         if tasks:
@@ -107,6 +112,13 @@ class MessageBus:
     def get_subscriber_count(self, topic: str) -> int:
         """Get subscriber count for topic"""
         return len(self._subscribers.get(topic, []))
+
+
+SOURCE_PRIORITY = {
+    "structured_source": 100,
+    "search_result": 50,
+    "llm_inference": 10,
+}
 
 
 class SharedMemory:
@@ -191,7 +203,10 @@ class SharedMemory:
         publisher: str = "",
     ) -> Optional[Any]:
         """
-        Write canonical data with conflict detection and versioning.
+        Write canonical data with conflict detection, versioning, and source priority.
+        
+        Source priority (ISSUE-G): structured_source > search_result > llm_inference.
+        Lower-priority sources do not overwrite higher-priority values.
         
         Returns ConflictRecord if conflict detected, None otherwise.
         """
@@ -200,14 +215,24 @@ class SharedMemory:
         async with self._lock:
             existing = self._data.get(key)
             conflict = None
-            if existing and abs(existing["value"] - value) / max(abs(value), 0.01) > 0.05:
-                conflict = ConflictRecord(
-                    key=metric,
-                    values=[existing["value"], value],
-                    sources=[existing.get("source", ""), source],
-                    resolution=ConflictResolution.MANUAL,
-                    resolved_value=None,
-                )
+            if existing and isinstance(value, (int, float)) and isinstance(existing["value"], (int, float)):
+                if abs(existing["value"] - value) / max(abs(value), 0.01) > 0.05:
+                    conflict = ConflictRecord(
+                        key=metric,
+                        values=[existing["value"], value],
+                        sources=[existing.get("source", ""), source],
+                        resolution=ConflictResolution.MANUAL,
+                        resolved_value=None,
+                    )
+            if existing:
+                existing_priority = SOURCE_PRIORITY.get(existing.get("caliber", ""), 0)
+                new_priority = SOURCE_PRIORITY.get(caliber, 0)
+                if new_priority <= existing_priority and new_priority != existing_priority:
+                    if conflict:
+                        logger.info(f"SharedMemory: canonical '{metric}' conflict - keeping higher-priority source "
+                                    f"({existing.get('caliber', '?')}={existing['value']} vs {caliber}={value})")
+                        conflict = None
+                    return conflict
             self._data[key] = {
                 "value": value, "caliber": caliber, "source": source,
                 "publisher": publisher,
@@ -238,9 +263,12 @@ class SharedMemory:
         entry = self._data.get(f"canonical:{metric}")
         if entry:
             return entry
+        prefix = metric.split("_")[0]
         for key, value in self._data.items():
-            if key.startswith("canonical:") and metric.split("_")[0] in key:
-                return value
+            if key.startswith("canonical:"):
+                key_metric = key[len("canonical:"):]
+                if key_metric == metric or key_metric.split("_")[0] == prefix:
+                    return value
         return None
     
     def get_all_canonical(self) -> Dict[str, Dict]:

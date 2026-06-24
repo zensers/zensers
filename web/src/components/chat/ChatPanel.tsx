@@ -275,6 +275,7 @@ export function ChatPanel() {
                 ? `研究主题: ${framework.topic} — 选择要包含的章节`
                 : `Topic: ${framework.topic} — Select sections to include`}
               sections={frameworkOptions}
+              frameworkTree={framework.sections_tree}
               onConfirm={handleFrameworkSectionConfirm}
               disabled={isProcessing}
             />

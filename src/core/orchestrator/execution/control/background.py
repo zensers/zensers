@@ -20,6 +20,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
+
 logger = logging.getLogger(__name__)
 
 
@@ -133,7 +135,7 @@ class BackgroundExecutor:
             return
         
         self._running = True
-        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+        self._cleanup_task = safe_create_task(self._cleanup_loop(), name="background_executor.cleanup_loop")
         logger.info("BackgroundExecutor started with auto-cleanup")
     
     async def _cleanup_loop(self) -> None:
@@ -186,8 +188,9 @@ class BackgroundExecutor:
             self._total_launched += 1
         
         # 启动执行
-        bg_task._task = asyncio.create_task(
-            self._run_task(bg_task)
+        bg_task._task = safe_create_task(
+            self._run_task(bg_task),
+            name="background_executor.run_task",
         )
         
         logger.debug(f"Launched background task {task_id}")
@@ -313,7 +316,7 @@ class BackgroundExecutor:
             result = await self.wait_for_result(tid, timeout=timeout)
             return (tid, result)
         
-        tasks = [asyncio.create_task(wait_one(tid)) for tid in task_ids]
+        tasks = [safe_create_task(wait_one(tid), name="background_executor.wait_for_all") for tid in task_ids]
         
         try:
             done, pending = await asyncio.wait(

@@ -93,6 +93,42 @@ SKILL_KEYWORDS: Dict[str, Set[str]] = {
         "restaurant", "store", "venue",
         "geography", "places",
     },
+    
+    # --- Professional Analysis Skills ---
+    "market_analysis": {
+        "market analysis", "competitive landscape", "market share", "market size",
+        "行业分析", "竞争格局", "市场份额", "市场规模",
+    },
+    "stock_data": {
+        "stock data", "financial data", "akshare", "stock quote",
+        "financial statement", "profit sheet", "balance sheet", "cash flow",
+        "财务数据", "股票数据", "利润表", "资产负债表", "现金流量表",
+    },
+    "stock_analysis": {
+        "stock analysis", "valuation analysis", "financial health",
+        "growth analysis", "investment value",
+        "股票分析", "估值分析", "财务健康", "成长性分析",
+    },
+    "data_analysis": {
+        "data analysis", "statistical analysis", "quantitative analysis",
+        "cagr", "cr3", "hhi", "descriptive statistics",
+        "统计分析", "定量分析", "集中度", "描述性统计",
+    },
+    "policy_analysis": {
+        "policy analysis", "regulation analysis", "compliance",
+        "government policy", "regulatory impact",
+        "政策分析", "监管分析", "合规分析",
+    },
+    "tech_trend": {
+        "technology trend", "patent analysis",
+        "innovation", "technology roadmap",
+        "技术趋势", "专利分析", "技术路线",
+    },
+    "risk_analysis": {
+        "risk analysis", "risk assessment", "risk factor",
+        "risk management", "credit risk", "market risk",
+        "风险分析", "风险评估", "风险管理",
+    },
 }
 
 # ============================================================
@@ -206,8 +242,28 @@ def get_skill_description(skill_name: str) -> str:
         "lc_python_repl": "Python code execution, data analysis and computation",
         "lc_web_scraper": "Web content scraping, extract structured data",
         "llm_skill": "LLM reasoning analysis, intelligent understanding and generation",
+        "market_analysis": "Market analysis with SWOT/PEST/Five Forces frameworks",
+        "stock_data": "Stock and financial data retrieval via akshare",
+        "stock_analysis": "Stock valuation and financial health analysis",
+        "data_analysis": "Statistical and quantitative data analysis (CAGR, CR3, HHI)",
+        "policy_analysis": "Policy and regulatory impact analysis",
+        "tech_trend": "Technology trend and patent analysis",
+        "risk_analysis": "Risk assessment and risk management analysis",
     }
     return descriptions.get(skill_name, f"Skill: {skill_name}")
+
+
+def list_available_skills() -> Dict[str, str]:
+    """
+    List all available Skills (LangChain + Professional Analysis)
+    
+    Returns:
+        {skill_name: description} dictionary
+    """
+    return {
+        skill: get_skill_description(skill)
+        for skill in SKILL_KEYWORDS.keys()
+    }
 
 
 def list_available_langchain_skills() -> Dict[str, str]:
@@ -220,4 +276,5 @@ def list_available_langchain_skills() -> Dict[str, str]:
     return {
         skill: get_skill_description(skill)
         for skill in SKILL_KEYWORDS.keys()
+        if skill.startswith("lc_")
     }

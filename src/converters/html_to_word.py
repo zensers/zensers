@@ -85,6 +85,7 @@ class HTMLToWordConverter:
         "h1_size": 24,
         "h2_size": 20,
         "h3_size": 16,
+        "h4_size": 14,
         "body_size": 12,
         "line_spacing": 1.5
     }
@@ -838,6 +839,8 @@ class HTMLToWordConverter:
             size_key = "h2_size"
         elif css_class == "subsection-title":
             size_key = "h3_size"
+        elif css_class == "sub-subsection-title":
+            size_key = "h4_size"
         elif level == 1 and not css_class:
             # Cover main title (<h1> without class) → use title_size (28pt)
             size_key = "title_size"

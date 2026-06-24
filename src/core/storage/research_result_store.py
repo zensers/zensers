@@ -21,6 +21,7 @@ import re
 import json
 import shutil
 import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -164,6 +165,8 @@ class ResearchResultStore:
         
         # 确保目录存在
         self.results_dir.mkdir(parents=True, exist_ok=True)
+        self._save_locks: Dict[str, threading.Lock] = {}
+        self._locks_lock = threading.Lock()
         
         logger.info(f"ResearchResultStore initialized at {self.results_dir}")
     
@@ -271,88 +274,126 @@ class ResearchResultStore:
         task_dir = self._get_task_dir(task_id)
         task_dir.mkdir(parents=True, exist_ok=True)
         
-        # Bug-3-4d: 合并 + 去重（非直接覆盖）
-        result_path = task_dir / "result.json"
-        existing = self.load_result(task_id) if result_path.exists() else None
+        with self._locks_lock:
+            if task_id not in self._save_locks:
+                self._save_locks[task_id] = threading.Lock()
+        with self._save_locks[task_id]:
+            # Bug-3-4d: 合并 + 去重（非直接覆盖）
+            result_path = task_dir / "result.json"
+            existing = self.load_result(task_id) if result_path.exists() else None
         
-        new_dps = result.get("data_points", [])
-        new_srcs = result.get("sources", [])
+            new_dps = result.get("data_points", [])
+            new_srcs = result.get("sources", [])
         
-        if existing:
-            exist_dps = existing.get("data_points", [])
-            exist_srcs = existing.get("sources", [])
+            if existing:
+                exist_dps = existing.get("data_points", [])
+                exist_srcs = existing.get("sources", [])
             
-            seen_urls = set()
-            merged_dps = []
-            for dp in exist_dps + new_dps:
-                url = dp.get("url", "") if isinstance(dp, dict) else ""
-                if url and url in seen_urls:
-                    continue
-                if url:
-                    seen_urls.add(url)
-                merged_dps.append(dp)
+                seen_urls = set()
+                merged_dps = []
+                for dp in exist_dps + new_dps:
+                    url = dp.get("url", "") if isinstance(dp, dict) else ""
+                    if url and url in seen_urls:
+                        continue
+                    if url:
+                        seen_urls.add(url)
+                    merged_dps.append(dp)
             
-            seen_urls = set()
-            merged_srcs = []
-            for src in exist_srcs + new_srcs:
-                url = src.get("url", "") if isinstance(src, dict) else ""
-                if url and url in seen_urls:
-                    continue
-                if url:
-                    seen_urls.add(url)
-                merged_srcs.append(src)
-        else:
-            merged_dps = new_dps
-            merged_srcs = new_srcs
+                seen_urls = set()
+                merged_srcs = []
+                for src in exist_srcs + new_srcs:
+                    url = src.get("url", "") if isinstance(src, dict) else ""
+                    if url and url in seen_urls:
+                        continue
+                    if url:
+                        seen_urls.add(url)
+                    merged_srcs.append(src)
+            else:
+                merged_dps = new_dps
+                merged_srcs = new_srcs
         
-        # R2-FIX: merge completed_agents and agent_contents instead of overwriting
-        new_completed = result.get("completed_agents", [])
-        new_agent_contents = result.get("agent_contents", {})
-        if existing:
-            exist_completed = existing.get("completed_agents", [])
-            exist_agent_contents = existing.get("agent_contents", {})
-            exist_agent_ids = {a.get("agent_id") for a in exist_completed if isinstance(a, dict)}
-            merged_completed = list(exist_completed)
-            for a in new_completed:
-                if isinstance(a, dict) and a.get("agent_id") not in exist_agent_ids:
-                    merged_completed.append(a)
-            merged_agent_contents = dict(exist_agent_contents)
-            merged_agent_contents.update(new_agent_contents)
-        else:
-            merged_completed = new_completed
-            merged_agent_contents = new_agent_contents
+            # R2-FIX: merge completed_agents and agent_contents instead of overwriting
+            new_completed = result.get("completed_agents", [])
+            new_agent_contents = result.get("agent_contents", {})
+            if existing:
+                exist_completed = existing.get("completed_agents", [])
+                exist_agent_contents = existing.get("agent_contents", {})
+                exist_agent_ids = {a.get("agent_id") for a in exist_completed if isinstance(a, dict)}
+                merged_completed = list(exist_completed)
+                for a in new_completed:
+                    if isinstance(a, dict) and a.get("agent_id") not in exist_agent_ids:
+                        merged_completed.append(a)
+                merged_agent_contents = dict(exist_agent_contents)
+                merged_agent_contents.update(new_agent_contents)
+            else:
+                merged_completed = new_completed
+                merged_agent_contents = new_agent_contents
         
-        result_data = {
-            "task_id": task_id,
-            "title": result.get("title", ""),
-            "topic": result.get("topic", ""),
-            "sections": result.get("sections", []),
-            "key_findings": result.get("key_findings", []),
-            "data_points": merged_dps,
-            "sources": merged_srcs,
-            "completed_agents": merged_completed,
-            "agent_contents": merged_agent_contents,
-            "saved_at": datetime.now().isoformat()
-        }
+            new_sections = result.get("sections", [])
+            new_key_findings = result.get("key_findings", [])
+            if existing:
+                merged_sections = existing.get("sections", []) if not new_sections else new_sections
+                merged_key_findings = existing.get("key_findings", []) if not new_key_findings else new_key_findings
+            else:
+                merged_sections = new_sections
+                merged_key_findings = new_key_findings
+            result_data = {
+                "task_id": task_id,
+                "title": result.get("title", "") or (existing.get("title", "") if existing else ""),
+                "topic": result.get("topic", "") or (existing.get("topic", "") if existing else ""),
+                "status": status.value,
+                "sections": merged_sections,
+                "key_findings": merged_key_findings,
+                "data_points": merged_dps,
+                "sources": merged_srcs,
+                "completed_agents": merged_completed,
+                "agent_contents": merged_agent_contents,
+                "saved_at": datetime.now().isoformat()
+            }
         
-        self._atomic_write_json(result_path, result_data)
+            self._atomic_write_json(result_path, result_data)
         
-        # 保存元数据
-        metadata = ResearchResultMeta(
-            task_id=task_id,
-            title=result.get("title", ""),
-            topic=result.get("topic", ""),
-            status=status,
-            created_at=datetime.now(),
-            completed_at=datetime.now() if status == ResearchStatus.COMPLETED else None,
-            user_id=user_id
-        )
+            # 保存元数据（合并而非覆盖，保留已有字段）
+            existing_meta = self.load_metadata(task_id)
+            new_title = result.get("title", "")
+            new_topic = result.get("topic", "")
+            if existing_meta:
+                title = new_title if new_title else existing_meta.title
+                topic = new_topic if new_topic else existing_meta.topic
+                created_at = existing_meta.created_at
+                generated_formats = existing_meta.generated_formats
+                document_requests = existing_meta.document_requests
+                document_paths = existing_meta.document_paths
+                output_format = existing_meta.output_format
+                completed_at = datetime.now() if status == ResearchStatus.COMPLETED else existing_meta.completed_at
+            else:
+                title = new_title
+                topic = new_topic
+                created_at = datetime.now()
+                generated_formats = []
+                document_requests = []
+                document_paths = []
+                output_format = None
+                completed_at = datetime.now() if status == ResearchStatus.COMPLETED else None
+            metadata = ResearchResultMeta(
+                task_id=task_id,
+                title=title,
+                topic=topic,
+                status=status,
+                created_at=created_at,
+                completed_at=completed_at,
+                user_id=user_id,
+                generated_formats=generated_formats,
+                document_requests=document_requests,
+                document_paths=document_paths,
+                output_format=output_format,
+            )
         
-        self._save_metadata(task_id, metadata)
+            self._save_metadata(task_id, metadata)
         
-        logger.info(f"Saved research result: {task_id}, status: {status.value}")
+            logger.info(f"Saved research result: {task_id}, status: {status.value}")
         
-        return task_id
+            return task_id
     
     def load_result(self, task_id: str) -> Optional[Dict[str, Any]]:
         """

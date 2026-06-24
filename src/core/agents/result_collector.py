@@ -18,6 +18,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Callable
 import logging
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
 from ..communication import MessageBus, Event, SharedMemory
 
 
@@ -259,7 +260,7 @@ class ResultCollector:
             result = await self.wait_for_agent(sid, timeout=timeout)
             return (sid, result) if result else None
         
-        tasks = [asyncio.create_task(wait_for_one(sid)) for sid in session_ids]
+        tasks = [safe_create_task(wait_for_one(sid), name="result_collector.wait_for_any") for sid in session_ids]
         
         try:
             done, pending = await asyncio.wait(

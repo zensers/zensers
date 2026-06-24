@@ -23,7 +23,12 @@ class StockDataSkill(Skill):
     2. Three financial statements (income statement/balance sheet/cash flow statement)
     3. Key financial metrics (akshare raw data)
     4. Stock price data
+    
+    Memory cache: (symbol, action) → result, avoids duplicate API calls
+    from parallel agents requesting the same data.
     """
+    
+    _memory_cache: Dict[tuple, Dict[str, Any]] = {}
     
     @property
     def name(self) -> str:
@@ -40,21 +45,30 @@ class StockDataSkill(Skill):
         if not symbol:
             return self._failure("Please provide a stock symbol, e.g. 600519 (Kweichow Moutai)")
         
+        cache_key = (symbol, action)
+        if cache_key in self._memory_cache:
+            logger.info(f"StockDataSkill: cache hit for {cache_key}")
+            return self._memory_cache[cache_key]
+        
         try:
             import akshare as ak
             
             if action == "company_info":
-                return await self._company_info(ak, symbol)
+                result = await self._company_info(ak, symbol)
             elif action == "financials":
-                return await self._financials(ak, symbol)
+                result = await self._financials(ak, symbol)
             elif action == "key_metrics":
-                return await self._key_metrics(ak, symbol)
+                result = await self._key_metrics(ak, symbol)
             elif action == "price_history":
-                return await self._price_history(ak, symbol)
+                result = await self._price_history(ak, symbol)
             elif action == "industry_comparison":
-                return await self._industry_comparison(ak, symbol)
+                result = await self._industry_comparison(ak, symbol)
             else:
                 return self._failure(f"Unsupported operation: {action}")
+            
+            if result.get("success"):
+                self._memory_cache[cache_key] = result
+            return result
         
         except ImportError:
             return self._failure("akshare not installed: pip install akshare")
@@ -98,40 +112,46 @@ class StockDataSkill(Skill):
             return self._failure(f"Industry info retrieval failed: {e}")
     
     async def _company_info(self, ak, symbol: str) -> Dict[str, Any]:
-        df = ak.stock_individual_info_em(symbol=symbol)
-        info = dict(zip(df["item"], df["value"]))
-        return {
-            "success": True,
-            "data": info,
-            "symbol": symbol,
-            "source": "akshare/East Money",
-            "content": f"Stock Name: {info.get('股票简称','')}\n"
-                       f"Industry: {info.get('行业','')}\n"
-                       f"Total Shares: {info.get('总股本','')}\n"
-                       f"Tradable Shares: {info.get('流通股','')}\n"
-                       f"Main Business: {info.get('主营业务','')}\n"
-        }
+        try:
+            df = ak.stock_individual_info_em(symbol=symbol)
+            info = dict(zip(df["item"], df["value"]))
+            return {
+                "success": True,
+                "data": info,
+                "symbol": symbol,
+                "source": "akshare/East Money",
+                "content": f"Stock Name: {info.get('股票简称','')}\n"
+                           f"Industry: {info.get('行业','')}\n"
+                           f"Total Shares: {info.get('总股本','')}\n"
+                           f"Tradable Shares: {info.get('流通股','')}\n"
+                           f"Main Business: {info.get('主营业务','')}\n"
+            }
+        except Exception as e:
+            return self._failure(f"Company info retrieval failed: {e}")
     
     async def _financials(self, ak, symbol: str) -> Dict[str, Any]:
-        income = ak.stock_profit_sheet_by_report_em(symbol=symbol)
-        bs = ak.stock_balance_sheet_by_report_em(symbol=symbol)
-        cf = ak.stock_cash_flow_sheet_by_report_em(symbol=symbol)
-        
-        data = {}
-        if income is not None and not income.empty:
-            data["income_statement"] = income.head(15).to_dict(orient="records")
-        if bs is not None and not bs.empty:
-            data["balance_sheet"] = bs.head(15).to_dict(orient="records")
-        if cf is not None and not cf.empty:
-            data["cash_flow"] = cf.head(15).to_dict(orient="records")
-        
-        return {
-            "success": True,
-            "data": data,
-            "symbol": symbol,
-            "source": "akshare/East Money",
-            "content": f"Retrieved three financial statements for {symbol}",
-        }
+        try:
+            income = ak.stock_profit_sheet_by_report_em(symbol=symbol)
+            bs = ak.stock_balance_sheet_by_report_em(symbol=symbol)
+            cf = ak.stock_cash_flow_sheet_by_report_em(symbol=symbol)
+            
+            data = {}
+            if income is not None and not income.empty:
+                data["income_statement"] = income.head(15).to_dict(orient="records")
+            if bs is not None and not bs.empty:
+                data["balance_sheet"] = bs.head(15).to_dict(orient="records")
+            if cf is not None and not cf.empty:
+                data["cash_flow"] = cf.head(15).to_dict(orient="records")
+            
+            return {
+                "success": True,
+                "data": data,
+                "symbol": symbol,
+                "source": "akshare/East Money",
+                "content": f"Retrieved three financial statements for {symbol}",
+            }
+        except Exception as e:
+            return self._failure(f"Financial statements retrieval failed: {e}")
     
     async def _key_metrics(self, ak, symbol: str) -> Dict[str, Any]:
         try:

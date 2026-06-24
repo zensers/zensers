@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
+from src.core.orchestrator.execution.task_utils import safe_create_task
 from .task_dispatcher import TaskDispatcher, TaskOptions, PreparedTask
 from .progress_tracker import ProgressTracker, TaskProgress
 from .heartbeat_monitor import HeartbeatMonitor, HeartbeatConfig
@@ -265,8 +266,9 @@ class AgentCoordinator:
         self._total_dispatched += 1
         
         # 启动执行
-        active_task._async_task = asyncio.create_task(
-            self._execute_with_monitoring(active_task, prepared.task)
+        active_task._async_task = safe_create_task(
+            self._execute_with_monitoring(active_task, prepared.task),
+            name="agent_coordinator.execute_with_monitoring",
         )
         
         logger.info(f"Dispatched task {prepared.task_id} to agent {agent.agent_id}, action={task.get('action')}, topic={task.get('topic')}")
@@ -308,8 +310,9 @@ class AgentCoordinator:
             )
             
             # 启动心跳发送任务（防止心跳超时）
-            heartbeat_task = asyncio.create_task(
-                self._send_periodic_heartbeats(task_id)
+            heartbeat_task = safe_create_task(
+                self._send_periodic_heartbeats(task_id),
+                name="agent_coordinator.send_periodic_heartbeats",
             )
             
             # 执行任务（带超时）
@@ -606,7 +609,7 @@ class AgentCoordinator:
             return (task_id, None)
         
         # 使用外层超时控制
-        tasks = [asyncio.create_task(wait_one(tid)) for tid in task_ids]
+        tasks = [safe_create_task(wait_one(tid), name="agent_coordinator.wait_for_completion") for tid in task_ids]
         
         try:
             if timeout:
@@ -682,7 +685,7 @@ class AgentCoordinator:
                 return (task_id, active_task.result)
             return None
         
-        tasks = [asyncio.create_task(wait_one(tid)) for tid in task_ids]
+        tasks = [safe_create_task(wait_one(tid), name="agent_coordinator.wait_for_any") for tid in task_ids]
         
         try:
             done, pending = await asyncio.wait(

@@ -302,8 +302,8 @@ class MCPClient:
         if self._http_session:
             try:
                 try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(self._http_session.close())
+                    from src.core.orchestrator.execution.task_utils import safe_create_task
+                    safe_create_task(self._http_session.close(), name="mcp_close_session")
                 except RuntimeError:
                     asyncio.run(self._http_session.close())
             except Exception:

@@ -378,7 +378,6 @@ class AggregationResult:
                             norm_id = _normalize_key(section_id)
                             norm_name = _normalize_key(section_name)
                             if norm_key == norm_id or norm_key == norm_name or \
-                               norm_id in norm_key or norm_name in norm_key or \
                                norm_key in norm_id or norm_key in norm_name:
                                 content = extract_content(value)
                                 matched_key = key
@@ -407,7 +406,6 @@ class AggregationResult:
                                     continue
                                 norm_cm = _normalize_key(cm_key)
                                 if norm_cm == norm_id or norm_cm == norm_name or \
-                                   norm_id in norm_cm or norm_name in norm_cm or \
                                    norm_cm in norm_id or norm_cm in norm_name:
                                     content = cm_val
                                     matched_key = cm_key
@@ -461,7 +459,12 @@ class AggregationResult:
                         logger.info(f"章节 '{section_name}' 匹配: key='{matched_key}', stage='{matched_stage}'")
                     
                     # 创建章节（剥离已提取为 subsections 的 heading 行，避免 HTML 双重渲染）
-                    subsections = _parse_markdown_subsections(content)
+                    # Use framework skeleton when sub_sections are defined in section_details
+                    framework_sub_sections = section.get("sub_sections") if isinstance(section, dict) else None
+                    if framework_sub_sections and isinstance(framework_sub_sections, list) and len(framework_sub_sections) > 0:
+                        subsections = _build_subsections_from_skeleton(content, framework_sub_sections)
+                    else:
+                        subsections = _parse_markdown_subsections(content)
                     content = ResultAggregator._strip_parsed_subsections(content, subsections)
                     
                     # 从 __meta 提取图表元数据
@@ -597,7 +600,6 @@ class AggregationResult:
                         norm_id = _normalize_key(section_id)
                         norm_name = _normalize_key(section_name)
                         if norm_key == norm_id or norm_key == norm_name or \
-                           norm_id in norm_key or norm_name in norm_key or \
                            norm_key in norm_id or norm_key in norm_name:
                             content = c
                             matched_key = key_lower
@@ -972,13 +974,13 @@ class ResultAggregator:
             elif "industry_chain" in key_lower or "产业链" in key_lower:
                 return "industry_chain"
             else:
-                return "analysis"  # 默认分配给 analysis
+                return key  # A-P1-5 FIX: return key itself for provenance matching
         
         # data_collection 阶段的内容分配给数据章节
         elif stage == "data_collection":
-            return "data"
+            return key  # A-P1-2 FIX: return key itself for provenance matching
         
-        return "data"
+        return key  # A-P1-2 FIX: return key itself for provenance matching
     
     def aggregate(
         self,
@@ -1507,7 +1509,7 @@ def _parse_markdown_subsections(content: str) -> List[Dict[str, str]]:
                 title = m.group(1).strip()
                 sub_id = "sub_" + re.sub(r'[^\w\u4e00-\u9fff]+', '_', title).strip('_').lower()[:30]
                 trailing = m.group(2).strip() if m.lastindex and m.lastindex >= 2 else ""
-                current_sub = {"id": sub_id, "title": title, "content": ""}
+                current_sub = {"id": sub_id, "title": title, "content": "", "points": []}
                 current_content = [trailing] if trailing else []
                 matched = True
                 break
@@ -1520,4 +1522,92 @@ def _parse_markdown_subsections(content: str) -> List[Dict[str, str]]:
         if current_sub["content"] or current_sub["title"]:
             subsections.append(current_sub)
     
+    return subsections
+
+
+def _normalize_key_for_matching(key: str) -> str:
+    """Normalize a key for fuzzy matching: strip punctuation, whitespace, and common prefixes."""
+    import re
+    result = key.lower().strip()
+    result = re.sub(r'[^\w\u4e00-\u9fff]', '', result)
+    result = re.sub(r'^#{1,6}\s*', '', result)
+    return result.strip()
+
+
+def _match_content_to_sub_section(content: str, sub_section: dict) -> str:
+    """Match LLM output content to a framework sub_section by heading.
+
+    Searches for ### headings in the LLM output that match the sub_section name.
+    Returns the matched content, or a placeholder if no match found.
+    """
+    if not content or not sub_section:
+        return ""
+
+    import re
+    sub_name = sub_section.get("name", "") if isinstance(sub_section, dict) else ""
+    if not sub_name:
+        return ""
+
+    norm_target = _normalize_key_for_matching(sub_name)
+    lines = content.split('\n')
+    matched_lines = []
+    found_start = False
+
+    heading_patterns = [
+        r'^#{3,4}\s+[（(]?[一二三四五六七八九十百千]+[）).、：，．]\s*(.+)$',
+        r'^#{3,4}\s+(.+)$',
+    ]
+
+    for line in lines:
+        stripped = line.strip()
+        if not found_start:
+            for pattern in heading_patterns:
+                m = re.match(pattern, stripped)
+                if m:
+                    heading_text = m.group(1).strip()
+                    norm_heading = _normalize_key_for_matching(heading_text)
+                    if norm_heading == norm_target or norm_heading in norm_target or norm_target in norm_heading:
+                        found_start = True
+                        break
+        else:
+            for pattern in heading_patterns:
+                m = re.match(pattern, stripped)
+                if m:
+                    break
+            if re.match(heading_patterns[0], stripped) or re.match(heading_patterns[1], stripped):
+                break
+            matched_lines.append(line)
+
+    if found_start and matched_lines:
+        return '\n'.join(matched_lines).strip()
+
+    return f"> 本章节数据不足，无法生成完整分析。请检查上游数据采集是否完整。\n"
+
+
+def _build_subsections_from_skeleton(content: str, framework_sub_sections: list) -> list:
+    """Build subsections using framework skeleton as the structural backbone.
+
+    For each sub_section in the framework, matches LLM output content to it.
+    Falls back to placeholder content when no match is found.
+    """
+    if not framework_sub_sections:
+        return _parse_markdown_subsections(content)
+
+    import re
+    subsections = []
+    for sub in framework_sub_sections:
+        if not isinstance(sub, dict):
+            continue
+        sub_name = sub.get("name", "")
+        if not sub_name:
+            continue
+        matched_content = _match_content_to_sub_section(content, sub)
+        sub_id = "sub_" + re.sub(r'[^\w\u4e00-\u9fff]+', '_', sub_name).strip('_').lower()[:30]
+        points = sub.get("points", []) or []
+        subsection_entry = {"id": sub_id, "title": sub_name, "content": matched_content, "points": points}
+        subsections.append(subsection_entry)
+
+    if not subsections:
+        return _parse_markdown_subsections(content)
+
     return subsections

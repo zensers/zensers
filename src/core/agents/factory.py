@@ -192,7 +192,7 @@ class DynamicAgentFactory(AgentFactory):
         Returns:
             (normalized_required, normalized_optional) tuple
         """
-        registered_names = set(self._skill_registry._skills.keys())
+        registered_names = set(self._skill_registry._skills.keys()) | set(self._skill_registry._factories.keys())
         unknown_names: List[str] = []
 
         def _normalize(skills: List[str]) -> List[str]:

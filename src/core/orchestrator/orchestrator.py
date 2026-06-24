@@ -272,21 +272,22 @@ class ResearchOrchestrator:
             registered = skill_registry.register_core_skills()
             lc_count = skill_registry.auto_discover_langchain_tools()
 
-            # Register professional analysis Skills
+            # Register professional analysis Skills via factory (lazy loading)
             try:
                 from src.skills.analysis import MarketAnalysisSkill, DataAnalysisSkill
                 from src.skills.analysis import StockDataSkill, StockAnalysisSkill
                 from src.skills.analysis import PolicyAnalysisSkill, TechTrendSkill, RiskAnalysisSkill
-                skill_registry._skills["market_analysis"] = MarketAnalysisSkill(
-                )
-                skill_registry._skills["data_analysis"] = DataAnalysisSkill()
-                skill_registry._skills["stock_data"] = StockDataSkill()
-                skill_registry._skills["stock_analysis"] = StockAnalysisSkill()
-                skill_registry._skills["policy_analysis"] = PolicyAnalysisSkill(
-                )
-                skill_registry._skills["tech_trend"] = TechTrendSkill()
-                skill_registry._skills["risk_analysis"] = RiskAnalysisSkill()
-                logger.info("Orchestrator: registered 7 professional analysis Skills")
+                for name, cls in [
+                    ("market_analysis", MarketAnalysisSkill),
+                    ("data_analysis", DataAnalysisSkill),
+                    ("stock_data", StockDataSkill),
+                    ("stock_analysis", StockAnalysisSkill),
+                    ("policy_analysis", PolicyAnalysisSkill),
+                    ("tech_trend", TechTrendSkill),
+                    ("risk_analysis", RiskAnalysisSkill),
+                ]:
+                    skill_registry.register_factory(name, cls)
+                logger.info("Orchestrator: registered 7 professional analysis Skills via factory")
             except Exception as e:
                 logger.warning(f"Orchestrator: failed to register analysis Skills: {e}")
 
@@ -3225,10 +3226,15 @@ class ResearchOrchestrator:
                 # User provided custom aspects (own framework, not from template).
                 aspects = user_input["aspects"]
                 template_id = user_input.get("template_id", "")
-                section_details = [
-                    {"id": a.lower().replace(" ", "_"), "name": a, "content": a}
-                    for a in aspects
-                ]
+                if user_input.get("section_details"):
+                    section_details = user_input["section_details"]
+                elif user_input.get("sections_tree"):
+                    section_details = self._build_section_details_from_tree(user_input["sections_tree"])
+                else:
+                    section_details = [
+                        {"id": a.lower().replace(" ", "_"), "name": a, "content": a}
+                        for a in aspects
+                    ]
             elif user_input.get("selected_sections"):
                 # User selected sections from a template
                 template_id = user_input.get(
@@ -3321,6 +3327,26 @@ class ResearchOrchestrator:
             output_type=OutputType.INDUSTRY_REPORT,
             template_id="industry_report_standard",
         )
+
+    def _build_section_details_from_tree(self, sections_tree):
+        """Build section_details with sub_sections from sections_tree"""
+        if not sections_tree:
+            return []
+        details = []
+        for st in sections_tree:
+            name = st.get("name", "")
+            sub_sections = st.get("sub_sections", [])
+            detail = {
+                "id": name.lower().replace(" ", "_"),
+                "name": name,
+                "content": name,
+                "sub_sections": [
+                    {"name": sub.get("name", ""), "points": sub.get("points", [])}
+                    for sub in sub_sections if sub.get("name")
+                ]
+            }
+            details.append(detail)
+        return details
 
     def _load_template_sections(
             self, template_id: str) -> List[Dict[str, Any]]:

@@ -32,6 +32,7 @@ import time
 import traceback
 import shutil
 from datetime import datetime
+from src.core.orchestrator.execution.task_utils import safe_create_task
 from pathlib import Path
 from typing import Any
 from src.core.adjustment.cascade_update_analyzer import CascadeUpdateAnalyzer
@@ -168,6 +169,9 @@ class ConversationToolSet:
 class ResearchAPI:
     """ResearchAPI"""
 
+    _background_tasks: dict = {}
+    _background_task_gen: dict = {}
+
     _JSON_OUTPUT_SCHEMA = """Output MUST be a JSON object with these fields:
 {
   "message": "your response to the user (REQUIRED)",
@@ -175,6 +179,7 @@ class ResearchAPI:
   "topic": "identified research topic or null",
   "directions": ["direction1", "direction2"],
   "framework_sections": ["section1", "section2"],
+  "framework_tree": [{"name": "section1", "sub_sections": [{"name": "sub1", "points": ["point1"]}]}],
   "clarification_questions": ["q1"],
   "suggestions": ["suggestion text"],
   "inject_ops": [{"op": "add_section", "section_name": "..."}],
@@ -183,7 +188,8 @@ class ResearchAPI:
   "aspects": ["section names for revision"],
   "revision_type": "section" | "full",
   "tool_call": {"name": "tool_name", "arguments": {}} or null
-}"""
+}
+RULE: When action="enter_framework", if the topic has natural multi-level structure (e.g., industry segments, regional breakdowns, product categories), prefer using "framework_tree" instead of only "framework_sections". Simple topics can use "framework_sections" alone."""
 
     def __init__(self, orchestrator=None, preview_generator=None, use_intelligent_routing=True, knowledge_manager=None):
         """_knowledge_manager"""
@@ -207,8 +213,6 @@ class ResearchAPI:
         self._pending_clarifications = {}
         self._clarification_responses = {}
         self._loop_cancel_flags = {}
-        self._background_tasks = {}
-        self._background_task_gen = {}
         self._dream_mode_running = False
 
     def _get_session_lock(self, session_id):
@@ -362,7 +366,7 @@ class ResearchAPI:
         is_actually_running = bool(research_result.get('status') not in ('completed', 'cancelled', 'error')) if research_result else has_executor_task
         cm = get_cancel_manager()
 
-        if research_result and research_result.get('status') == 'completed':
+        if research_result and research_result.get('status') in ('completed', 'completed_with_warnings'):
             session['mode'] = 'chat'
             logger.info(f"Research completed, entering chat mode for {session_id}")
             return await self._handle_chat_mode(session_id, user_input)
@@ -397,6 +401,9 @@ class ResearchAPI:
                 fw_sections = conv_result.get('framework_sections')
                 if fw_sections and isinstance(fw_sections, list) and len(fw_sections) > 0:
                     context['_suggested_sections'] = fw_sections
+                fw_tree = conv_result.get('framework_tree')
+                if fw_tree and isinstance(fw_tree, list) and len(fw_tree) > 0:
+                    context['_framework_tree'] = fw_tree
                 session['research_context'] = context
                 return await self._enter_framework_mode(session_id, user_input)
             if action == 'regenerate_report':
@@ -451,6 +458,10 @@ class ResearchAPI:
             if fw_sections and isinstance(fw_sections, list) and len(fw_sections) > 0:
                 context['_suggested_sections'] = fw_sections
                 logger.info(f"[{session_id}] LLM suggested {len(fw_sections)} sections: {fw_sections}")
+            fw_tree = conv_result.get('framework_tree')
+            if fw_tree and isinstance(fw_tree, list) and len(fw_tree) > 0:
+                context['_framework_tree'] = fw_tree
+                logger.info(f"[{session_id}] LLM provided framework_tree with {len(fw_tree)} sections")
             session['research_context'] = context
             return await self._enter_framework_mode(session_id, user_input)
 
@@ -623,7 +634,11 @@ class ResearchAPI:
             if fw_sections and isinstance(fw_sections, list) and len(fw_sections) > 0:
                 context['_suggested_sections'] = fw_sections
                 logger.info(f"[{session_id}] LLM suggested {len(fw_sections)} sections from conversation: {fw_sections}")
-                session['research_context'] = context
+            fw_tree = conv_result.get('framework_tree')
+            if fw_tree and isinstance(fw_tree, list) and len(fw_tree) > 0:
+                context['_framework_tree'] = fw_tree
+                logger.info(f"[{session_id}] LLM provided framework_tree with {len(fw_tree)} sections from conversation")
+            session['research_context'] = context
             return await self._enter_framework_mode(session_id, user_input)
         if action == 'start_execution':
             logger.info(f"LLM returned legacy start_execution, redirecting to framework: {session_id}")
@@ -700,7 +715,7 @@ class ResearchAPI:
 
     def _build_dialogue_context(self, conversation_state):
         """Build dialogue phase guidance (without intent state injection)"""
-        state_guidance = {ConversationState.UNDERSTANDING: '## Current Dialogue Phase: Understanding\nFocus on understanding the user\'s research need.\n- If the request is vague, ask 1-2 targeted questions.\n- Do NOT propose a research framework yet.\n', ConversationState.CLARIFYING: '## Current Dialogue Phase: Clarifying\nThe topic is identified but details may be missing.\n- Ask focused questions about specific gaps. Max 2 per turn.\n- If enough information, you may propose a framework.\n', ConversationState.FRAMEWORK_CONFIRM: '## Current Dialogue Phase: Framework Confirmation\nRequirements are clear. Propose a research framework.\n- Use action="enter_framework" with framework_sections.\n', ConversationState.EXECUTING: '## Current Dialogue Phase: Research Executing\nResearch is actively running with professional agents working.\nCRITICAL RULES for action selection:\n- Default action: "continue_chat" — for confirmations, greetings, simple questions, status queries.\n- "inject_requirement" — ONLY when user clearly asks to add/remove/supplement sections.\n- "modify_research" — ONLY when user EXPLICITLY uses words like 修改/调整/修订/adjust/modify. Do NOT use this for vague suggestions.\n- "enter_framework" — ONLY when user EXPLICITLY uses words like 重新规划/重新开始/换个方向/restart/redesign. NEVER use this for simple messages like "继续" or "好的".\n- When in doubt, use "continue_chat" with a brief reassuring message.\n', ConversationState.PAUSED: '## Current Dialogue Phase: Research Paused\nResearch was interrupted. Cached data available.\n- Resume → resume_research; Modify → modify_research; Chat → continue_chat.\n', ConversationState.PREVIEWING: '## Current Dialogue Phase: Report Preview\nReport is being previewed.\n- Handle user feedback on the report.\n'}
+        state_guidance = {ConversationState.UNDERSTANDING: '## Current Dialogue Phase: Understanding\nFocus on understanding the user\'s research need.\n- If the request is vague, ask 1-2 targeted questions.\n- Do NOT propose a research framework yet.\n', ConversationState.CLARIFYING: '## Current Dialogue Phase: Clarifying\nThe topic is identified but details may be missing.\n- Ask focused questions about specific gaps. Max 2 per turn.\n- If enough information, you may propose a framework.\n', ConversationState.FRAMEWORK_CONFIRM: '## Current Dialogue Phase: Framework Confirmation\nRequirements are clear. Propose a research framework.\n- Use action="enter_framework" with framework_sections.\n- If the topic has natural sub-structure (e.g., industry segments, regional breakdowns), also output "framework_tree" with hierarchical section→sub_section→points structure.\n', ConversationState.EXECUTING: '## Current Dialogue Phase: Research Executing\nResearch is actively running with professional agents working.\nCRITICAL RULES for action selection:\n- Default action: "continue_chat" — for confirmations, greetings, simple questions, status queries.\n- "inject_requirement" — ONLY when user clearly asks to add/remove/supplement sections.\n- "modify_research" — ONLY when user EXPLICITLY uses words like 修改/调整/修订/adjust/modify. Do NOT use this for vague suggestions.\n- "enter_framework" — ONLY when user EXPLICITLY uses words like 重新规划/重新开始/换个方向/restart/redesign. NEVER use this for simple messages like "继续" or "好的".\n- When in doubt, use "continue_chat" with a brief reassuring message.\n', ConversationState.PAUSED: '## Current Dialogue Phase: Research Paused\nResearch was interrupted. Cached data available.\n- Resume → resume_research; Modify → modify_research; Chat → continue_chat.\n', ConversationState.PREVIEWING: '## Current Dialogue Phase: Report Preview\nReport is being previewed.\n- Handle user feedback on the report.\n'}
         guidance = state_guidance.get(conversation_state, '')
         return f"""\n{guidance}\n"""
 
@@ -834,7 +849,7 @@ class ResearchAPI:
         if context.get('directions'):
             context_summary += f"User interested directions: {', '.join(context['directions'])}\n"
         if context.get('topic') and context.get('framework'):
-            context_summary += 'NOTE: If you decide to use action="enter_framework", you MUST also output "framework_sections" — an array of 4-8 section names derived from the topic and conversation.\n'
+            context_summary += 'NOTE: If you decide to use action="enter_framework", you MUST also output "framework_sections" — an array of 4-8 section names derived from the topic and conversation.\nIf the topic has clear sub-structure (e.g., industry segments, regional breakdowns, product categories), ALSO output "framework_tree" — a hierarchical array where each section contains "name" and optional "sub_sections" (each with "name" and "points"). Prefer framework_tree over flat framework_sections when multi-level structure is natural.\n'
         tool_defs = self._tool_set.TOOL_DEFINITIONS
         tools_section = ''
         if tool_defs:
@@ -901,7 +916,7 @@ class ResearchAPI:
                 user_prompt = self._build_followup_prompt(accumulated_context, tool_history, user_input, history_text, dialogue_context)
             try:
                 from src.config.settings import settings as app_settings
-                _execute_kwargs = dict(prompt=user_prompt, system_prompt=system_prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=2048)
+                _execute_kwargs = dict(prompt=user_prompt, system_prompt=system_prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens))
                 if temperature is not None:
                     _execute_kwargs['temperature'] = temperature
                 result = await asyncio.wait_for(
@@ -983,7 +998,7 @@ class ResearchAPI:
     def _build_initial_prompt(self, current_date, current_time, current_year, history_text, context_summary, dialogue_context, paused_context, sections_context, post_research_hint, tools_section, domain_guard, user_input, research_running_ctx):
         """Build the first-turn prompt for the multi-tool loop"""
         ctx = context_summary or '(Research topic not yet confirmed, need to guide user to express needs)'
-        return f"""{current_date} {current_time} (This is the REAL current date — use it to determine what "latest" means. Do NOT call get_current_datetime.)\n\nCurrent conversation context:\n{history_text}\n\nExisting research information:\ncontext_summary{'(Research topic not yet confirmed, need to guide user to express needs)'}\n{dialogue_context}\n{paused_context}\n{sections_context}\n{post_research_hint}\n{research_running_ctx}\nLatest user message: {user_input}\n{tools_section}\n{domain_guard}\n## LANGUAGE RULE — CRITICAL (MUST FOLLOW BEFORE ANYTHING ELSE)\n\n**You MUST respond in the SAME language as the user's latest message.**\n- User writes in Chinese → your `message` field MUST be entirely in Chinese\n- User writes in English → your `message` field MUST be entirely in English\n- All data, quotes, and search results MUST be translated into the user's language\n- Never output mixed languages. Check your entire response before writing it.\n- This rule is ABSOLUTE. It cannot be overridden by any other instruction.\n\n## DATA FRESHNESS RULES (CRITICAL)\n\n**Today is {current_date}. The current year is {current_year}.**\n\nYou MUST follow these rules when generating search queries:\n\n1. **DO NOT hardcode years in search queries** — Unless the user explicitly says "2022 data" or "last year's numbers", do NOT add year constraints like "2023" or "2024" to your search query. Just search for the topic without year qualifiers. The search engine will return the most recent results.\n\n2. **Always get the latest data** — When the user asks about financial data, market size, sales figures, or any time-sensitive information, search for "latest" or "recent" data. Do NOT assume any specific year.\n\n3. **Example correct queries:**\n   - User: "比亚迪营收多少" → Query: `比亚迪 营收 净利润 最新财务数据` (NOT "比亚迪 2023 年营收")\n   - User: "新能源汽车市场多大" → Query: `新能源汽车 市场规模 最新` (NOT "2024 年新能源汽车市场规模")\n   - User: "特斯拉2022年销量" → Query: `特斯拉 2022 年 销量` (user specified year, include it)\n\n4. **When in doubt, prefer recency** — If search results contain both old and new information, prioritize the most recent. Add "最新" (latest) or sort parameters to your query.\n\n## Action Selection Rules — Task Complexity Analysis\n\nYou are the decision maker for task routing. Analyze the user's request and the full conversation context:\n\n**`"action": "continue_chat"` — DEFAULT choice for:**\n- Simple queries: "what's the best selling car", "find recent news about X", "what's the price of Y"\n- Data lookups that can be answered with a search\n- Casual conversation, clarifying needs, providing information\n- User just wants information, not a formal research report\n\n**`"action": "enter_framework"` — Trigger ONLY when user EXPLICITLY requests a formal research framework:\n\nA. Explicit research framework request:\n- User explicitly asks for a structured research report or formal analysis framework\n- "帮我做一份市场研究报告", "我需要一份行业分析报告"\n- "你形成一个详细的分析框架", "你形成一个框架", "形成框架" (user asks you to build a framework)\n- User wants to design, confirm, or redesign the research framework\n\nB. Framework review/confirmation request:\n- User explicitly asks to see or confirm the research framework/plan\n- "让我看看研究框架"、"框架确认"、"我必须明确研究框架"\n- "列出研究章节"、"研究计划确认"、"先明确框架"\n\nC. Research scope adjustment (non-execution phase only):\n- User proposes changes to the research scope/directions\n- "把XX加到研究里"、"去掉XX部分"、"不只XX，还要看YY"\n\n**⚠️ MANDATORY output when enter_framework**: You MUST ALSO output `framework_sections` (array of 4-8 section name strings). Derive them from the topic and conversation history. Example: ["市场规模分析", "竞争格局", "政策环境", "产业链分析"]\n**⚠️ framework_sections quality check**: Before outputting, review your sections: (1) NO duplicate or semantically overlapping sections — each must cover a distinct dimension; (2) sections must collectively form a coherent, logical research framework for the topic\n**⚠️ Priority rule**: If research is currently running (session.mode == "research"), scope adjustment inputs MUST trigger `modify_research` instead. `enter_framework` applies only in chat/framework modes.\n**⚠️ Do NOT trigger `enter_framework` for**: simple multi-dimensional queries, supplementary information during research, casual questions about multiple topics. These should use `continue_chat` or `modify_research`.\n\n**`"action": "regenerate_report"` — When paused research context is present and user wants to:\n- Regenerate the report from cached data\n- Continue the interrupted research\n- Retry after fixing an error\nThis skips data collection and re-uses cached results.\n\n**`"action": "revise_report"` — When a completed report exists and user wants to modify it:\nALL conditions must be met:\n1. A completed research report exists (research_result is present in session)\n2. User mentions modifying, updating, adding, or changing report content\n3. User is discussing the existing report, not requesting new research\nOutput fields:\n- `aspects`: list of section names (use exact names from the report sections list if available)\n- `adjustment`: the user's original request text (passed to the revision engine)\n- `revision_type`: "section" (partial) or "full" (full redo)\n\n**`"action": "modify_research"` — Only when user EXPLICITLY requests to pause or redesign:\n- "先停一下" / "暂停" / "我要重新设计" → modify_research\n- For supplementary inputs during research, prefer `inject_requirement` instead.\nOutput fields:\n- `modifications.add_aspects`: sections to add\n- `modifications.remove_aspects`: sections to remove\n- `modifications.modify_aspects`: {{old_name: new_name}} mapping\n- `adjustment`: the user's original request text\n\n**`"action": "resume_research"` — When research is paused and user wants to continue:\n- User says "继续研究", "恢复", "resume", "继续执行" or similar\n- Only valid when session has paused research context\n- This will resume the research from cached progress\n\n**`"action": "inject_requirement"` — During active research, inject requirements WITHOUT pausing:\n- Use this when user adds dimensions, supplements sections, or cancels sections — without asking to pause\n- DEFAULT action for requirement changes during research. Only use `modify_research` if user EXPLICITLY says "暂停" or "停一下"\n- Output `inject_ops`: array of operations:\n  - {{"op": "add_section", "section_name": "竞品分析"}} — add new section\n  - {{"op": "cancel_section", "section_name": "政策分析"}} — cancel section\n  - {{"op": "merge_to_section", "section_name": "市场规模", "requirement": "补充细分赛道数据"}} — merge requirement into section\n\n**Examples:**\n- "重新生成报告" → regenerate_report\n- "继续完成研究" → regenerate_report\n- "把报告生成出来" → regenerate_report\n- "修改第三节，增加市场规模数据" → revise_report\n- "第三部分写得再详细一些" → revise_report\n- "增加一个风险分析章节" → inject_requirement (运行时补充，不暂停研究)\n- "先停一下，我想改需求" → modify_research (明确要求暂停)\n- "我不需要某个章节了" → inject_requirement (op=cancel_section)\n\n**Examples:**\n- "比亚迪哪个车型销量最大" → continue_chat (simple data query, can answer with search)\n- "帮我分析一下新能源汽车行业的竞争格局和未来趋势" → enter_framework (A. multi-dimensional research)\n- "我必须明确研究框架" → **enter_framework (B. framework confirmation)** ← key fix\n- "让我看看你打算研究哪些方面" → enter_framework (B. framework review)\n- "把轩逸朗逸卡罗拉的销量对比加进去" → enter_framework (C. scope adjustment, chat mode) / modify_research (if research running)\n- "我不需要看框架了，直接开始" → continue_chat (declining framework, not a confirmation request)\n- "之前的框架没问题" → continue_chat (in chat mode) or confirm (in framework mode)\n- User says "非常好" or "ok" → continue_chat (just acknowledgment, not research request)\n\n**IMPORTANT**: DO NOT escalate simple data queries to research. Use continue_chat for single-point questions.\n\nPlease output JSON response based on the role."""
+        return f"""{current_date} {current_time} (This is the REAL current date — use it to determine what "latest" means. Do NOT call get_current_datetime.)\n\nCurrent conversation context:\n{history_text}\n\nExisting research information:\n{ctx}\n{dialogue_context}\n{paused_context}\n{sections_context}\n{post_research_hint}\n{research_running_ctx}\nLatest user message: {user_input}\n{tools_section}\n{domain_guard}\n## LANGUAGE RULE — CRITICAL (MUST FOLLOW BEFORE ANYTHING ELSE)\n\n**You MUST respond in the SAME language as the user's latest message.**\n- User writes in Chinese → your `message` field MUST be entirely in Chinese\n- User writes in English → your `message` field MUST be entirely in English\n- All data, quotes, and search results MUST be translated into the user's language\n- Never output mixed languages. Check your entire response before writing it.\n- This rule is ABSOLUTE. It cannot be overridden by any other instruction.\n\n## DATA FRESHNESS RULES (CRITICAL)\n\n**Today is {current_date}. The current year is {current_year}.**\n\nYou MUST follow these rules when generating search queries:\n\n1. **DO NOT hardcode years in search queries** — Unless the user explicitly says "2022 data" or "last year's numbers", do NOT add year constraints like "2023" or "2024" to your search query. Just search for the topic without year qualifiers. The search engine will return the most recent results.\n\n2. **Always get the latest data** — When the user asks about financial data, market size, sales figures, or any time-sensitive information, search for "latest" or "recent" data. Do NOT assume any specific year.\n\n3. **Example correct queries:**\n   - User: "比亚迪营收多少" → Query: `比亚迪 营收 净利润 最新财务数据` (NOT "比亚迪 2023 年营收")\n   - User: "新能源汽车市场多大" → Query: `新能源汽车 市场规模 最新` (NOT "2024 年新能源汽车市场规模")\n   - User: "特斯拉2022年销量" → Query: `特斯拉 2022 年 销量` (user specified year, include it)\n\n4. **When in doubt, prefer recency** — If search results contain both old and new information, prioritize the most recent. Add "最新" (latest) or sort parameters to your query.\n\n## Action Selection Rules — Task Complexity Analysis\n\nYou are the decision maker for task routing. Analyze the user's request and the full conversation context:\n\n**`"action": "continue_chat"` — DEFAULT choice for:**\n- Simple queries: "what's the best selling car", "find recent news about X", "what's the price of Y"\n- Data lookups that can be answered with a search\n- Casual conversation, clarifying needs, providing information\n- User just wants information, not a formal research report\n\n**`"action": "enter_framework"` — Trigger ONLY when user EXPLICITLY requests a formal research framework:\n\nA. Explicit research framework request:\n- User explicitly asks for a structured research report or formal analysis framework\n- "帮我做一份市场研究报告", "我需要一份行业分析报告"\n- "你形成一个详细的分析框架", "你形成一个框架", "形成框架" (user asks you to build a framework)\n- User wants to design, confirm, or redesign the research framework\n\nB. Framework review/confirmation request:\n- User explicitly asks to see or confirm the research framework/plan\n- "让我看看研究框架"、"框架确认"、"我必须明确研究框架"\n- "列出研究章节"、"研究计划确认"、"先明确框架"\n\nC. Research scope adjustment (non-execution phase only):\n- User proposes changes to the research scope/directions\n- "把XX加到研究里"、"去掉XX部分"、"不只XX，还要看YY"\n\n**⚠️ MANDATORY output when enter_framework**: You MUST ALSO output `framework_sections` (array of 4-8 section name strings). Derive them from the topic and conversation history. Example: ["市场规模分析", "竞争格局", "政策环境", "产业链分析"]\n**⚠️ framework_sections quality check**: Before outputting, review your sections: (1) NO duplicate or semantically overlapping sections — each must cover a distinct dimension; (2) sections must collectively form a coherent, logical research framework for the topic\n**⚠️ Priority rule**: If research is currently running (session.mode == "research"), scope adjustment inputs MUST trigger `modify_research` instead. `enter_framework` applies only in chat/framework modes.\n**⚠️ Do NOT trigger `enter_framework` for**: simple multi-dimensional queries, supplementary information during research, casual questions about multiple topics. These should use `continue_chat` or `modify_research`.\n\n**`"action": "regenerate_report"` — When paused research context is present and user wants to:\n- Regenerate the report from cached data\n- Continue the interrupted research\n- Retry after fixing an error\nThis skips data collection and re-uses cached results.\n\n**`"action": "revise_report"` — When a completed report exists and user wants to modify it:\nALL conditions must be met:\n1. A completed research report exists (research_result is present in session)\n2. User mentions modifying, updating, adding, or changing report content\n3. User is discussing the existing report, not requesting new research\nOutput fields:\n- `aspects`: list of section names (use exact names from the report sections list if available)\n- `adjustment`: the user's original request text (passed to the revision engine)\n- `revision_type`: "section" (partial) or "full" (full redo)\n\n**`"action": "modify_research"` — Only when user EXPLICITLY requests to pause or redesign:\n- "先停一下" / "暂停" / "我要重新设计" → modify_research\n- For supplementary inputs during research, prefer `inject_requirement` instead.\nOutput fields:\n- `modifications.add_aspects`: sections to add\n- `modifications.remove_aspects`: sections to remove\n- `modifications.modify_aspects`: {{old_name: new_name}} mapping\n- `adjustment`: the user's original request text\n\n**`"action": "resume_research"` — When research is paused and user wants to continue:\n- User says "继续研究", "恢复", "resume", "继续执行" or similar\n- Only valid when session has paused research context\n- This will resume the research from cached progress\n\n**`"action": "inject_requirement"` — During active research, inject requirements WITHOUT pausing:\n- Use this when user adds dimensions, supplements sections, or cancels sections — without asking to pause\n- DEFAULT action for requirement changes during research. Only use `modify_research` if user EXPLICITLY says "暂停" or "停一下"\n- Output `inject_ops`: array of operations:\n  - {{"op": "add_section", "section_name": "竞品分析"}} — add new section\n  - {{"op": "cancel_section", "section_name": "政策分析"}} — cancel section\n  - {{"op": "merge_to_section", "section_name": "市场规模", "requirement": "补充细分赛道数据"}} — merge requirement into section\n\n**Examples:**\n- "重新生成报告" → regenerate_report\n- "继续完成研究" → regenerate_report\n- "把报告生成出来" → regenerate_report\n- "修改第三节，增加市场规模数据" → revise_report\n- "第三部分写得再详细一些" → revise_report\n- "增加一个风险分析章节" → inject_requirement (运行时补充，不暂停研究)\n- "先停一下，我想改需求" → modify_research (明确要求暂停)\n- "我不需要某个章节了" → inject_requirement (op=cancel_section)\n\n**Examples:**\n- "比亚迪哪个车型销量最大" → continue_chat (simple data query, can answer with search)\n- "帮我分析一下新能源汽车行业的竞争格局和未来趋势" → enter_framework (A. multi-dimensional research)\n- "我必须明确研究框架" → **enter_framework (B. framework confirmation)** ← key fix\n- "让我看看你打算研究哪些方面" → enter_framework (B. framework review)\n- "把轩逸朗逸卡罗拉的销量对比加进去" → enter_framework (C. scope adjustment, chat mode) / modify_research (if research running)\n- "我不需要看框架了，直接开始" → continue_chat (declining framework, not a confirmation request)\n- "之前的框架没问题" → continue_chat (in chat mode) or confirm (in framework mode)\n- User says "非常好" or "ok" → continue_chat (just acknowledgment, not research request)\n\n**IMPORTANT**: DO NOT escalate simple data queries to research. Use continue_chat for single-point questions.\n\nPlease output JSON response based on the role."""
 
     def _build_followup_prompt(self, accumulated_context, tool_history, original_input, history_text, dialogue_context):
         """Build follow-turn prompt with tool execution results"""
@@ -1022,10 +1037,10 @@ class ResearchAPI:
         try:
             from src.config.settings import settings as app_settings
             result = await asyncio.wait_for(
-                llm_skill.execute(prompt=retry_prompt, system_prompt=system_prompt,
-                                  model=llm_config.get('model', app_settings.llm.model),
-                                  max_tokens=2048, temperature=0.1),
-                timeout=30)
+                    llm_skill.execute(prompt=retry_prompt, system_prompt=system_prompt,
+                                      model=llm_config.get('model', app_settings.llm.model),
+                                      max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens), temperature=0.1),
+                    timeout=60)
             if not result.get('success'):
                 return None
             content = result.get('content', '')
@@ -1039,7 +1054,7 @@ class ResearchAPI:
 
     def _build_response(self, parsed, tool_results, note):
         """Build standardized response dict from parsed LLM output"""
-        response = {'status': 'done', 'message': parsed.get('message', ''), 'action': parsed.get('action', 'continue_chat'), 'topic': parsed.get('topic'), 'directions': parsed.get('directions', []), 'framework_sections': parsed.get('framework_sections'), 'clarification_questions': parsed.get('clarification_questions', []), 'identified_aspects': parsed.get('identified_aspects', []), 'is_composite': parsed.get('is_composite', False), 'suggestions': parsed.get('suggestions', []), 'inject_ops': parsed.get('inject_ops', []), 'complexity': parsed.get('complexity', 'single'), 'research_types': parsed.get('research_types', []), 'hidden_requirements': parsed.get('hidden_requirements', [])}
+        response = {'status': 'done', 'message': parsed.get('message', ''), 'action': parsed.get('action', 'continue_chat'), 'topic': parsed.get('topic'), 'directions': parsed.get('directions', []), 'framework_sections': parsed.get('framework_sections'), 'framework_tree': parsed.get('framework_tree'), 'clarification_questions': parsed.get('clarification_questions', []), 'identified_aspects': parsed.get('identified_aspects', []), 'is_composite': parsed.get('is_composite', False), 'suggestions': parsed.get('suggestions', []), 'inject_ops': parsed.get('inject_ops', []), 'complexity': parsed.get('complexity', 'single'), 'research_types': parsed.get('research_types', []), 'hidden_requirements': parsed.get('hidden_requirements', [])}
         if note:
             response['_note'] = note
         return response
@@ -1108,7 +1123,7 @@ class ResearchAPI:
             from src.config.settings import settings as app_settings
             model = llm_config.get('model', app_settings.llm.model)
             result = await asyncio.wait_for(
-                llm_skill.execute(prompt=synthesis_prompt, system_prompt=system_prompt, model=model, max_tokens=2048),
+                llm_skill.execute(prompt=synthesis_prompt, system_prompt=system_prompt, model=model, max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens)),
                 timeout=60)
         except asyncio.CancelledError:
             logger.info(f"Background task cancelled for {session_id}")
@@ -1187,8 +1202,19 @@ class ResearchAPI:
         topic = context.get('topic', '')
         lang = self._get_lang(session)
         sections_str = '\n'.join(f"- {s}" for s in sections) if sections else '(no sections)'
+        sections_tree = framework.get('sections_tree')
+        tree_str = ''
+        if sections_tree and isinstance(sections_tree, list) and len(sections_tree) > 0:
+            tree_lines = []
+            for i, sec in enumerate(sections_tree, 1):
+                tree_lines.append(f"{i}. {sec.get('name', '')}")
+                for j, sub in enumerate(sec.get('sub_sections', []), 1):
+                    tree_lines.append(f"   {i}.{j} {sub.get('name', '')}")
+                    for k, pt in enumerate(sub.get('points', []), 1):
+                        tree_lines.append(f"      {i}.{j}.{k} {pt}")
+            tree_str = '\nCurrent multi-level structure:\n' + '\n'.join(tree_lines)
         user_lang = 'Chinese' if lang == 'zh' else 'English'
-        prompt = f"""You are helping the user refine their research framework.\n\nCurrent research topic: {topic}\nCurrent framework sections:\n{sections_str}\n\nUser's request: {user_input}\n\n## Rules\n\n1. If the user confirms (e.g., '确认', '没问题', 'ok', '好的', '开始吧', 'looks good', 'proceed'), set action="confirm".\n2. If the user wants ANY change, set action="modify" with COMPLETE new section list in `new_sections`.\n3. If the user wants to cancel, set action="cancel".\n4. When action="modify", `new_sections` MUST be a non-empty array.\n5. Remove duplicate or semantically overlapping sections.\n6. Your `message` MUST be in {user_lang}.\n\nOutput JSON only:\n{{"action": "confirm" | "modify" | "cancel", "message": "...", "new_sections": [...]}}\n"""
+        prompt = f"""You are helping the user refine their research framework.\n\nCurrent research topic: {topic}\nCurrent framework sections:\n{sections_str}{tree_str}\n\nUser's request: {user_input}\n\n## Rules\n\n1. If the user confirms (e.g., '确认', '没问题', 'ok', '好的', '开始吧', 'looks good', 'proceed'), set action="confirm".\n2. If the user wants ANY change, set action="modify" with COMPLETE new section list in `new_sections`.\n3. If the user wants to cancel, set action="cancel".\n4. When action="modify", `new_sections` MUST be a non-empty array.\n5. Remove duplicate or semantically overlapping sections.\n6. When modifying a multi-level framework, also provide `new_framework_tree` reflecting the updated structure.\n7. Your `message` MUST be in {user_lang}.\n\nOutput JSON only:\n{{"action": "confirm" | "modify" | "cancel", "message": "...", "new_sections": [...], "new_framework_tree": [{{"name": "...", "sub_sections": [{{"name": "...", "points": [...]}}]}}]}}\n"""
         try:
             from src.skills.llm_skill import LLMSkill
             llm_skill = LLMSkill()
@@ -1203,7 +1229,7 @@ class ResearchAPI:
             from src.config.settings import settings as app_settings
             llm_config = session.get('llm_config', {})
             result = await asyncio.wait_for(
-                llm_skill.execute(prompt=prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=1024),
+                llm_skill.execute(prompt=prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens)),
                 timeout=30)
         except Exception:
             return {'action': 'modify', 'message': "I understand you'd like to adjust the framework. Please tell me what changes you'd like to make.", 'new_sections': None}
@@ -1217,7 +1243,7 @@ class ResearchAPI:
             return {'action': 'modify', 'message': 'I see. How would you like to change the framework?', 'new_sections': None}
         try:
             parsed = json.loads(json_str)
-            return {'action': parsed.get('action', 'modify'), 'message': parsed.get('message', ''), 'new_sections': parsed.get('new_sections')}
+            return {'action': parsed.get('action', 'modify'), 'message': parsed.get('message', ''), 'new_sections': parsed.get('new_sections'), 'new_framework_tree': parsed.get('new_framework_tree')}
         except json.JSONDecodeError:
             return {'action': 'modify', 'message': content[:500], 'new_sections': None}
 
@@ -1254,8 +1280,25 @@ class ResearchAPI:
                 return self._framework_response(session_id, self._l('研究框架尚未完整定义，请先完成框架设置。', 'The research framework is not yet complete. Please finish setting it up first.', lang))
             return await self._start_execution(session_id)
         new_sections = conv_result.get('new_sections')
+        new_framework_tree = conv_result.get('new_framework_tree')
         if new_sections and isinstance(new_sections, list) and len(new_sections) > 0:
             new_framework = {'topic': topic, 'sections': new_sections, 'output_type': framework.get('output_type', 'industry_report'), 'depth': framework.get('depth', 'standard'), 'region': framework.get('region', 'China'), 'time_range': framework.get('time_range', 'Last 3 years')}
+            if new_framework_tree and isinstance(new_framework_tree, list) and len(new_framework_tree) > 0:
+                new_framework['sections_tree'] = new_framework_tree
+            elif framework.get('sections_tree'):
+                existing_tree = framework['sections_tree']
+                existing_flat = [s.get('name', '') for s in existing_tree if s.get('name')]
+                if set(new_sections) == set(existing_flat):
+                    new_framework['sections_tree'] = existing_tree
+                else:
+                    preserved_tree = []
+                    for new_sec in new_sections:
+                        matched = [s for s in existing_tree if s.get('name') == new_sec]
+                        if matched:
+                            preserved_tree.append(matched[0])
+                        else:
+                            preserved_tree.append({'name': new_sec, 'sub_sections': []})
+                    new_framework['sections_tree'] = preserved_tree
         else:
             new_framework = self._generate_research_framework(context)
         context['framework'] = new_framework
@@ -1285,7 +1328,12 @@ class ResearchAPI:
             return self._framework_response(session_id, self._l(f"研究框架已经准备好了：\n\n**研究主题**: {context.get('topic')}\n\n**研究框架**:\n{self._format_framework(existing_fw)}\n\n请确认是否满足需求。", f"The research framework is ready:\n\n**Research Topic**: {context.get('topic')}\n\n**Research Framework**:\n{self._format_framework(existing_fw)}\n\nPlease confirm if this meets your needs.", lang))
         suggested = context.get('_suggested_sections', [])
         directions = context.get('directions', [])
-        if suggested and directions:
+        fw_tree = context.get('_framework_tree')
+        if fw_tree and isinstance(fw_tree, list) and len(fw_tree) > 0:
+            all_sections = [s.get('name', '') for s in fw_tree if s.get('name')]
+            all_sections = [s for s in all_sections if s]
+            logger.info(f"[{session_id}] Using framework_tree: {len(all_sections)} sections derived from tree")
+        elif suggested and directions:
             all_sections = self._merge_sections_dedup(suggested, directions)
             logger.info(f"[{session_id}] Merged {len(suggested)} suggested + {len(directions)} directions = {len(all_sections)} sections (after dedup)")
         elif suggested:
@@ -1294,12 +1342,15 @@ class ResearchAPI:
             all_sections = directions
         if all_sections:
             framework = {'topic': context.get('topic', 'Research Report'), 'sections': all_sections, 'output_type': 'industry_report', 'depth': context.get('details', {}).get('depth', 'standard'), 'region': context.get('details', {}).get('region', 'China'), 'time_range': context.get('details', {}).get('time_range', 'Last 3 years')}
+            if fw_tree and isinstance(fw_tree, list) and len(fw_tree) > 0:
+                framework['sections_tree'] = fw_tree
             logger.info(f"[{session_id}] Framework derived from conversation: {len(all_sections)} sections")
         elif not directions:
             framework = self._generate_research_framework(context)
         else:
             framework = await self._build_framework_with_fallback(session_id, context)
         context.pop('_suggested_sections', None)
+        context.pop('_framework_tree', None)
         context['framework'] = framework
         session['research_context'] = context
         session['mode'] = 'framework'
@@ -1319,6 +1370,7 @@ class ResearchAPI:
         topic = context.get('topic', '')
         framework = context.get('framework', {})
         sections = framework.get('sections', [])
+        sections_tree = framework.get('sections_tree')
         if not topic:
             return {'session_id': session_id, 'error': 'No research topic specified', 'error_code': 'EMPTY_TOPIC', 'status': 'error'}
         if not sections:
@@ -1337,7 +1389,7 @@ class ResearchAPI:
             state_machine.transition(ConversationState.EXECUTING)
         session['mode'] = 'research'
         session['current_step'] = 6
-        final_plan = {'topic': topic, 'output_type': framework.get('output_type', 'industry_report'), 'aspects': sections, 'region': context.get('details', {}).get('region', 'China'), 'time_range': context.get('details', {}).get('time_range', 'Last 3 years'), 'framework': framework.get('depth', 'standard'), 'language': session.get('language', 'zh')}
+        final_plan = {'topic': topic, 'output_type': framework.get('output_type', 'industry_report'), 'aspects': sections, 'sections_tree': sections_tree, 'section_details': self._build_section_details_from_tree(sections_tree) if sections_tree else [], 'region': context.get('details', {}).get('region', 'China'), 'time_range': context.get('details', {}).get('time_range', 'Last 3 years'), 'framework': framework.get('depth', 'standard'), 'language': session.get('language', 'zh')}
         logger.info(f"Display plan generated: {len(sections)} sections")
         session['final_plan'] = final_plan
         from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
@@ -1348,7 +1400,7 @@ class ResearchAPI:
         from src.api.research_executor import get_executor
         from src.core.progress_streamer import ProgressStreamer
         executor = get_executor()
-        task = asyncio.create_task(executor.execute(session_id, final_plan, session_manager))
+        task = safe_create_task(executor.execute(session_id, final_plan, session_manager), name=f"exec_{session_id}")
         self._executor_tasks[session_id] = task
         task.add_done_callback(lambda _: self._executor_tasks.pop(session_id, None))
         ProgressStreamer.set_disconnect_callback(session_id, self._on_sse_disconnect)
@@ -1368,7 +1420,7 @@ class ResearchAPI:
         from src.api.research_executor import get_executor
         from src.core.progress_streamer import ProgressStreamer
         executor = get_executor()
-        task = asyncio.create_task(executor.execute(session_id, final_plan, session_manager))
+        task = safe_create_task(executor.execute(session_id, final_plan, session_manager), name=f"exec_route_{session_id}")
         self._executor_tasks[session_id] = task
         task.add_done_callback(lambda _: self._executor_tasks.pop(session_id, None))
         ProgressStreamer.set_disconnect_callback(session_id, self._on_sse_disconnect)
@@ -1541,7 +1593,7 @@ class ResearchAPI:
         try:
             from src.config.settings import settings as app_settings
             result = await asyncio.wait_for(
-                llm_skill.execute(prompt=prompt, model=app_settings.llm.model, max_tokens=512, temperature=0.3),
+                llm_skill.execute(prompt=prompt, model=app_settings.llm.model, max_tokens=app_settings.llm.max_tokens, temperature=0.3),
                 timeout=30)
         except (asyncio.TimeoutError, Exception) as e:
             logger.warning(f"Failed to infer framework sections: {e}")
@@ -1624,8 +1676,43 @@ class ResearchAPI:
             return ('行业概述', '市场规模与增长', '竞争格局', '产业链分析', '发展趋势', '政策环境', '投资机会与风险')
         return ('研究概述', '现状分析', '竞争格局', '关键驱动因素', '发展趋势', '风险与挑战')
 
+    def _build_section_details_from_tree(self, sections_tree):
+        """Build section_details with sub_sections from sections_tree for execution chain"""
+        if not sections_tree:
+            return []
+        details = []
+        for st in sections_tree:
+            name = st.get('name', '')
+            sub_sections = st.get('sub_sections', [])
+            detail = {
+                'id': name.lower().replace(' ', '_'),
+                'name': name,
+                'content': name,
+                'sub_sections': [
+                    {'name': sub.get('name', ''), 'points': sub.get('points', [])}
+                    for sub in sub_sections if sub.get('name')
+                ]
+            }
+            details.append(detail)
+        return details
+
     def _format_framework(self, framework):
-        """Format framework for display with optional section descriptions"""
+        """Format framework for display with optional section descriptions and multi-level tree"""
+        sections_tree = framework.get('sections_tree')
+        if sections_tree and isinstance(sections_tree, list) and len(sections_tree) > 0:
+            lines = []
+            for i, section in enumerate(sections_tree, 1):
+                name = section.get('name', '')
+                lines.append(f"{i}. {name}")
+                sub_sections = section.get('sub_sections', [])
+                for j, sub in enumerate(sub_sections, 1):
+                    sub_name = sub.get('name', '')
+                    lines.append(f"   {i}.{j} {sub_name}")
+                    points = sub.get('points', [])
+                    for k, point in enumerate(points, 1):
+                        lines.append(f"      {i}.{j}.{k} {point}")
+            return '\n'.join(lines)
+
         sections = framework.get('sections', [])
         raw_details = framework.get('section_details', {})
         section_details = {}
@@ -1645,7 +1732,6 @@ class ResearchAPI:
             else:
                 lines.append(f"{i}. {section}")
         return '\n'.join(lines)
-        s = s
 
     def _get_lang(self, session):
         """Get user language from session, defaulting to 'zh'"""
@@ -1795,7 +1881,7 @@ class ResearchAPI:
             session['final_plan'] = final_plan
             from src.api.research_executor import get_executor
             executor = get_executor()
-            asyncio.create_task(executor.execute(session_id, final_plan, session_manager))
+            safe_create_task(executor.execute(session_id, final_plan, session_manager), name=f"exec_step5_{session_id}")
             return {'session_id': session_id, 'task_id': session_id, 'step': 6, 'mode': 'research', 'status': 'running', 'message': 'Research task started', 'final_plan': final_plan, 'next_step': 'execute'}
         return {'error': 'Invalid step', 'error_code': 'INVALID_STEP'}
 
@@ -1838,7 +1924,7 @@ class ResearchAPI:
             session_manager.create(task_id, session_data)
             from src.api.research_executor import get_executor
             executor = get_executor()
-            task = asyncio.create_task(executor.execute(task_id, final_plan, session_manager))
+            task = safe_create_task(executor.execute(task_id, final_plan, session_manager), name=f"exec_quick_{task_id}")
             task.add_done_callback(lambda _: self._executor_tasks.pop(task_id, None))
             self._executor_tasks[task_id] = task
             return {'session_id': task_id, 'task_id': task_id, 'step': 6, 'mode': 'research', 'status': 'running',
@@ -1970,7 +2056,7 @@ class ResearchAPI:
         if not session:
             return {'error': 'Task not found', 'error_code': 'TASK_NOT_FOUND'}
         research_result = session.get('research_result', {})
-        if not research_result or research_result.get('status') != 'completed':
+        if not research_result or research_result.get('status') not in ('completed', 'completed_with_warnings'):
             return {'task_id': task_id, 'preview_url': None, 'html_content': None, 'preview_format': format, 'download_url': None}
         preview_path = PreviewStorage.path(task_id)
         if not preview_path.exists():
@@ -2064,7 +2150,7 @@ class ResearchAPI:
         from src.core.progress_streamer import ProgressStreamer
         cm = get_cancel_manager()
         rr = session.get('research_result')
-        if rr and rr.get('status') == 'completed':
+        if rr and rr.get('status') in ('completed', 'completed_with_warnings'):
             return {'task_id': task_id, 'status': 'completed', 'message': 'Research already completed while paused'}
         if session.get('status') == 'cancelled' or cm.is_cancelled(task_id):
             return {'task_id': task_id, 'status': 'cancelled', 'message': 'Research was cancelled, cannot resume'}
@@ -2129,7 +2215,7 @@ class ResearchAPI:
             except Exception as e:
                 logger.warning(f"State transition to EXECUTING failed during snapshot resume: {e}")
         executor = get_executor()
-        resume_task = asyncio.create_task(executor.execute(task_id, new_plan, session_manager))
+        resume_task = safe_create_task(executor.execute(task_id, new_plan, session_manager), name=f"resume_{task_id}")
         self._executor_tasks[task_id] = resume_task
         resume_task.add_done_callback(lambda _: self._executor_tasks.pop(task_id, None))
         from src.core.progress_streamer import ProgressStreamer
@@ -2353,8 +2439,9 @@ class ResearchAPI:
             if s2 and s2.get('research_result', {}).get('status') not in _terminal:
                 from src.core.orchestrator.execution.coordinator.cancel_manager import get_cancel_manager
                 get_cancel_manager().pause(task_id)
-        asyncio.create_task(_delayed_pause())
-        return
+        task = safe_create_task(_delayed_pause(), name=f"delayed_pause_{task_id}")
+        self._background_tasks[f"_sse_disconnect_{task_id}"] = task
+        task.add_done_callback(lambda _: self._background_tasks.pop(f"_sse_disconnect_{task_id}", None))
 
     async def modify_requirements(self, task_id, new_aspects, new_topic=None):
         """
@@ -2647,7 +2734,7 @@ class ResearchAPI:
             self._v2_lock_manager = ReportLockManager()
         notifier = ProgressNotifier()
         executor = RevisionExecutor(lock_manager=self._v2_lock_manager, notifier=notifier)
-        revision_task = asyncio.create_task(executor.handle_feedback(adjustment, adapter))
+        revision_task = safe_create_task(executor.handle_feedback(adjustment, adapter), name=f"rev_{session_id}")
         self._executor_tasks[f"""rev_{session_id}"""] = revision_task
         revision_task.add_done_callback(lambda _: self._executor_tasks.pop(f"rev_{session_id}", None))
         try:
@@ -2962,7 +3049,7 @@ class ResearchAPI:
         session['final_plan'] = new_plan
         from src.core.session_streamer import SessionStreamer
         SessionStreamer.push_agent_message(session_id, {'agent_id': 'modify', 'agent_name': 'Plan Modification', 'action': 'completed', 'content': f"""Plan updated. Added: {add_aspects}, Removed: {remove_aspects}. Resuming..."""})
-        task = asyncio.create_task(self._resume_after_modify(session_id, new_plan))
+        task = safe_create_task(self._resume_after_modify(session_id, new_plan), name=f"modify_{session_id}")
         self._executor_tasks[session_id] = task
         task.add_done_callback(lambda t: self._executor_tasks.pop(session_id, None))
         def _log_resume_error(t):
@@ -3152,11 +3239,11 @@ class ResearchAPI:
             async with quality_lock:
                 quality_data = session.get("quality_state", {})
                 if not quality_data:
-                    return
+                    return {"error": "No quality state", "error_code": "NO_QUALITY_STATE"}
                 
                 sections = session.get("research_result", {}).get("report", {}).get("sections", [])
                 if not sections:
-                    return
+                    return {"error": "No sections in report", "error_code": "NO_SECTIONS"}
                 
                 await self._recheck_quality(session, sections, push_preview=True)
                 

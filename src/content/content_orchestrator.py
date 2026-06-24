@@ -77,12 +77,15 @@ class ContentSection:
     type: SectionType = SectionType.BODY  # New: section type
     subsections: Optional[List["ContentSection"]] = None
     charts: Optional[List[Dict[str, Any]]] = None
+    points: Optional[List[str]] = None
     
     def __post_init__(self):
         if self.subsections is None:
             self.subsections = []
         if self.charts is None:
             self.charts = []
+        if self.points is None:
+            self.points = []
 
 
 class ContentOrchestrator:
@@ -326,12 +329,23 @@ class ContentOrchestrator:
             if section.subsections:
                 subsections_data = []
                 for j, subsec in enumerate(section.subsections):
-                    subsections_data.append({
+                    subsec_dict = {
                         "id": subsec.id,
                         "title": subsec.title,
-                        "content": self._content_to_html(subsec.content) if subsec.content else "",  # Phase 2: removed section_title parameter
+                        "content": self._content_to_html(subsec.content) if subsec.content else "",
                         "index": f"{i+1}.{j+1}",
-                    })
+                        "points": subsec.points or [],
+                    }
+                    if subsec.points:
+                        subsec_dict["point_sections"] = []
+                        for k, pt in enumerate(subsec.points):
+                            pt_content = ContentOrchestrator._extract_point_content(subsec.content, pt)
+                            subsec_dict["point_sections"].append({
+                                "title": pt,
+                                "content": self._content_to_html(pt_content) if pt_content else "",
+                                "index": f"{i+1}.{j+1}.{k+1}",
+                            })
+                    subsections_data.append(subsec_dict)
                 section_dict["subsections"] = subsections_data
             
             sections_data.append(section_dict)
@@ -536,7 +550,8 @@ class ContentOrchestrator:
                 order=data.get("order", len(sections)),
                 type=section_type,  # Pass section type
                 charts=data.get("charts", []),
-                subsections=self._parse_sections(data.get("subsections", []), depth + 1)
+                subsections=self._parse_sections(data.get("subsections", []), depth + 1),
+                points=data.get("points", []),
             )
             sections.append(section)
         
@@ -585,12 +600,13 @@ class ContentOrchestrator:
             html_parts.append('<div class="toc">')
             html_parts.append('<h2>Table of Contents</h2>')
             for i, section in enumerate(sections, 1):
-                # Main section
                 html_parts.append(f'<p class="toc-item">{i}. {html.escape(section.title)}</p>')
-                # Subsections (indented)
                 if section.subsections:
                     for j, subsec in enumerate(section.subsections, 1):
                         html_parts.append(f'<p class="toc-item" style="margin-left: 20px;">{i}.{j} {html.escape(subsec.title)}</p>')
+                        if subsec.points:
+                            for k, pt in enumerate(subsec.points, 1):
+                                html_parts.append(f'<p class="toc-item" style="margin-left: 40px;">{i}.{j}.{k} {html.escape(pt)}</p>')
             html_parts.append('</div>')
         
         # Section content
@@ -739,18 +755,47 @@ class ContentOrchestrator:
         parts.append(f'<section id="{section.id}" class="document-section">')
         parts.append(f'<h2 class="section-title">{html.escape(section.title)}</h2>')
         if section.content:
-            # content already processed in _parse_sections, no duplicate title
             parts.append(self._content_to_html(section.content))
         if section.subsections:
             for subsec in section.subsections:
                 parts.append(f'<section id="{subsec.id}" class="subsection">')
                 parts.append(f'<h3 class="subsection-title">{html.escape(subsec.title)}</h3>')
-                if subsec.content:
-                    # content already processed in _parse_sections, no duplicate title
+                if subsec.points:
+                    for pt in subsec.points:
+                        parts.append(f'<h4 class="sub-subsection-title">{html.escape(pt)}</h4>')
+                        pt_content = ContentOrchestrator._extract_point_content(subsec.content, pt)
+                        if pt_content:
+                            parts.append(self._content_to_html(pt_content))
+                elif subsec.content:
                     parts.append(self._content_to_html(subsec.content))
                 parts.append('</section>')
         parts.append('</section>')
         return '\n'.join(parts)
+    
+    @staticmethod
+    def _extract_point_content(full_content: str, point_title: str) -> str:
+        """Extract content belonging to a specific point from subsection content.
+        
+        Searches for the point heading in the content and returns the text
+        between this heading and the next heading or end of content.
+        """
+        if not full_content or not point_title:
+            return ""
+        import re
+        escaped = re.escape(point_title)
+        pattern = rf'^#{{1,4}}\s+{escaped}\s*$'
+        lines = full_content.split('\n')
+        capturing = False
+        captured = []
+        for line in lines:
+            if re.match(pattern, line.strip(), re.IGNORECASE):
+                capturing = True
+                continue
+            if capturing:
+                if re.match(r'^#{1,4}\s+', line.strip()):
+                    break
+                captured.append(line)
+        return '\n'.join(captured).strip()
 
     @staticmethod
     def _content_to_html(content: str, section_title: Optional[str] = None) -> str:

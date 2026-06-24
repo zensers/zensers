@@ -53,6 +53,13 @@ Each analysis section MUST contain all 5 segments below, in order:
 4. **Counter Evidence**: Factors that could challenge the judgment, boundary conditions
 5. **Implication**: Why this matters for strategic decision-making
 
+### Sub-Topic Structure (when provided)
+If sub-topics are listed in the prompt, you MUST organize your output as follows:
+- Use `### ` heading for each sub-topic, in the order listed
+- Under each sub-topic heading, follow the 5-segment structure above
+- Cover ALL listed sub-topics — do not skip or reorder them
+- Do not add sub-topics not in the provided list
+
 ## Quantitative Requirements
 Include quantified metrics where data permits:
 - Current values with YoY change and trend direction
