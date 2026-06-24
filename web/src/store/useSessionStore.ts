@@ -83,7 +83,7 @@ export async function restoreSession(id: string): Promise<void> {
       id: m.id || nanoid(),
       role: (m.role === 'user' || m.role === 'assistant' || m.role === 'agent'
         ? m.role
-        : 'assistant') as ChatMessage['role'],
+        : 'system') as ChatMessage['role'],
       content: m.content,
       timestamp: m.timestamp || new Date().toISOString(),
     }));

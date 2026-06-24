@@ -97,7 +97,9 @@ class SessionHistoryCompressor:
             compressor = self._get_compressor(session_id, user_id)
             result = compressor.compress(history)
             # Save full history to display_history BEFORE compression
-            dict.__setitem__(session, "display_history", list(history))
+            # Use deepcopy to prevent aliasing with compressed conversation_history
+            import copy
+            dict.__setitem__(session, "display_history", copy.deepcopy(history))
             # Compress conversation_history (for LLM context only)
             dict.__setitem__(session, "conversation_history", result["history"])
             dict.__setitem__(session, "_compressed", True)

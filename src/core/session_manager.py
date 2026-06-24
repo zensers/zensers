@@ -10,6 +10,7 @@ are automatically recovered after service restart.
 Storage path: data/sessions/{session_id}.json
 """
 
+import copy
 import dataclasses
 import json
 import logging
@@ -60,8 +61,7 @@ class PersistentSessionDict(dict):
         # Use dict.__setitem__ to avoid re-triggering __setitem__ → infinite save loop
         if key == "conversation_history":
             if isinstance(value, list):
-                import copy
-                dict.__setitem__(self, "display_history", copy.deepcopy(value))
+                dict.__setitem__(self, "display_history", [dict(m) if isinstance(m, dict) else m for m in value])
             else:
                 dict.__setitem__(self, "display_history", [])
         self._manager._save_to_disk(self._session_id)
@@ -87,8 +87,7 @@ class PersistentSessionDict(dict):
         # Sync display_history — use dict.__setitem__ to avoid re-triggering save
         if "conversation_history" in merger:
             if isinstance(merger["conversation_history"], list):
-                import copy
-                dict.__setitem__(self, "display_history", copy.deepcopy(merger["conversation_history"]))
+                dict.__setitem__(self, "display_history", [dict(m) if isinstance(m, dict) else m for m in merger["conversation_history"]])
             else:
                 dict.__setitem__(self, "display_history", [])
         self._manager._save_to_disk(self._session_id)

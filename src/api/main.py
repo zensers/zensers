@@ -605,7 +605,7 @@ async def get_research_detail(task_id: str):
     for i, msg in enumerate(history):
         if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
             messages.append({
-                "id": msg.get("id") or f"hist_{i}",
+                "id": msg.get("id") or str(uuid.uuid4())[:8],
                 "role": msg.get("role", msg.get("type", "unknown")),
                 "content": msg["content"],
                 "timestamp": msg.get("timestamp", created_at or ""),
@@ -646,7 +646,7 @@ async def get_research_messages(
     for i, msg in enumerate(page):
         if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
             messages.append({
-                "id": msg.get("id") or f"hist_{offset + i}",
+                "id": msg.get("id") or str(uuid.uuid4())[:8],
                 "role": msg.get("role", msg.get("type", "unknown")),
                 "content": msg["content"],
                 "timestamp": msg.get("timestamp", created_at or ""),

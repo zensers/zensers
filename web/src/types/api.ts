@@ -396,7 +396,7 @@ export interface ResearchResultMeta {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'agent';
+  role: 'user' | 'assistant' | 'agent' | 'system';
   content: string;
   timestamp: string;
   metadata?: Record<string, any>;

@@ -112,7 +112,7 @@ export function ChatPanel() {
   // Infinite scroll: load older messages on scroll-to-top
   const [hasMoreMessages, setHasMoreMessages] = useState(true);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const messageOffsetRef = useRef(0);
+  const serverOffsetRef = useRef(0);
 
   const loadOlderMessages = useCallback(async () => {
     if (isLoadingMessages || !hasMoreMessages) return;
@@ -122,20 +122,25 @@ export function ChatPanel() {
 
     setIsLoadingMessages(true);
     try {
-      const result = await api.getMessages(activeId, messageOffsetRef.current, 50);
+      const result = await api.getMessages(activeId, serverOffsetRef.current, 50);
       if (result.messages.length === 0) {
         setHasMoreMessages(false);
       } else {
-        const olderMsgs: ChatMessage[] = result.messages.map((m: any) => ({
-          id: m.id || nanoid(),
-          role: (m.role === 'user' || m.role === 'assistant' || m.role === 'agent'
-            ? m.role
-            : 'assistant') as ChatMessage['role'],
-          content: m.content,
-          timestamp: m.timestamp || new Date().toISOString(),
-        }));
-        useChatStore.getState().prependMessages(olderMsgs);
-        messageOffsetRef.current += result.messages.length;
+        const currentIds = new Set(useChatStore.getState().messages.map(m => m.id));
+        const olderMsgs: ChatMessage[] = result.messages
+          .filter((m: any) => !currentIds.has(m.id))
+          .map((m: any) => ({
+            id: m.id || nanoid(),
+            role: (m.role === 'user' || m.role === 'assistant' || m.role === 'agent'
+              ? m.role
+              : 'system') as ChatMessage['role'],
+            content: m.content,
+            timestamp: m.timestamp || new Date().toISOString(),
+          }));
+        if (olderMsgs.length > 0) {
+          useChatStore.getState().prependMessages(olderMsgs);
+        }
+        serverOffsetRef.current = result.offset + result.messages.length;
         if (!result.has_more) {
           setHasMoreMessages(false);
         }
@@ -150,7 +155,7 @@ export function ChatPanel() {
   const activeSessionId = useSessionStore((s) => s.activeId);
 
   useEffect(() => {
-    messageOffsetRef.current = messages.length;
+    serverOffsetRef.current = 0;
     setHasMoreMessages(true);
   }, [activeSessionId]);
 
