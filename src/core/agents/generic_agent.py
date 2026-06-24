@@ -443,6 +443,56 @@ class GenericAgent(
                                 f"quality={validation_result['average_quality_score']}, "
                                 f"conflicts={len(validation_result['conflicts'])}"
                             )
+                            # IMP-4: auto-resolve numerical conflicts
+                            resolved_conflicts = []
+                            if validation_result.get("has_conflicts"):
+                                resolved_conflicts = self._resolve_numerical_conflicts(
+                                    validation_result.get("conflicts", [])
+                                )
+                                if resolved_conflicts:
+                                    logger.info(
+                                        f"GenericAgent {self.agent_id}: resolved {len(resolved_conflicts)} conflicts"
+                                    )
+                            # IMP-3: targeted re-collection on low quality (max 1 round)
+                            recollection_attempted = False
+                            if validation_result.get("quality_rating") == "low" and skill_registry:
+                                recollection_queries = self._generate_recollection_queries(
+                                    topic, aspect or "", validation_result.get("warnings", [])
+                                )
+                                if recollection_queries:
+                                    search_skill = (
+                                        skill_registry.get("web_search") or
+                                        skill_registry.get("multi_search") or
+                                        skill_registry.get("search_skill")
+                                    )
+                                    if search_skill:
+                                        try:
+                                            for rq in recollection_queries[:3]:
+                                                sr = await search_skill.execute(query=rq, max_results=5)
+                                                if sr and sr.get("success") and sr.get("results"):
+                                                    for item in sr["results"]:
+                                                        data_points.append({
+                                                            "title": item.get("title", ""),
+                                                            "content": item.get("body", "") or item.get("snippet", ""),
+                                                            "url": item.get("href", "") or item.get("url", ""),
+                                                            "quality_score": 50,
+                                                            "source_type": "recollection",
+                                                        })
+                                                        sources.append({
+                                                            "title": item.get("title", ""),
+                                                            "url": item.get("href", "") or item.get("url", ""),
+                                                            "type": "web",
+                                                        })
+                                            recollection_attempted = True
+                                            logger.info(
+                                                f"GenericAgent {self.agent_id}: re-collection added data, "
+                                                f"re-validating {len(data_points)} total points"
+                                            )
+                                            validation_result = self._validate_collected_data(data_points, sources)
+                                        except Exception as rc_err:
+                                            logger.warning(f"GenericAgent {self.agent_id}: re-collection failed: {rc_err}")
+                            validation_result["resolved_conflicts"] = resolved_conflicts
+                            validation_result["recollection_attempted"] = recollection_attempted
                             return self._ensure_standard_result({
                                 "success": True,
                                 "data_points": validation_result.get("validated_data_points", data_points),
@@ -1490,6 +1540,15 @@ class GenericAgent(
                 f"GenericAgent {self.agent_id}: _fetch_structured_data "
                 f"topic='{topic}' → symbol='{symbol}'"
             )
+            _symbol_resolve_attempted = False
+            if not symbol:
+                _symbol_resolve_attempted = True
+                resolved = self._resolve_company_to_code(topic)
+                if resolved:
+                    symbol = resolved
+                    logger.info(
+                        f"GenericAgent {self.agent_id}: resolved '{topic}' → symbol='{symbol}' via _resolve_company_to_code"
+                    )
             if not symbol:
                 return result
             actions = self._infer_stock_actions(aspect)
@@ -1608,6 +1667,15 @@ class GenericAgent(
             actions.append("financials")
         if any(kw in aspect_lower for kw in ["industry", "对比", "竞争"]):
             actions.append("industry_comparison")
+        if any(kw in aspect_lower for kw in ["growth", "增长", "增速", "发展"]):
+            actions.append("financials")
+            actions.append("key_metrics")
+        if any(kw in aspect_lower for kw in ["sales", "销售", "渠道", "营收分析"]):
+            actions.append("financials")
+        if any(kw in aspect_lower for kw in ["market share", "市场份额", "市占率"]):
+            actions.append("industry_comparison")
+        if any(kw in aspect_lower for kw in ["company", "公司", "企业"]):
+            actions.append("company_info")
         if not actions:
             actions = ["company_info", "financials"]
         return list(dict.fromkeys(actions))
@@ -1629,6 +1697,106 @@ class GenericAgent(
         from datetime import date
         queries = [f"{q} {date.today().year}" for q in queries]
         return list(dict.fromkeys(queries))
+
+    def _generate_recollection_queries(
+        self,
+        topic: str,
+        aspect: str,
+        warnings: List[Dict[str, Any]],
+    ) -> List[str]:
+        """Generate targeted re-collection queries from validation warnings.
+        
+        IMP-3: When quality_rating is 'low', use timeliness warnings to generate
+        fresh search queries for one round of targeted re-collection.
+        """
+        from datetime import date
+        current_year = str(date.today().year)
+        queries = []
+        for w in warnings:
+            wtype = w.get("type", "")
+            if wtype == "timeliness":
+                queries.append(f"{topic} {aspect} 最新 {current_year}")
+                queries.append(f"{topic} {aspect} 数据 {current_year} 年")
+        queries = list(dict.fromkeys(queries))
+        return queries
+
+    def _resolve_numerical_conflicts(
+        self,
+        conflicts: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Auto-resolve numerical conflicts by authority + timeliness rules.
+        
+        IMP-4: Resolution priority:
+        1. Authority: source from higher-authority domain wins
+        2. Timeliness: URL containing newer year wins (when authority equal)
+        3. Tiebreaker: first source listed wins
+        """
+        authority_domains = {
+            "gov.cn": 0.95, "stats.gov.cn": 0.98, "miit.gov.cn": 0.95,
+            "worldbank.org": 0.95, "imf.org": 0.95, "oecd.org": 0.93,
+            "mckinsey.com": 0.88, "bcg.com": 0.87, "bain.com": 0.87,
+            "deloitte.com": 0.85, "pwc.com": 0.85, "ey.com": 0.85,
+            "goldmansachs.com": 0.88, "morganstanley.com": 0.87,
+            "eastmoney.com": 0.75, "10jqka.com.cn": 0.72,
+            "sina.com.cn": 0.70, "sohu.com": 0.65, "163.com": 0.65,
+        }
+        current_year = datetime.now().year
+        resolved = []
+        for conflict in conflicts:
+            if conflict.get("type") != "numerical_conflict":
+                continue
+            sources = conflict.get("sources", [])
+            if len(sources) < 2:
+                continue
+            src_scores = []
+            for i, src in enumerate(sources):
+                url = src.get("url", "")
+                domain = ""
+                try:
+                    from urllib.parse import urlparse as _up
+                    domain = _up(url).netloc.lower() if url else ""
+                    if domain.startswith("www."):
+                        domain = domain[4:]
+                except Exception:
+                    pass
+                auth_score = 0.5
+                if domain:
+                    if domain in authority_domains:
+                        auth_score = authority_domains[domain]
+                    else:
+                        for auth_domain, score in authority_domains.items():
+                            if domain.endswith("." + auth_domain) or domain == auth_domain:
+                                auth_score = max(auth_score, score)
+                                break
+                src_year = 0
+                for y in range(current_year - 5, current_year + 2):
+                    if str(y) in url:
+                        src_year = max(src_year, y)
+                    if str(y) in src.get("source", ""):
+                        src_year = max(src_year, y)
+                src_scores.append((i, auth_score, src_year))
+            max_auth = max(s[1] for s in src_scores)
+            top_by_auth = [s for s in src_scores if s[1] == max_auth]
+            if len(top_by_auth) == 1:
+                best_idx = top_by_auth[0][0]
+                reason = "authority"
+            else:
+                max_year = max(s[2] for s in top_by_auth)
+                top_by_year = [s for s in top_by_auth if s[2] == max_year]
+                if max_year > 0 and len(top_by_year) < len(top_by_auth):
+                    best_idx = top_by_year[0][0]
+                    reason = "timeliness"
+                else:
+                    best_idx = top_by_auth[0][0]
+                    reason = "authority" if max_auth > 0.6 else "tiebreaker"
+            resolved.append({
+                "claim": conflict.get("claim", ""),
+                "resolved_value": sources[best_idx]["value"],
+                "resolution_reason": reason,
+                "winning_source": sources[best_idx].get("source", ""),
+                "original_conflict": conflict,
+            })
+        return resolved
 
     async def _do_deep_research(
         self,
