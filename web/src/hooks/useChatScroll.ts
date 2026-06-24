@@ -48,8 +48,11 @@ export function useChatScroll(
       const prevHeight = el.scrollHeight;
       onScrollTop().finally(() => {
         requestAnimationFrame(() => {
-          const newHeight = el.scrollHeight;
-          el.scrollTop = newHeight - prevHeight;
+          const currentEl = containerRef.current;
+          if (currentEl) {
+            const newHeight = currentEl.scrollHeight;
+            currentEl.scrollTop = newHeight - prevHeight;
+          }
           isLoadingRef.current = false;
         });
       });

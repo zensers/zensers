@@ -602,10 +602,10 @@ async def get_research_detail(task_id: str):
 
     messages = []
     history = session.get("display_history") or session.get("conversation_history", [])
-    for msg in history:
+    for i, msg in enumerate(history):
         if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
             messages.append({
-                "id": msg.get("id", f"msg_{len(messages)}"),
+                "id": msg.get("id") or f"hist_{i}",
                 "role": msg.get("role", msg.get("type", "unknown")),
                 "content": msg["content"],
                 "timestamp": msg.get("timestamp", created_at or ""),
@@ -628,10 +628,13 @@ async def get_research_messages(
     Uses display_history (full, never compressed) when available,
     falls back to conversation_history.
     """
-    session = session_manager.get(task_id)
+    from src.core.session_manager import SessionManager
+    sm = SessionManager.get_instance()
+    session = sm.get(task_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
+    created_at = session.get("created_at", "")
     offset = max(0, offset)
     limit = max(1, limit)
     
@@ -640,13 +643,13 @@ async def get_research_messages(
     page = source[offset:offset + limit]
     
     messages = []
-    for msg in page:
+    for i, msg in enumerate(page):
         if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
             messages.append({
-                "id": msg.get("id", f"msg_{offset + len(messages)}"),
+                "id": msg.get("id") or f"hist_{offset + i}",
                 "role": msg.get("role", msg.get("type", "unknown")),
                 "content": msg["content"],
-                "timestamp": msg.get("timestamp", ""),
+                "timestamp": msg.get("timestamp", created_at or ""),
             })
     
     return {

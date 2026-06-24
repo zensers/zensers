@@ -147,10 +147,12 @@ export function ChatPanel() {
     }
   }, [isLoadingMessages, hasMoreMessages]);
 
+  const activeSessionId = useSessionStore((s) => s.activeId);
+
   useEffect(() => {
-    messageOffsetRef.current = 0;
+    messageOffsetRef.current = messages.length;
     setHasMoreMessages(true);
-  }, [useSessionStore.getState().activeId]);
+  }, [activeSessionId]);
 
   const { containerRef, handleScroll, scrollToBottom, isAtBottom } = useChatScroll(
     [messages],
