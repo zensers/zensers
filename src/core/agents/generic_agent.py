@@ -300,12 +300,15 @@ class GenericAgent(
                     if agent_category == "research":
                         data_points = []
                         sources = []
+                        _structured_data_fetched = False
 
                         if "stock_data" in available_skills and skill_registry:
                             stock_skill = skill_registry.get("stock_data")
                             if stock_skill:
                                 try:
                                     structured = await self._fetch_structured_data(stock_skill, topic, aspect)
+                                    if structured.get("data_points"):
+                                        _structured_data_fetched = True
                                     data_points.extend(structured.get("data_points", []))
                                     sources.extend(structured.get("sources", []))
                                     if self._shared_memory and hasattr(self._shared_memory, 'write_canonical'):
@@ -321,6 +324,14 @@ class GenericAgent(
 
                         if topic and "search_skill" in available_skills and skill_registry:
                             preloaded = task.get("preloaded_search_results")
+                            # IMP-2: stock_data failure fallback — inject targeted financial queries
+                            if not _structured_data_fetched and topic:
+                                fallback_queries = self._generate_structured_fallback_queries(topic, aspect or "")
+                                if fallback_queries:
+                                    logger.info(f"GenericAgent {self.agent_id}: stock_data unavailable, injecting {len(fallback_queries)} fallback queries")
+                                    if not preloaded:
+                                        preloaded = []
+                                    preloaded.extend([{"query": q, "results": []} for q in fallback_queries])
                             search_results = await self._do_deep_research(
                                 topic=topic, aspect=aspect, aspects=aspects, skill_registry=skill_registry,
                                 preloaded_search_results=preloaded,
@@ -340,6 +351,40 @@ class GenericAgent(
                                         "type": "web",
                                         "quality_score": item.get("quality_score", 0),
                                     })
+
+                            # IMP-1: Phase 3 — news_search supplement for timely data
+                            if "news_search" in available_skills and skill_registry and topic:
+                                news_skill = skill_registry.get("news_search")
+                                if news_skill:
+                                    try:
+                                        news_query = f"{topic} {aspect} 最新 动态" if aspect else f"{topic} 最新 动态"
+                                        news_result = await news_skill.execute(
+                                            query=news_query, max_results=10, time_range="w",
+                                        )
+                                        if news_result and news_result.get("success"):
+                                            for nr in news_result.get("results", []):
+                                                news_body = nr.get("body", "") or nr.get("snippet", "")
+                                                news_url = nr.get("href", "") or nr.get("url", "")
+                                                data_points.append({
+                                                    "title": nr.get("title", ""),
+                                                    "content": news_body,
+                                                    "url": news_url,
+                                                    "quality_score": 70,
+                                                    "credibility": "news_source",
+                                                    "source_type": "news",
+                                                    "source_name": nr.get("source", ""),
+                                                    "date": nr.get("date", ""),
+                                                })
+                                                sources.append({
+                                                    "title": nr.get("title", ""),
+                                                    "url": news_url,
+                                                    "type": "news",
+                                                    "quality_score": 70,
+                                                })
+                                            logger.info(f"GenericAgent {self.agent_id}: news_search 补充 {len(news_result.get('results', []))} 条新闻")
+                                    except Exception as news_err:
+                                        logger.warning(f"GenericAgent {self.agent_id}: news_search failed: {news_err}")
+
                             # B-FIX-3: write key metrics to SharedMemory
                             if self._shared_memory and hasattr(self._shared_memory, 'write_canonical'):
                                 import re as _re
@@ -1555,17 +1600,35 @@ class GenericAgent(
     def _infer_stock_actions(self, aspect: str) -> List[str]:
         aspect_lower = (aspect or "").lower()
         actions = []
-        if any(kw in aspect_lower for kw in ["财务", "盈利", "利润", "营收", "收入", "研发", "技术", "创新"]):
+        if any(kw in aspect_lower for kw in ["financial", "盈利", "利润", "营收", "收入", "研发", "技术", "创新"]):
             actions.append("financials")
-        if any(kw in aspect_lower for kw in ["估值", "价值", "pe", "pb", "回报", "roe", "roa", "roic"]):
+        if any(kw in aspect_lower for kw in ["valuation", "估值", "价值", "pe", "pb", "回报", "roe", "roa", "roic"]):
             actions.append("key_metrics")
-        if any(kw in aspect_lower for kw in ["杠杆", "负债", "资本结构", "稳健", "风险"]):
+        if any(kw in aspect_lower for kw in ["leverage", "杠杆", "负债", "资本结构", "稳健", "风险"]):
             actions.append("financials")
-        if any(kw in aspect_lower for kw in ["行业", "对比", "竞争"]):
+        if any(kw in aspect_lower for kw in ["industry", "对比", "竞争"]):
             actions.append("industry_comparison")
         if not actions:
             actions = ["company_info", "financials"]
         return list(dict.fromkeys(actions))
+
+    def _generate_structured_fallback_queries(self, topic: str, aspect: str) -> List[str]:
+        """Generate targeted search queries when structured data (stock_data) is unavailable."""
+        queries = [f"{topic} {aspect} 财务数据 年报"]
+        aspect_lower = (aspect or "").lower()
+        if any(kw in aspect_lower for kw in ["financial", "财务", "盈利", "利润", "营收"]):
+            queries.append(f"{topic} 营收 净利润 最新")
+            queries.append(f"{topic} 年报 财务报表")
+        if any(kw in aspect_lower for kw in ["valuation", "估值", "价值", "pe", "pb"]):
+            queries.append(f"{topic} 估值 PE PB 最新")
+            queries.append(f"{topic} 市值 投资价值 分析")
+        if any(kw in aspect_lower for kw in ["risk", "风险", "杠杆", "负债"]):
+            queries.append(f"{topic} 风险 负债率 财务健康")
+        if len(queries) == 1:
+            queries.append(f"{topic} 财报 数据")
+        from datetime import date
+        queries = [f"{q} {date.today().year}" for q in queries]
+        return list(dict.fromkeys(queries))
 
     async def _do_deep_research(
         self,
