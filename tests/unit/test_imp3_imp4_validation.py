@@ -173,3 +173,64 @@ class TestIMP4ConflictResolutionInValidationCode:
     def test_resolved_conflicts_in_result(self):
         content = AGENT_PATH.read_text(encoding="utf-8")
         assert "resolved_conflicts" in content
+
+
+class TestReviewFixAuthorityDomainsDedup:
+    """Review fix: authority_domains extracted to module-level _AUTHORITY_DOMAINS"""
+
+    def test_authority_domains_is_module_constant(self):
+        from src.core.agents.generic_agent import _AUTHORITY_DOMAINS
+        assert isinstance(_AUTHORITY_DOMAINS, dict)
+        assert len(_AUTHORITY_DOMAINS) >= 10
+
+    def test_no_local_authority_domains_dict_in_validate(self):
+        content = AGENT_PATH.read_text(encoding="utf-8")
+        validate_start = content.find("def _validate_collected_data")
+        validate_end = content.find("def _resolve_numerical_conflicts", validate_start + 1)
+        if validate_end < 0:
+            validate_end = content.find("def _generate_recollection_queries", validate_start + 1)
+        validate_code = content[validate_start:validate_end]
+        assert '"gov.cn": 0.95' not in validate_code, "Should use _AUTHORITY_DOMAINS, not inline dict"
+
+    def test_no_local_authority_domains_dict_in_resolve(self):
+        content = AGENT_PATH.read_text(encoding="utf-8")
+        resolve_start = content.find("def _resolve_numerical_conflicts")
+        resolve_end = content.find("def _do_deep_research", resolve_start + 1)
+        resolve_code = content[resolve_start:resolve_end]
+        assert '"gov.cn": 0.95' not in resolve_code, "Should use _AUTHORITY_DOMAINS, not inline dict"
+
+
+class TestReviewFixRecollectionHandlesAllWarnings:
+    """Review fix: _generate_recollection_queries handles non-timeliness warnings"""
+
+    @pytest.fixture
+    def agent(self):
+        from src.core.agents.generic_agent import GenericAgent
+        agent = GenericAgent.__new__(GenericAgent)
+        agent.agent_id = "review_fix"
+        return agent
+
+    def test_non_timeliness_warning_generates_query(self, agent):
+        warnings = [{"type": "completeness", "message": "Missing data", "url": ""}]
+        queries = agent._generate_recollection_queries("新能源汽车", "Market Analysis", warnings)
+        assert len(queries) >= 1
+
+    def test_mixed_warning_types(self, agent):
+        warnings = [
+            {"type": "timeliness", "message": "Old data", "url": ""},
+            {"type": "completeness", "message": "Missing data", "url": ""},
+        ]
+        queries = agent._generate_recollection_queries("新能源汽车", "Market Analysis", warnings)
+        assert len(queries) >= 3
+
+
+class TestReviewFixRecollectionQualityScore:
+    """Review fix: recollection data points use quality_score=40 (unvalidated)"""
+
+    def test_recollection_quality_score_is_40(self):
+        content = AGENT_PATH.read_text(encoding="utf-8")
+        quality_check_start = content.find('Phase 2: DATA_VALIDATION')
+        quality_check_end = content.find('Phase 3: DEEP_ANALYSIS')
+        validation_code = content[quality_check_start:quality_check_end]
+        assert '"quality_score": 40' in validation_code
+        assert '"credibility": "recollection_search"' in validation_code

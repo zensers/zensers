@@ -57,6 +57,16 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_AUTHORITY_DOMAINS = {
+    "gov.cn": 0.95, "stats.gov.cn": 0.98, "miit.gov.cn": 0.95,
+    "worldbank.org": 0.95, "imf.org": 0.95, "oecd.org": 0.93,
+    "mckinsey.com": 0.88, "bcg.com": 0.87, "bain.com": 0.87,
+    "deloitte.com": 0.85, "pwc.com": 0.85, "ey.com": 0.85,
+    "goldmansachs.com": 0.88, "morganstanley.com": 0.87,
+    "eastmoney.com": 0.75, "10jqka.com.cn": 0.72,
+    "sina.com.cn": 0.70, "sohu.com": 0.65, "163.com": 0.65,
+}
+
 # 读取 quality_rubric.md 文件（模块级缓存，避免重复 IO）
 _RUBRIC_CACHE: str = ""
 
@@ -475,8 +485,9 @@ class GenericAgent(
                                                             "title": item.get("title", ""),
                                                             "content": item.get("body", "") or item.get("snippet", ""),
                                                             "url": item.get("href", "") or item.get("url", ""),
-                                                            "quality_score": 50,
+                                                            "quality_score": 40,
                                                             "source_type": "recollection",
+                                                            "credibility": "recollection_search",
                                                         })
                                                         sources.append({
                                                             "title": item.get("title", ""),
@@ -1540,14 +1551,14 @@ class GenericAgent(
                 f"GenericAgent {self.agent_id}: _fetch_structured_data "
                 f"topic='{topic}' → symbol='{symbol}'"
             )
-            _symbol_resolve_attempted = False
             if not symbol:
-                _symbol_resolve_attempted = True
-                resolved = self._resolve_company_to_code(topic)
+                chinese_m_retry = re.search(r'[\u4e00-\u9fff]+', topic)
+                retry_name = chinese_m_retry.group(0) if chinese_m_retry else topic
+                resolved = self._resolve_company_to_code(retry_name)
                 if resolved:
                     symbol = resolved
                     logger.info(
-                        f"GenericAgent {self.agent_id}: resolved '{topic}' → symbol='{symbol}' via _resolve_company_to_code"
+                        f"GenericAgent {self.agent_id}: resolved '{retry_name}' -> symbol='{symbol}' via _resolve_company_to_code"
                     )
             if not symbol:
                 return result
@@ -1682,7 +1693,10 @@ class GenericAgent(
 
     def _generate_structured_fallback_queries(self, topic: str, aspect: str) -> List[str]:
         """Generate targeted search queries when structured data (stock_data) is unavailable."""
-        queries = [f"{topic} {aspect} 财务数据 年报"]
+        from datetime import date
+        current_year = str(date.today().year)
+        aspect_prefix = f"{aspect} " if aspect else ""
+        queries = [f"{topic} {aspect_prefix}财务数据 年报"]
         aspect_lower = (aspect or "").lower()
         if any(kw in aspect_lower for kw in ["financial", "财务", "盈利", "利润", "营收"]):
             queries.append(f"{topic} 营收 净利润 最新")
@@ -1694,9 +1708,12 @@ class GenericAgent(
             queries.append(f"{topic} 风险 负债率 财务健康")
         if len(queries) == 1:
             queries.append(f"{topic} 财报 数据")
-        from datetime import date
-        queries = [f"{q} {date.today().year}" for q in queries]
-        return list(dict.fromkeys(queries))
+        result = []
+        for q in queries:
+            if current_year not in q:
+                q = f"{q} {current_year}"
+            result.append(q)
+        return list(dict.fromkeys(result))
 
     def _generate_recollection_queries(
         self,
@@ -1717,6 +1734,8 @@ class GenericAgent(
             if wtype == "timeliness":
                 queries.append(f"{topic} {aspect} 最新 {current_year}")
                 queries.append(f"{topic} {aspect} 数据 {current_year} 年")
+            else:
+                queries.append(f"{topic} {aspect} 补充数据 {current_year}")
         queries = list(dict.fromkeys(queries))
         return queries
 
@@ -1731,15 +1750,7 @@ class GenericAgent(
         2. Timeliness: URL containing newer year wins (when authority equal)
         3. Tiebreaker: first source listed wins
         """
-        authority_domains = {
-            "gov.cn": 0.95, "stats.gov.cn": 0.98, "miit.gov.cn": 0.95,
-            "worldbank.org": 0.95, "imf.org": 0.95, "oecd.org": 0.93,
-            "mckinsey.com": 0.88, "bcg.com": 0.87, "bain.com": 0.87,
-            "deloitte.com": 0.85, "pwc.com": 0.85, "ey.com": 0.85,
-            "goldmansachs.com": 0.88, "morganstanley.com": 0.87,
-            "eastmoney.com": 0.75, "10jqka.com.cn": 0.72,
-            "sina.com.cn": 0.70, "sohu.com": 0.65, "163.com": 0.65,
-        }
+        authority_domains = _AUTHORITY_DOMAINS
         current_year = datetime.now().year
         resolved = []
         for conflict in conflicts:
@@ -1753,8 +1764,7 @@ class GenericAgent(
                 url = src.get("url", "")
                 domain = ""
                 try:
-                    from urllib.parse import urlparse as _up
-                    domain = _up(url).netloc.lower() if url else ""
+                    domain = urlparse(url).netloc.lower() if url else ""
                     if domain.startswith("www."):
                         domain = domain[4:]
                 except Exception:
@@ -2691,15 +2701,7 @@ class GenericAgent(
         total_score = 0.0
         
         # Domain authority scoring
-        authority_domains = {
-            "gov.cn": 0.95, "stats.gov.cn": 0.98, "miit.gov.cn": 0.95,
-            "worldbank.org": 0.95, "imf.org": 0.95, "oecd.org": 0.93,
-            "mckinsey.com": 0.88, "bcg.com": 0.87, "bain.com": 0.87,
-            "deloitte.com": 0.85, "pwc.com": 0.85, "ey.com": 0.85,
-            "goldmansachs.com": 0.88, "morganstanley.com": 0.87,
-            "eastmoney.com": 0.75, "10jqka.com.cn": 0.72,
-            "sina.com.cn": 0.70, "sohu.com": 0.65, "163.com": 0.65,
-        }
+        authority_domains = _AUTHORITY_DOMAINS
         
         # Track numerical claims for conflict detection
         # e.g. "market reached 12.8 million units" -> extract "12.8 million"

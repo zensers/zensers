@@ -85,12 +85,13 @@ class TestIMP6StockDataRetry:
         fetch_code = content[fetch_start:fetch_end]
         assert "_resolve_company_to_code" in fetch_code, "_fetch_structured_data must retry via _resolve_company_to_code when symbol is empty"
 
-    def test_retry_only_once(self):
-        """Verify retry is limited to one attempt"""
+    def test_retry_uses_extracted_chinese_name(self):
+        """Verify retry extracts Chinese name from topic, not full topic"""
         content = AGENT_PATH.read_text(encoding="utf-8")
         fetch_start = content.find("def _fetch_structured_data")
         fetch_end = content.find("def _infer_stock_actions", fetch_start + 1)
         if fetch_end < 0:
             fetch_end = content.find("def _generate_structured_fallback_queries", fetch_start + 1)
         fetch_code = content[fetch_start:fetch_end]
-        assert "_symbol_resolve_attempted" in fetch_code, "Must track that resolve was attempted to avoid infinite retry"
+        assert "chinese_m_retry" in fetch_code, "Must extract Chinese name for retry, not use full topic"
+        assert "retry_name" in fetch_code

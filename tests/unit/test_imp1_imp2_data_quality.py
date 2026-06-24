@@ -55,6 +55,20 @@ class TestIMP2StructuredFallbackQueries:
         )
         assert any(year in q for q in queries)
 
+    def test_no_duplicate_year_suffix(self, agent):
+        from datetime import date
+        year = str(date.today().year)
+        queries = agent._generate_structured_fallback_queries(
+            topic="比亚迪", aspect="Financial Analysis"
+        )
+        for q in queries:
+            assert q.count(year) <= 1, f"Year {year} appears more than once in: {q}"
+
+    def test_no_double_space_when_aspect_empty(self, agent):
+        queries = agent._generate_structured_fallback_queries(topic="比亚迪", aspect="")
+        for q in queries:
+            assert "  " not in q, f"Double space in query: {q}"
+
     def test_no_duplicate_queries(self, agent):
         queries = agent._generate_structured_fallback_queries(
             topic="比亚迪财务分析", aspect="Financial Analysis"
