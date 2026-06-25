@@ -728,7 +728,7 @@ class ResearchOrchestrator:
                     agents = self._create_agents_from_plan(
                         decomposition_plan, requirement, task_id,
                         research_type="market_research",
-                        intent_result=None)
+                        intent_result=intent_result)
                     logger.info(f"[{task_id}] Created {len(agents)} Agents according to decomposition plan")
                 except Exception as e:
                     logger.warning(f"[{task_id}] Failed to create Agents by plan, falling back: {e}")

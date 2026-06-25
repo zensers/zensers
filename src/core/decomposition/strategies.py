@@ -94,6 +94,23 @@ def get_skills_for_aspect(aspect: str) -> List[str]:
     return DEFAULT_ASPECT_SKILLS.copy()
 
 
+DATA_SOURCE_PRIORITY = {
+    "structured_db": 100,
+    "web_search": 50,
+    "llm": 10,
+}
+
+SKILL_PRIORITY_MAP = {
+    "stock_data": "structured_db",
+    "wind_data": "structured_db",
+    "bloomberg_data": "structured_db",
+    "search_skill": "web_search",
+    "news_search": "web_search",
+    "lc_tavily_search": "web_search",
+    "lc_wikipedia": "web_search",
+    "llm_skill": "llm",
+}
+
 DATA_SOURCE_SKILL_MAP = {
     "financial": ["stock_data"],
     "valuation": ["stock_data"],
@@ -103,23 +120,52 @@ DATA_SOURCE_SKILL_MAP = {
     "policy": [],
     "technology": [],
     "risk": [],
+    "财务": ["stock_data"],
+    "估值": ["stock_data"],
+    "公司": ["stock_data"],
+    "盈利": ["stock_data"],
+    "营收": ["stock_data"],
+    "市值": ["stock_data"],
+    "市场规模": ["stock_data"],
+    "利润": ["stock_data"],
+    "资产负债": ["stock_data"],
+    "roe": ["stock_data"],
+    "pe": ["stock_data"],
+    "pb": ["stock_data"],
+    "增长": ["stock_data"],
+    "投资": ["stock_data"],
 }
 
 
 def _get_data_collection_skills(aspect: str, topic: str = "", intent_result: Any = None) -> List[str]:
-    skills = ["search_skill", "news_search", "llm_skill"]
+    db_skills: List[str] = []
+    web_skills: List[str] = []
+    llm_skills: List[str] = []
+
+    base_skills = ["search_skill", "news_search", "llm_skill"]
+    aspect_skills: List[str] = []
     aspect_lower = aspect.lower()
     for keyword, extra_skills in DATA_SOURCE_SKILL_MAP.items():
         if keyword in aspect_lower:
-            skills.extend(extra_skills)
+            aspect_skills.extend(extra_skills)
     if intent_result:
         primary_type = getattr(intent_result, 'primary_research_type', None)
         if primary_type and getattr(primary_type, 'value', '') in (
             "company_research", "investment", "competitive_analysis"
         ):
-            if "stock_data" not in skills:
-                skills.append("stock_data")
-    return list(dict.fromkeys(skills))
+            if "stock_data" not in aspect_skills:
+                aspect_skills.append("stock_data")
+
+    all_unique = list(dict.fromkeys(aspect_skills + base_skills))
+    for skill in all_unique:
+        tier = SKILL_PRIORITY_MAP.get(skill, "web_search")
+        if tier == "structured_db":
+            db_skills.append(skill)
+        elif tier == "llm":
+            llm_skills.append(skill)
+        else:
+            web_skills.append(skill)
+    return db_skills + web_skills + llm_skills
 
 
 @dataclass
@@ -472,7 +518,7 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
                 parallel_group=0,  # Same group runs in parallel
                 quality_threshold=0.7,
                 max_retries=complexity_params["max_retries"],
-                skills=_get_data_collection_skills(aspect, topic),
+                skills=_get_data_collection_skills(aspect, topic, intent_result),
                 system_prompt=self._build_data_collection_prompt(topic, aspect, framework_config, sub_aspects=[sub.name for sub in matched_spec.sub_sections] if matched_spec and matched_spec.sub_sections else None),
                 context={"aspect": aspect, "topic": topic,
                          "section_id": section_id,

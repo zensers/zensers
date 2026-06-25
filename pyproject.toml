@@ -1,6 +1,6 @@
 [project]
 name = "zensers"
-version = "1.0.4"
+version = "1.1.0"
 description = "Automated Industry Research System"
 requires-python = ">=3.10"
 dependencies = [

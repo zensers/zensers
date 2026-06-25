@@ -396,7 +396,7 @@ class SkillRegistry:
             "report-generation": ["llm_skill"],
             "quality-check": ["llm_skill"],
             "visual-engineering": [],
-            "research": ["lc_tavily_search", "lc_wikipedia", "llm_skill"],
+            "research": ["stock_data", "lc_tavily_search", "lc_wikipedia", "llm_skill"],
             "synthesis": ["llm_skill"],
             "calibration": ["llm_skill"],
         }

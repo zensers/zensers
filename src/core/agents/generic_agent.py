@@ -306,70 +306,106 @@ class GenericAgent(
                     # Fallback path uses "data-collection" (search + analyze, unchanged).
                     agent_category = self.config.get("category", "")
                     
-                    # Phase 1: DATA_COLLECTION - search only, return raw data, no LLM analysis
+                    # Phase 1: DATA_COLLECTION - priority-driven execution
+                    # structured_db skills first, web_search as supplement, llm last
                     if agent_category == "research":
                         data_points = []
                         sources = []
                         _structured_data_fetched = False
+                        _structured_data_sufficient = False
 
-                        if "stock_data" in available_skills and skill_registry:
-                            stock_skill = skill_registry.get("stock_data")
-                            if stock_skill:
-                                try:
-                                    structured = await self._fetch_structured_data(stock_skill, topic, aspect)
-                                    if structured.get("data_points"):
-                                        _structured_data_fetched = True
-                                    data_points.extend(structured.get("data_points", []))
-                                    sources.extend(structured.get("sources", []))
-                                    if self._shared_memory and hasattr(self._shared_memory, 'write_canonical'):
-                                        for metric, value in structured.get("canonical_metrics", {}).items():
-                                            await self._shared_memory.write_canonical(
-                                                metric=metric, value=value,
-                                                caliber="structured_source",
-                                                source="akshare",
-                                                publisher=self.agent_id,
-                                            )
-                                except Exception as struct_err:
-                                    logger.warning(f"GenericAgent {self.agent_id}: structured data fetch failed: {struct_err}")
+                        from src.core.decomposition.strategies import SKILL_PRIORITY_MAP, DATA_SOURCE_PRIORITY
 
-                        if topic and "search_skill" in available_skills and skill_registry:
+                        def _skill_tier(name: str) -> str:
+                            return SKILL_PRIORITY_MAP.get(name, "web_search")
+
+                        tiered_skills = {}
+                        for s in available_skills:
+                            tiered_skills.setdefault(_skill_tier(s), []).append(s)
+                        execution_order = (
+                            tiered_skills.get("structured_db", [])
+                            + tiered_skills.get("web_search", [])
+                            + tiered_skills.get("llm", [])
+                        )
+
+                        # Tier 1: structured_db (stock_data, wind, bloomberg, etc.)
+                        for db_skill_name in tiered_skills.get("structured_db", []):
+                            if not skill_registry:
+                                continue
+                            db_skill = skill_registry.get(db_skill_name)
+                            if not db_skill:
+                                logger.warning(f"GenericAgent {self.agent_id}: {db_skill_name} not available in registry, skipping")
+                                continue
+                            try:
+                                structured = await self._fetch_structured_data(db_skill, topic, aspect, skill_name=db_skill_name)
+                                dp_count = len(structured.get("data_points", []))
+                                if dp_count > 0:
+                                    _structured_data_fetched = True
+                                    if dp_count >= 3:
+                                        _structured_data_sufficient = True
+                                data_points.extend(structured.get("data_points", []))
+                                sources.extend(structured.get("sources", []))
+                                if self._shared_memory and hasattr(self._shared_memory, 'write_canonical'):
+                                    for metric, value in structured.get("canonical_metrics", {}).items():
+                                        await self._shared_memory.write_canonical(
+                                            metric=metric, value=value,
+                                            caliber="structured_source",
+                                            source=db_skill_name,
+                                            publisher=self.agent_id,
+                                        )
+                                logger.info(
+                                    f"GenericAgent {self.agent_id}: {db_skill_name} fetched "
+                                    f"{dp_count} data_points, sufficient={_structured_data_sufficient}"
+                                )
+                            except Exception as struct_err:
+                                logger.warning(f"GenericAgent {self.agent_id}: {db_skill_name} failed: {struct_err}")
+
+                        # Tier 2: web_search (search_skill, news_search) — supplement for structured gaps
+                        search_results = None
+                        if topic and tiered_skills.get("web_search"):
+                            web_skills = tiered_skills.get("web_search", [])
                             preloaded = task.get("preloaded_search_results")
-                            # IMP-2: stock_data failure fallback — inject targeted financial queries
+
                             if not _structured_data_fetched and topic:
                                 fallback_queries = self._generate_structured_fallback_queries(topic, aspect or "")
                                 if fallback_queries:
-                                    logger.info(f"GenericAgent {self.agent_id}: stock_data unavailable, injecting {len(fallback_queries)} fallback queries")
+                                    logger.info(f"GenericAgent {self.agent_id}: structured_db unavailable, injecting {len(fallback_queries)} fallback queries")
                                     if not preloaded:
                                         preloaded = []
                                     preloaded.extend([{"query": q, "results": []} for q in fallback_queries])
-                            search_results = await self._do_deep_research(
-                                topic=topic, aspect=aspect, aspects=aspects, skill_registry=skill_registry,
-                                preloaded_search_results=preloaded,
-                            )
-                            for search in search_results.get("searches", []):
-                                for item in search.get("results", []):
-                                    data_points.append({
-                                        "title": item.get("title", ""),
-                                        "content": item.get("body", "") or item.get("snippet", ""),
-                                        "url": item.get("href", "") or item.get("url", ""),
-                                        "quality_score": item.get("quality_score", 0),
-                                        "credibility": item.get("credibility", "unknown"),
-                                    })
-                                    sources.append({
-                                        "title": item.get("title", ""),
-                                        "url": item.get("href", "") or item.get("url", ""),
-                                        "type": "web",
-                                        "quality_score": item.get("quality_score", 0),
-                                    })
 
-                            # IMP-1: Phase 3 — news_search supplement for timely data
-                            if "news_search" in available_skills and skill_registry and topic:
+                            search_depth = "basic" if _structured_data_sufficient else "deep"
+
+                            if "search_skill" in web_skills and skill_registry:
+                                search_results = await self._do_deep_research(
+                                    topic=topic, aspect=aspect, aspects=aspects, skill_registry=skill_registry,
+                                    preloaded_search_results=preloaded,
+                                    depth=search_depth,
+                                )
+                                for search in search_results.get("searches", []):
+                                    for item in search.get("results", []):
+                                        data_points.append({
+                                            "title": item.get("title", ""),
+                                            "content": item.get("body", "") or item.get("snippet", ""),
+                                            "url": item.get("href", "") or item.get("url", ""),
+                                            "quality_score": item.get("quality_score", 0),
+                                            "credibility": item.get("credibility", "unknown"),
+                                        })
+                                        sources.append({
+                                            "title": item.get("title", ""),
+                                            "url": item.get("href", "") or item.get("url", ""),
+                                            "type": "web",
+                                            "quality_score": item.get("quality_score", 0),
+                                        })
+
+                            if "news_search" in web_skills and skill_registry and topic:
                                 news_skill = skill_registry.get("news_search")
                                 if news_skill:
                                     try:
                                         news_query = f"{topic} {aspect} 最新 动态" if aspect else f"{topic} 最新 动态"
+                                        max_news = 5 if _structured_data_sufficient else 10
                                         news_result = await news_skill.execute(
-                                            query=news_query, max_results=10, time_range="w",
+                                            query=news_query, max_results=max_news, time_range="w",
                                         )
                                         if news_result and news_result.get("success"):
                                             for nr in news_result.get("results", []):
@@ -431,13 +467,22 @@ class GenericAgent(
                                 "success": True,
                                 "data_points": data_points,
                                 "sources": sources,
-                                "total_sources": search_results.get("total_sources", 0),
-                                "quality_stats": search_results.get("quality_stats", {}),
+                                "total_sources": search_results.get("total_sources", 0) if search_results else len(sources),
+                                "quality_stats": search_results.get("quality_stats", {}) if search_results else {},
+                                "agent_id": self.agent_id,
+                            }, action)
+                        if data_points:
+                            return self._ensure_standard_result({
+                                "success": True,
+                                "data_points": data_points,
+                                "sources": sources,
+                                "total_sources": len(sources),
+                                "quality_stats": {},
                                 "agent_id": self.agent_id,
                             }, action)
                         return self._ensure_standard_result({
                             "success": False,
-                            "error": "Data collection agent: no search skill available",
+                            "error": "Data collection agent: no data source available",
                             "agent_id": self.agent_id,
                         }, action)
                     
@@ -1543,6 +1588,7 @@ class GenericAgent(
         stock_skill: Any,
         topic: str,
         aspect: str,
+        skill_name: str = "stock_data",
     ) -> Dict[str, Any]:
         result = {"data_points": [], "sources": [], "canonical_metrics": {}}
         try:
@@ -1574,13 +1620,13 @@ class GenericAgent(
                             result["data_points"].append({
                                 "title": f"{symbol} {action}",
                                 "content": str(data),
-                                "url": f"akshare://{symbol}/{action}",
+                                "url": f"{skill_name}://{symbol}/{action}",
                                 "quality_score": 95,
                                 "credibility": "structured_source",
                             })
                             result["sources"].append({
-                                "title": f"akshare {symbol} {action}",
-                                "url": f"akshare://{symbol}/{action}",
+                                "title": f"{skill_name} {symbol} {action}",
+                                "url": f"{skill_name}://{symbol}/{action}",
                                 "type": "structured",
                                 "quality_score": 95,
                             })
@@ -1815,6 +1861,7 @@ class GenericAgent(
         aspects: List[str],
         skill_registry: Any,
         preloaded_search_results: Optional[List[Dict]] = None,
+        depth: str = "deep",
     ) -> Dict[str, Any]:
         """
         执行深度研究：两阶段搜索策略 + 多轮搜索获取实时数据，带质量评估循环
@@ -1886,23 +1933,30 @@ class GenericAgent(
         # 从Agent配置获取搜索参数（使用框架配置）
         skill_params = self.config.get("skill_params", {})
         search_params = skill_params.get("search_skill", {})
-        min_queries = search_params.get("max_queries", 10)  # 最低搜索次数（必须完成）
-        max_results_per_query = search_params.get("max_results", 20)  # 每次最多20个结果
+        if depth == "basic":
+            min_queries = max(search_params.get("max_queries", 10) // 3, 2)
+            max_results_per_query = max(search_params.get("max_results", 20) // 2, 5)
+            MIN_QUALITY_SCORE = 55.0
+            MIN_SOURCES = 2
+            STAGNATION_LIMIT = 2
+            MAX_QUERIES = 10
+            MAX_ITERATIONS = 5
+            MAX_LLM_CALLS = 1
+        else:
+            min_queries = search_params.get("max_queries", 10)
+            max_results_per_query = search_params.get("max_results", 20)
+            MIN_QUALITY_SCORE = 45.0
+            MIN_SOURCES = 5
+            STAGNATION_LIMIT = 6
+            MAX_QUERIES = 50
+            MAX_ITERATIONS = 20
+            MAX_LLM_CALLS = 3
         
-        logger.info(f"GenericAgent {self.agent_id}: 搜索配置 min_queries={min_queries}, max_results={max_results_per_query}")
+        logger.info(f"GenericAgent {self.agent_id}: 搜索配置 depth={depth}, min_queries={min_queries}, max_results={max_results_per_query}")
         
-        # 质量阈值：与 SearchQualityFilter 默认值 40.0 对齐
-        MIN_QUALITY_SCORE = 45.0  # 与 quality_filter 实际可达到的分值匹配
-        MIN_SOURCES = 5  # 最少高质量来源数
-        STAGNATION_LIMIT = 6  # 质量停滞检测：连续多少轮(每轮3次搜索)质量未提升则接受当前数据
+        # 新增：获取领域角色信息
         
-        # 新增：硬限制（防止无限循环）
-        MAX_QUERIES = 50  # 最大搜索次数
-        MAX_ITERATIONS = 20  # 最大迭代轮数
-        
-        # 新增：LLM 扩展控制
-        MAX_LLM_CALLS = 3  # 最多 LLM 调用次数
-        MIN_CALL_INTERVAL = 5.0  # 最小调用间隔（秒）
+        MIN_CALL_INTERVAL = 5.0
         
         # 新增：获取领域角色信息
         from src.core.search import DomainRoleInferrer
