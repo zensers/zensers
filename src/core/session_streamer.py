@@ -118,13 +118,37 @@ class SessionStreamer:
 
     @classmethod
     def _persist_event(cls, session_id: str, event_type: str, data: Dict[str, Any]):
-        """持久化 SSE 事件到 SessionManager (最多 100 条, 分类保留)"""
+        """持久化 SSE 事件到 SessionManager (最多 100 条, 分类保留)
+        
+        同时将 chat_response 和 agent_message 写入 conversation_history，
+        确保刷新页面后消息不丢失。
+        """
         try:
             from src.core.session_manager import SessionManager
             sm = SessionManager.get_instance()
             session = sm.get(session_id)
             if session is None:
                 return
+
+            # Write chat/agent messages to conversation_history for persistence
+            if event_type in ("chat_response", "agent_message"):
+                history = session.get("conversation_history", [])
+                if event_type == "chat_response":
+                    history.append({
+                        "role": "assistant",
+                        "content": data.get("message", ""),
+                        "timestamp": data.get("timestamp", datetime.now().isoformat()),
+                    })
+                elif event_type == "agent_message":
+                    history.append({
+                        "role": "agent",
+                        "content": data.get("content", ""),
+                        "agent_id": data.get("agent_id", ""),
+                        "agent_name": data.get("agent_name", ""),
+                        "action": data.get("action", ""),
+                        "timestamp": data.get("timestamp", datetime.now().isoformat()),
+                    })
+                session["conversation_history"] = history
 
             events = session.get("recent_events", [])
             events.append({
@@ -161,6 +185,7 @@ class SessionStreamer:
             "suggestions": response_data.get("suggestions", []),
             "timestamp": datetime.now().isoformat(),
         })
+        _ts = datetime.now().isoformat()
         cls._persist_event(session_id, SessionSSEEventType.CHAT_RESPONSE.value, {
             "session_id": session_id,
             "message": response_data.get("message", ""),
@@ -168,19 +193,21 @@ class SessionStreamer:
             "topic": response_data.get("topic"),
             "directions": response_data.get("directions", []),
             "suggestions": response_data.get("suggestions", []),
+            "timestamp": _ts,
         })
         logger.info(f"Session stream chat_response pushed: {session_id}")
 
     @classmethod
     def push_agent_message(cls, session_id: str, agent_data: Dict[str, Any]):
         """Push an agent_message event to all session subscribers"""
+        _ts = datetime.now().isoformat()
         cls._notify_subscribers(session_id, SessionSSEEventType.AGENT_MESSAGE, {
             "session_id": session_id,
             "agent_id": agent_data.get("agent_id", ""),
             "agent_name": agent_data.get("agent_name", ""),
             "action": agent_data.get("action", ""),
             "content": agent_data.get("content", ""),
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": _ts,
         })
         cls._persist_event(session_id, SessionSSEEventType.AGENT_MESSAGE.value, {
             "session_id": session_id,
@@ -188,6 +215,7 @@ class SessionStreamer:
             "agent_name": agent_data.get("agent_name", ""),
             "action": agent_data.get("action", ""),
             "content": agent_data.get("content", ""),
+            "timestamp": _ts,
         })
         logger.debug(f"Session stream agent_message pushed: {session_id}/{agent_data.get('agent_id', '')}")
 
