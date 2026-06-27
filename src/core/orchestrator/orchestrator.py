@@ -703,7 +703,7 @@ class ResearchOrchestrator:
             decomposition_plan = None
             try:
                 strategy = get_strategy(output_type_value)
-                decomposition_plan = strategy.decompose(
+                decomposition_plan = await strategy.decompose(
                     requirement,
                     intent_result,
                     framework_config,
@@ -826,10 +826,44 @@ class ResearchOrchestrator:
                     created_at=start_time, completed_at=datetime.now(),
                 )
 
+            # Handle cancelled status: attempt recovery before giving up
+            if exec_result.status == "cancelled":
+                if not exec_result.stage_results or not any(
+                    isinstance(v, list) and len(v) > 0
+                    for v in (exec_result.stage_results or {}).values()
+                ):
+                    recovered = self._recover_results_from_sessions(task_id, session_registry)
+                    if recovered:
+                        exec_result.stage_results["recovered"] = recovered
+                        logger.info(f"[{task_id}] Recovered {len(recovered)} results from cancelled agents, continuing aggregation")
+                    else:
+                        return ResearchResult(
+                            task_id=task_id, status="cancelled",
+                            topic=requirement.topic,
+                            agents_used=[a.agent_id for a in agents] if agents else [],
+                            stages_completed=0,
+                            summary="Research cancelled, no partial data available",
+                            created_at=start_time, completed_at=datetime.now(),
+                        )
+                logger.info(f"[{task_id}] Execution cancelled but has partial data, proceeding with aggregation")
+
+            # Handle completed but empty results: attempt recovery from sessions
+            if exec_result.status != "cancelled" and (
+                not exec_result.stage_results or not any(
+                    isinstance(v, list) and len(v) > 0
+                    for v in (exec_result.stage_results or {}).values()
+                )
+            ):
+                recovered = self._recover_results_from_sessions(task_id, session_registry)
+                if recovered:
+                    exec_result.stage_results["recovered"] = recovered
+                    logger.info(f"[{task_id}] Recovered {len(recovered)} results from failed sessions")
+
             # Convert stage_results to format expected by ResultAggregator
             # stage_results: Dict[str, List[Dict]] -> Dict[str, Dict]
             # Fix: use Agent's aspect as key, for matching with section_details
             results_for_aggregation: Dict[str, Dict[str, Any]] = {}
+
             if exec_result.stage_results:
                 for stage_name, stage_results_list in exec_result.stage_results.items():
                     for i, result in enumerate(stage_results_list):
@@ -929,11 +963,86 @@ class ResearchOrchestrator:
                 output_dir) if output_dir else self._storage_path / "reports"
             output_dir_path.mkdir(parents=True, exist_ok=True)
 
-            # === New flow: HTML preview → User confirmation → Word finalization ===
-            research_result_data = aggregated.to_dict()
-            # Ensure title is set for document generation downstream
-            if "title" not in research_result_data:
-                research_result_data["title"] = requirement.topic
+            # === Report Upgrade: framework-driven report generation (non-routing path) ===
+            try:
+                from src.agents.fixed_agents.report_upgrade.orchestrator import ReportOrchestrator
+                from src.agents.fixed_agents.report_upgrade.chapter_writer import ChapterWriter
+                from src.agents.fixed_agents.report_upgrade.chapter_reviewer import ChapterReviewAgent
+                from src.agents.fixed_agents.report_upgrade.global_reviewer import GlobalReviewAgent
+                from src.agents.fixed_agents.report_upgrade.data_repair import DataRepairAgent, ConflictResolver
+                from src.agents.fixed_agents.report_upgrade.prompt_manager import PromptManager
+                from src.core.research_framework_manager import get_framework_config
+
+                _llm_skill = self._skill_registry.get("llm_skill")
+                _search_skill = self._skill_registry.get("search_skill")
+                _web_scraper_skill = self._skill_registry.get("web_scraper")
+
+                if _llm_skill:
+                    _pm = PromptManager()
+                    _ro = ReportOrchestrator(
+                        llm_skill=_llm_skill,
+                        chapter_writer=ChapterWriter(llm_skill=_llm_skill, prompt_manager=_pm),
+                        chapter_reviewer=ChapterReviewAgent(llm_skill=_llm_skill, prompt_manager=_pm),
+                        global_reviewer=GlobalReviewAgent(llm_skill=_llm_skill, prompt_manager=_pm),
+                        data_repair_agent=DataRepairAgent(
+                            search_skill=_search_skill,
+                            web_scraper_skill=_web_scraper_skill,
+                            llm_skill=_llm_skill,
+                            prompt_manager=_pm,
+                        ),
+                        conflict_resolver=ConflictResolver(
+                            llm_skill=_llm_skill,
+                            search_skill=_search_skill,
+                            web_scraper_skill=_web_scraper_skill,
+                            prompt_manager=_pm,
+                        ),
+                        prompt_manager=_pm,
+                        skill_registry=self._skill_registry,
+                    )
+
+                    _output_type_value = requirement.output_type.value if hasattr(
+                        requirement.output_type, 'value') else str(requirement.output_type)
+                    _fc_obj = get_framework_config(_output_type_value)
+                    _fc_dict = {
+                        "name": _fc_obj.name,
+                        "description": _fc_obj.description,
+                        "agent_config": {
+                            "search": {
+                                "max_queries_per_section": _fc_obj.agent_config.search.max_queries_per_section,
+                                "max_results_per_query": _fc_obj.agent_config.search.max_results_per_query,
+                                "priority_sources": _fc_obj.agent_config.search.priority_sources,
+                            },
+                            "analysis": {
+                                "depth": _fc_obj.agent_config.analysis.depth,
+                                "focus_areas": _fc_obj.agent_config.analysis.focus_areas,
+                                "metrics": _fc_obj.agent_config.analysis.metrics,
+                            },
+                            "content": {
+                                "min_section_length": _fc_obj.agent_config.content.min_section_length,
+                                "require_data_points": _fc_obj.agent_config.content.require_data_points,
+                                "require_sources": _fc_obj.agent_config.content.require_sources,
+                            },
+                        },
+                        "section_weights": _fc_obj.section_weights,
+                    }
+
+                    research_result_data = await _ro.generate_report(
+                        task_structure={},
+                        framework_config=_fc_dict,
+                        aggregated_result=aggregated,
+                        topic=requirement.topic,
+                        task_id=task_id,
+                    )
+                    if "title" not in research_result_data:
+                        research_result_data["title"] = requirement.topic
+                    logger.info(f"[{task_id}] Report upgrade (non-routing): framework-driven generation complete")
+                else:
+                    raise RuntimeError("No LLM skill available")
+            except Exception as _report_upgrade_err:
+                logger.warning(f"[{task_id}] Report upgrade failed, falling back to to_dict(): {_report_upgrade_err}")
+                research_result_data = aggregated.to_dict()
+                if "title" not in research_result_data:
+                    research_result_data["title"] = requirement.topic
 
             # === Step 1: Generate HTML preview first ===
             # Generate preview regardless of interaction mode
@@ -1102,7 +1211,12 @@ class ResearchOrchestrator:
                 for issue in (issues or [])[:5]:
                     logger.warning(f"  - {issue.get('type', 'unknown')}: {issue.get('message', '')[:100]}")
 
-            result_status = "completed" if quality_passed else "completed_with_warnings"
+            if exec_result.status == "cancelled":
+                result_status = "completed_with_warnings"
+            elif quality_passed:
+                result_status = "completed"
+            else:
+                result_status = "completed_with_warnings"
             quality_issues_list = []
             quality_score_val = 0.0
             if quality_result and isinstance(quality_result, dict):
@@ -1762,6 +1876,30 @@ class ResearchOrchestrator:
                     created_at=start_time, completed_at=datetime.now(),
                 )
 
+            # Handle cancelled status: attempt recovery before giving up
+            if exec_result.status == "cancelled":
+                if not exec_result.stage_results or not any(
+                    isinstance(v, list) and len(v) > 0
+                    for v in (exec_result.stage_results or {}).values()
+                ):
+                    recovered = self._recover_results_from_sessions(task_id, session_registry)
+                    if recovered:
+                        exec_result.stage_results["recovered"] = recovered
+                        logger.info(f"[{task_id}] Recovered {len(recovered)} results from cancelled agents, continuing aggregation")
+                    else:
+                        self._task_persistence.update_task_state(
+                            task_id, TaskState.FAILED, progress=0.0,
+                            message="Research cancelled, no partial data"
+                        )
+                        return ResearchResult(
+                            task_id=task_id, status="cancelled",
+                            topic=requirement.topic, agents_used=[a.agent_id for a in agents],
+                            stages_completed=0,
+                            summary="Research cancelled, no partial data available",
+                            created_at=start_time, completed_at=datetime.now(),
+                        )
+                logger.info(f"[{task_id}] Execution cancelled but has partial data, proceeding with aggregation")
+
             # Update task state
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.7, message="Execution complete"
@@ -1906,14 +2044,96 @@ class ResearchOrchestrator:
                 output_dir) if output_dir else self._storage_path / task_id
             output_dir_path.mkdir(parents=True, exist_ok=True)
 
-            research_result_data = {
-                "topic": requirement.topic,
-                "title": requirement.topic,
-                "aspects": requirement.aspects,
-                "sections": aggregated_dict.get("sections", []),
-                "sources": aggregated_dict.get("sources", []),
-                "key_findings": aggregated_dict.get("key_findings", []),
-            }
+            # === Report Upgrade: framework-driven report generation ===
+            # Replace mechanical assembly with Researcher→Senior Researcher→Director workflow
+            try:
+                from src.agents.fixed_agents.report_upgrade.orchestrator import ReportOrchestrator
+                from src.agents.fixed_agents.report_upgrade.chapter_writer import ChapterWriter
+                from src.agents.fixed_agents.report_upgrade.chapter_reviewer import ChapterReviewAgent
+                from src.agents.fixed_agents.report_upgrade.global_reviewer import GlobalReviewAgent
+                from src.agents.fixed_agents.report_upgrade.data_repair import DataRepairAgent, ConflictResolver
+                from src.agents.fixed_agents.report_upgrade.prompt_manager import PromptManager
+                from src.core.research_framework_manager import get_framework_config
+
+                llm_skill = self._skill_registry.get("llm_skill")
+                search_skill = self._skill_registry.get("search_skill")
+                web_scraper_skill = self._skill_registry.get("web_scraper")
+
+                if llm_skill:
+                    prompt_manager = PromptManager()
+                    report_orchestrator = ReportOrchestrator(
+                        llm_skill=llm_skill,
+                        chapter_writer=ChapterWriter(llm_skill=llm_skill, prompt_manager=prompt_manager),
+                        chapter_reviewer=ChapterReviewAgent(llm_skill=llm_skill, prompt_manager=prompt_manager),
+                        global_reviewer=GlobalReviewAgent(llm_skill=llm_skill, prompt_manager=prompt_manager),
+                        data_repair_agent=DataRepairAgent(
+                            search_skill=search_skill,
+                            web_scraper_skill=web_scraper_skill,
+                            llm_skill=llm_skill,
+                            prompt_manager=prompt_manager,
+                        ),
+                        conflict_resolver=ConflictResolver(
+                            llm_skill=llm_skill,
+                            search_skill=search_skill,
+                            web_scraper_skill=web_scraper_skill,
+                            prompt_manager=prompt_manager,
+                        ),
+                        prompt_manager=prompt_manager,
+                        skill_registry=self._skill_registry,
+                    )
+
+                    task_structure_dict = {}
+                    if hasattr(routing_result, 'task_structure') and routing_result.task_structure:
+                        task_structure_dict = routing_result.task_structure.to_dict()
+
+                    output_type_value = requirement.output_type.value if hasattr(
+                        requirement.output_type, 'value') else str(requirement.output_type)
+                    framework_config_obj = get_framework_config(output_type_value)
+                    framework_config_dict = {
+                        "name": framework_config_obj.name,
+                        "description": framework_config_obj.description,
+                        "agent_config": {
+                            "search": {
+                                "max_queries_per_section": framework_config_obj.agent_config.search.max_queries_per_section,
+                                "max_results_per_query": framework_config_obj.agent_config.search.max_results_per_query,
+                                "priority_sources": framework_config_obj.agent_config.search.priority_sources,
+                            },
+                            "analysis": {
+                                "depth": framework_config_obj.agent_config.analysis.depth,
+                                "focus_areas": framework_config_obj.agent_config.analysis.focus_areas,
+                                "metrics": framework_config_obj.agent_config.analysis.metrics,
+                            },
+                            "content": {
+                                "min_section_length": framework_config_obj.agent_config.content.min_section_length,
+                                "require_data_points": framework_config_obj.agent_config.content.require_data_points,
+                                "require_sources": framework_config_obj.agent_config.content.require_sources,
+                            },
+                        },
+                        "section_weights": framework_config_obj.section_weights,
+                    }
+
+                    research_result_data = await report_orchestrator.generate_report(
+                        task_structure=task_structure_dict,
+                        framework_config=framework_config_dict,
+                        aggregated_result=aggregated,
+                        topic=requirement.topic,
+                        task_id=task_id,
+                    )
+                    if "title" not in research_result_data:
+                        research_result_data["title"] = requirement.topic
+                    logger.info(f"[{task_id}] Report upgrade: framework-driven generation complete, {len(research_result_data.get('sections', []))} sections")
+                else:
+                    raise RuntimeError("No LLM skill available")
+            except Exception as _report_upgrade_err:
+                logger.warning(f"[{task_id}] Report upgrade failed, falling back to mechanical assembly: {_report_upgrade_err}")
+                research_result_data = {
+                    "topic": requirement.topic,
+                    "title": requirement.topic,
+                    "aspects": requirement.aspects,
+                    "sections": aggregated_dict.get("sections", []),
+                    "sources": aggregated_dict.get("sources", []),
+                    "key_findings": aggregated_dict.get("key_findings", []),
+                }
 
             # Cache aggregated result for resume/crash recovery
             # Save BEFORE preview generation, so even if preview fails,
@@ -2074,7 +2294,12 @@ class ResearchOrchestrator:
                 for issue in (issues or [])[:5]:
                     logger.warning(f"  - {issue.get('type', 'unknown')}: {issue.get('message', '')[:100]}")
 
-            result_status = "completed" if quality_passed else "completed_with_warnings"
+            if exec_result.status == "cancelled":
+                result_status = "completed_with_warnings"
+            elif quality_passed:
+                result_status = "completed"
+            else:
+                result_status = "completed_with_warnings"
             quality_issues_list = []
             quality_score_val = 0.0
             if quality_result and isinstance(quality_result, dict):
@@ -2384,16 +2609,17 @@ class ResearchOrchestrator:
                 # 6. Merge old and new results
                 new_sections = []
                 # P0-1 fix: explicit type check
-                for stage_name, stage_results in exec_result.stage_results.items():
-                    for r in stage_results:
-                        if isinstance(r, dict) and r.get(
-                                "success") is True and r.get("content"):
-                            new_sections.append({
-                                "section_id": r.get("agent_id", ""),
-                                "content": r.get("content", ""),
-                                "data_points": r.get("data_points", []),
-                                "sources": r.get("sources", []),
-                            })
+                if exec_result.stage_results:
+                    for stage_name, stage_results in exec_result.stage_results.items():
+                        for r in stage_results:
+                            if isinstance(r, dict) and r.get(
+                                    "success") is True and r.get("content"):
+                                new_sections.append({
+                                    "section_id": r.get("agent_id", ""),
+                                    "content": r.get("content", ""),
+                                    "data_points": r.get("data_points", []),
+                                    "sources": r.get("sources", []),
+                                })
 
                 # Update completed sections list
                 all_completed = list(preserved) + \
@@ -2635,16 +2861,17 @@ class ResearchOrchestrator:
 
                 # Extract new results
                 new_section_results = []
-                for stage_name, stage_results in exec_result.stage_results.items():
-                    for r in stage_results:
-                        if isinstance(r, dict) and r.get(
-                                "success") is True and r.get("content"):
-                            new_section_results.append({
-                                "section_id": r.get("agent_id", ""),
-                                "content": r.get("content", ""),
-                                "data_points": r.get("data_points", []),
-                                "sources": r.get("sources", []),
-                            })
+                if exec_result.stage_results:
+                    for stage_name, stage_results in exec_result.stage_results.items():
+                        for r in stage_results:
+                            if isinstance(r, dict) and r.get(
+                                    "success") is True and r.get("content"):
+                                new_section_results.append({
+                                    "section_id": r.get("agent_id", ""),
+                                    "content": r.get("content", ""),
+                                    "data_points": r.get("data_points", []),
+                                    "sources": r.get("sources", []),
+                                })
 
                 # Merge results
                 all_completed = list(completed_sections) + \
@@ -3543,6 +3770,29 @@ class ResearchOrchestrator:
 
         logger.info(f"[{task_id}] Created {len(agents)} Agents by decomposition plan")
         return agents
+
+    def _recover_results_from_sessions(self, task_id, session_registry):
+        """Recover results from cancelled/failed agent sessions"""
+        from src.core.agents.agent_session import AgentSessionStatus
+        if not session_registry or not hasattr(session_registry, 'child_sessions'):
+            return []
+        results = []
+        for sid, session in (session_registry.child_sessions or {}).items():
+            if not hasattr(session, 'status') or not hasattr(session, 'result'):
+                continue
+            if session.status not in (AgentSessionStatus.CANCELLED, AgentSessionStatus.FAILED):
+                continue
+            if not session.result:
+                continue
+            result = dict(session.result) if isinstance(session.result, dict) else {"content": str(session.result)}
+            result["agent_id"] = session.agent_id
+            result["_recovered"] = True
+            ctx = session.context or {}
+            if "section_id" in ctx:
+                result["section_id"] = ctx["section_id"]
+                result["_section_id"] = ctx["section_id"]
+            results.append(result)
+        return results
 
     def _format_routing_framework(self, routing_result, requirement) -> str:
         """Format intelligent routing result as a displayable framework summary"""
@@ -4747,7 +4997,7 @@ class ResearchOrchestrator:
             req.output_type, 'value') else str(req.output_type)
         framework_config = get_framework_config(output_type_value)
         strategy = get_strategy(output_type_value)
-        plan = strategy.decompose(req, None, framework_config)
+        plan = await strategy.decompose(req, None, framework_config)
 
         # 4. 检测已完成阶段
         completed_phases = self._detect_completed_phases(task_id, plan)
@@ -4871,7 +5121,7 @@ class ResearchOrchestrator:
             req.output_type, 'value') else str(req.output_type)
         framework_config = get_framework_config(output_type_value)
         strategy = get_strategy(output_type_value)
-        plan = strategy.decompose(req, None, framework_config)
+        plan = await strategy.decompose(req, None, framework_config)
 
         # 4. 只保留指定aspect的AgentSpec
         filtered_plan = self._filter_plan_by_aspects(plan, aspects)

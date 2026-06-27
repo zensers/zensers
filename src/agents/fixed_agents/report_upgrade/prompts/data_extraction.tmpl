@@ -1,0 +1,13 @@
+从以下搜索结果中提取"${metric}"的具体数值。
+缺失上下文：${context}
+研究主题：${topic}
+
+搜索结果：
+${search_results}
+
+要求：
+1. 只提取有明确来源的数据，不要推断
+2. 如果多个来源给出不同数值，列出所有及来源
+3. 如果搜索结果中没有相关数据，返回 found=false
+
+输出JSON：{"found": true/false, "value": "...", "unit": "...", "source": "...", "source_title": "...", "confidence": 0.8}

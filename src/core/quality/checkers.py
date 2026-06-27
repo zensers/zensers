@@ -353,33 +353,28 @@ class AnalysisQualityChecker(BaseQualityChecker):
     Check dimensions:
     1. Structure completeness (40%): 5-segment framework present with context validation
     2. Data caliber declaration rate (30%): numeric values carry caliber/source annotations
-    3. Counter-evidence completeness (20%): gradient scoring for boundary conditions
+    3. Risk disclosure completeness (20%): gradient scoring for uncertainty and risk notes
     4. Quantified decomposition rate (10%): gradient scoring for causal decomposition
     """
     
     STRUCTURE_MARKERS = {
-        "core_judgment": {
-            "keywords": ["核心判断", "核心结论", "Core Judgment", "核心观点", "核心主张"],
+        "core_conclusion": {
+            "keywords": ["核心结论", "核心判断", "核心发现", "核心观点", "核心主张", "Core Judgment"],
             "min_context_chars": 50,
+        },
+        "argument_analysis": {
+            "keywords": ["论证", "分析", "推理", "逻辑", "推导", "驱动因素", "归因"],
+            "min_context_chars": 30,
         },
         "data_support": {
             "keywords": ["数据来源", "Source", "来源", "数据显示", "据", "统计", "调研"],
             "min_context_chars": 30,
         },
-        "causal_decomposition": {
-            "keywords": ["贡献", "个百分点", "其中", "分解", "因为", "因此", "驱动", "拉动", "源于"],
-            "min_context_chars": 40,
-        },
-        "counter_evidence": {
-            "keywords": ["如果", "若", "边界条件", "风险在于", "但需注意", "当",
-                         "然而", "不过", "需要注意的是", "潜在风险", "不确定性",
-                         "风险", "限制", "假设"],
+        "risk_disclosure": {
+            "keywords": ["风险提示", "风险", "不确定性", "假设", "数据缺口", "若", "如果",
+                         "限制", "需要注意的是", "但需注意", "潜在风险"],
             "min_context_chars": 30,
             "exclude_trivial": True,
-        },
-        "implication": {
-            "keywords": ["意味着", "含义", "对投资", "对决策", "建议", "启示", "影响", "指向"],
-            "min_context_chars": 30,
         },
     }
     
@@ -412,13 +407,13 @@ class AnalysisQualityChecker(BaseQualityChecker):
         
         structure_score = self._check_structure(content) * 0.40
         caliber_score = self._check_caliber_coverage(content) * 0.30
-        counter_score = self._check_counter_evidence(content) * 0.20
+        counter_score = self._check_risk_disclosure(content) * 0.20
         quant_score = self._check_quantified_decomposition(content) * 0.10
         
         return min(structure_score + caliber_score + counter_score + quant_score, 100.0)
     
     def _check_structure(self, content: str) -> float:
-        """Check 5-segment structure with context validation."""
+        """Check 4-segment structure with context validation."""
         segments_found = 0
         for section_name, config in self.STRUCTURE_MARKERS.items():
             keywords = config["keywords"]
@@ -431,7 +426,7 @@ class AnalysisQualityChecker(BaseQualityChecker):
                     end = min(len(content), idx + len(kw) + min_ctx)
                     context = content[start:end].strip()
                     if len(context) >= min_ctx:
-                        if section_name == "counter_evidence" and config.get("exclude_trivial"):
+                        if section_name == "risk_disclosure" and config.get("exclude_trivial"):
                             if self._is_trivial_counter(kw, context):
                                 idx = content.find(kw, idx + len(kw))
                                 continue
@@ -440,7 +435,7 @@ class AnalysisQualityChecker(BaseQualityChecker):
                     idx = content.find(kw, idx + len(kw))
             if found:
                 segments_found += 1
-        return (segments_found / 5.0) * 100.0
+        return (segments_found / 4.0) * 100.0
     
     @staticmethod
     def _is_trivial_counter(keyword: str, context: str) -> bool:
@@ -455,21 +450,21 @@ class AnalysisQualityChecker(BaseQualityChecker):
         ratio = caliber_refs / max(1, len(numeric_refs) * 0.3)
         return min(100.0, ratio * 100.0)
     
-    def _check_counter_evidence(self, content: str) -> float:
-        """Gradient scoring for counter-evidence and boundary conditions."""
-        counter_indicators = [
-            (r'(?:然而|不过|但是|但需注意|需要注意的是)[^。？！；…\n]{10,}', 1.0),
-            (r'(?:风险|不确定性|边界条件|限制|假设)[^。？！；…\n]{10,}', 0.8),
-            (r'(?:如果|若|当)[^。？！；…\n]{15,}(?:则|那么|可能|将|会)', 0.6),
-            (r'(?:如果|若)[^。？！；…\n]{5,}', 0.2),
+    def _check_risk_disclosure(self, content: str) -> float:
+        """Gradient scoring for risk disclosure and uncertainty notes."""
+        risk_indicators = [
+            (r'(?:风险提示)[^。？！；…\n]{5,}', 1.2),
+            (r'(?:风险|不确定性|数据缺口|假设前提)[^。？！；…\n]{10,}', 0.9),
+            (r'(?:然而|不过|但是|但需注意|需要注意的是)[^。？！；…\n]{10,}', 0.7),
+            (r'(?:如果|若|当)[^。？！；…\n]{15,}(?:则|那么|可能|将|会)', 0.5),
         ]
         max_score = 0.0
-        for pattern, weight in counter_indicators:
+        for pattern, weight in risk_indicators:
             matches = re.findall(pattern, content)
             if matches:
                 score = min(len(matches) / 3.0, 1.0) * weight * 100
                 max_score = max(max_score, score)
-        return max_score
+        return min(max_score, 100.0)
     
     def _check_quantified_decomposition(self, content: str) -> float:
         """Gradient scoring for quantified causal decomposition."""
@@ -501,11 +496,11 @@ class AnalysisQualityChecker(BaseQualityChecker):
             return suggestions
         structure = self._check_structure(content)
         if structure < 80:
-            suggestions.append("Ensure all 5 required segments are present: core judgment, data support, causal decomposition, counter evidence, implication")
+            suggestions.append("Ensure all 4 required segments are present: core conclusion, argument analysis, data support, risk disclosure")
         if self._check_caliber_coverage(content) < 70:
             suggestions.append("Add caliber/source annotations to numeric references")
-        if self._check_counter_evidence(content) < 50:
-            suggestions.append("Include boundary conditions for each major conclusion")
+        if self._check_risk_disclosure(content) < 50:
+            suggestions.append("Add risk disclosure section at the end of the chapter covering uncertainties, assumptions, and data gaps")
         return suggestions
     
     def _get_details(self, data: Dict[str, Any], context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

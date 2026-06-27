@@ -4,6 +4,30 @@
 
 ---
 
+## [1.2.0] - 2026-06-27
+
+### Report Quality Upgrade Roadmap (78→90+)
+
+- Comprehensive scan of 9 Prompt templates, orchestrator.py, generic_agent.py, checkers.py, quality_check_agent.py
+- Identified 18 improvement points across 5 layers: Prompt, Execution Logic, Architecture, Data Quality, Scoring
+- P0 items: paragraph blacklist in chapter_write.tmpl, progressive convergence threshold, risk_disclosure compatibility matching
+- Key findings: "反证与边界条件" paragraphs not blocked by prompts, MIN_CONVERGENCE_IMPROVEMENT=5 too strict, AnalysisQualityChecker caliber weight too high
+- Detailed roadmap: `docs/2026-06-27-report-quality-upgrade-roadmap.md`
+
+### Quality Convergence System (v4: score 78)
+
+- Quality convergence loop with MAX_CONVERGENCE_ROUNDS=3, best version preservation
+- StructuredDataRepairAgent with StockDataSkill + KnowledgeQuerySkill integration
+- Layered data supplement: P0 StockDataSkill → P1 EntityResolver → P2 KnowledgeQuerySkill
+- _diagnose_issue_source: L1/L2/L3 classification + L2 omitted data extraction
+- _build_search_keywords: topic + core metric + bilingual (20 common metric translations)
+- Transparent degradation: quality_report + llm_trace output
+- 9 externalized Prompts via PromptManager
+- 225 unit tests passing
+- Traditional research report structure (4 elements): core conclusion → argument analysis → data support → risk disclosure
+
+---
+
 ## [1.0.4] - 2026-06-24
 
 ### Skill Dynamic Loading Fixes (FIX-1~4)

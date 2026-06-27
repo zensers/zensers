@@ -121,11 +121,10 @@ SECTION_ELEMENT_REQUIREMENTS = {
 
 # 通用要素：所有章节类型都应包含的基础分析要素
 GENERIC_ELEMENTS = [
-    {"id": "core_judgment", "patterns": [r"(?:核心判断|结论|观点|看法|我们认为)"], "weight": 0.25},
-    {"id": "logic_chain", "patterns": [r"(?:推导|逻辑|原因|因为|因此|hence)"], "weight": 0.25},
+    {"id": "core_conclusion", "patterns": [r"(?:核心结论|核心判断|结论|观点|看法|我们认为)"], "weight": 0.30},
+    {"id": "argument_analysis", "patterns": [r"(?:论证|推导|逻辑|原因|因为|因此|分析|hence)"], "weight": 0.25},
     {"id": "data_support", "patterns": [r"(?:数据|数据支持|数据来源|据|统计)"], "weight": 0.25},
-    {"id": "counter_evidence", "patterns": [r"(?:反证|反方|反之|however|但|然而)"], "weight": 0.15},
-    {"id": "implication", "patterns": [r"(?:意义|影响|含义|启示|建议)"], "weight": 0.10},
+    {"id": "risk_disclosure", "patterns": [r"(?:风险提示|风险|不确定性|数据缺口|假设|然而|但需注意)"], "weight": 0.20},
 ]
 
 logger = logging.getLogger(__name__)

@@ -265,7 +265,7 @@ class QualityFeedbackExecutor:
                 supplemental.append(f"{original_query} 年报 官方")
             if any('depth' in str(i) or '深度' in str(i) for i in issues):
                 supplemental.append(f"{original_query} 原因 分析 驱动因素")
-            if any('counter_evidence' in str(i) or '反证' in str(i) for i in issues):
+            if any('counter_evidence' in str(i) or 'risk_disclosure' in str(i) or '反证' in str(i) or '风险提示' in str(i) for i in issues):
                 supplemental.append(f"{original_query} 风险 挑战")
             if not supplemental:
                 supplemental = [f"{original_query} 数据", f"{original_query} 统计"]

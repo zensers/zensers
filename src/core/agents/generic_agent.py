@@ -24,6 +24,7 @@ v2.2 新增：
 """
 
 import asyncio
+import json
 import re
 from pathlib import Path
 from typing import Any, Dict, Optional, List, TYPE_CHECKING
@@ -1592,54 +1593,314 @@ class GenericAgent(
     ) -> Dict[str, Any]:
         result = {"data_points": [], "sources": [], "canonical_metrics": {}}
         try:
-            symbol = self._extract_stock_symbol(topic)
-            logger.info(
-                f"GenericAgent {self.agent_id}: _fetch_structured_data "
-                f"topic='{topic}' → symbol='{symbol}'"
-            )
-            if not symbol:
-                chinese_m_retry = re.search(r'[\u4e00-\u9fff]+', topic)
-                retry_name = chinese_m_retry.group(0) if chinese_m_retry else topic
-                resolved = self._resolve_company_to_code(retry_name)
-                if resolved:
-                    symbol = resolved
+            symbols: List[str] = []
+            raw_entities = getattr(self, '_context', {}).get("entities", [])
+            if raw_entities:
+                from src.core.entity_resolver import EntityInfo
+                entities = [
+                    EntityInfo.from_dict(e) if isinstance(e, dict) else e
+                    for e in raw_entities
+                ]
+                listed = [e for e in entities if e.is_listed and e.resolved_code]
+                if listed:
+                    symbols = [e.resolved_code for e in listed]
                     logger.info(
-                        f"GenericAgent {self.agent_id}: resolved '{retry_name}' -> symbol='{symbol}' via _resolve_company_to_code"
+                        f"GenericAgent {self.agent_id}: _fetch_structured_data "
+                        f"resolved {len(symbols)} symbols from context entities: {symbols}"
                     )
-            if not symbol:
+            if not symbols:
+                symbol = self._extract_stock_symbol(topic)
+                logger.info(
+                    f"GenericAgent {self.agent_id}: _fetch_structured_data "
+                    f"topic='{topic}' → symbol='{symbol}'"
+                )
+                if not symbol:
+                    chinese_m_retry = re.search(r'[\u4e00-\u9fff]+', topic)
+                    retry_name = chinese_m_retry.group(0) if chinese_m_retry else topic
+                    resolved = self._resolve_company_to_code(retry_name)
+                    if resolved:
+                        symbol = resolved
+                        logger.info(
+                            f"GenericAgent {self.agent_id}: resolved '{retry_name}' -> symbol='{symbol}' via _resolve_company_to_code"
+                        )
+                if symbol:
+                    symbols = [symbol]
+            if not symbols:
                 return result
-            actions = self._infer_stock_actions(aspect)
-            for action in actions:
-                try:
-                    skill_result = await stock_skill.execute(
-                        action=action, symbol=symbol,
-                    )
-                    if skill_result and skill_result.get("success"):
-                        data = skill_result.get("data", {})
-                        if isinstance(data, dict):
-                            result["data_points"].append({
-                                "title": f"{symbol} {action}",
-                                "content": str(data),
-                                "url": f"{skill_name}://{symbol}/{action}",
-                                "quality_score": 95,
-                                "credibility": "structured_source",
-                            })
-                            result["sources"].append({
-                                "title": f"{skill_name} {symbol} {action}",
-                                "url": f"{skill_name}://{symbol}/{action}",
-                                "type": "structured",
-                                "quality_score": 95,
-                            })
-                            for key, val in data.items():
-                                if isinstance(val, (int, float)):
-                                    result["canonical_metrics"][key] = val
-                except Exception as action_err:
-                    logger.warning(f"GenericAgent {self.agent_id}: stock_data action '{action}' failed: {action_err}")
+            for symbol in symbols:
+                actions = self._infer_stock_actions(aspect)
+                for action in actions:
+                    try:
+                        skill_result = await stock_skill.execute(
+                            action=action, symbol=symbol,
+                        )
+                        if skill_result and skill_result.get("success"):
+                            data = skill_result.get("data", {})
+                            if isinstance(data, list):
+                                data = {"records": data}
+                            if isinstance(data, dict):
+                                content = skill_result.get("content", "")
+                                formatted = self._format_structured_data(data, action, symbol)
+                                if formatted and (not content or len(formatted) > len(content)):
+                                    content = formatted
+                                if not content:
+                                    content = json.dumps(data, ensure_ascii=False, indent=2)
+                                result["data_points"].append({
+                                    "title": f"{symbol} {action}",
+                                    "content": content,
+                                    "url": f"{skill_name}://{symbol}/{action}",
+                                    "quality_score": 95,
+                                    "credibility": "structured_source",
+                                })
+                                result["sources"].append({
+                                    "title": f"{skill_name} {symbol} {action}",
+                                    "url": f"{skill_name}://{symbol}/{action}",
+                                    "type": "structured",
+                                    "quality_score": 95,
+                                })
+                                result["canonical_metrics"].update(
+                                    self._extract_numeric_metrics(data)
+                                )
+                    except Exception as action_err:
+                        logger.warning(f"GenericAgent {self.agent_id}: stock_data action '{action}' failed: {action_err}")
         except Exception as e:
             logger.warning(f"GenericAgent {self.agent_id}: _fetch_structured_data failed: {e}")
         return result
 
     _STOCK_CODE_CACHE: Dict[str, str] = {}
+
+    _UNIT_MULTIPLIERS = {
+        "亿": 1e8, "万": 1e4, "千": 1e3, "百": 1e2,
+    }
+
+    @staticmethod
+    def _parse_chinese_number(val: str):
+        if not isinstance(val, str):
+            return None
+        val = val.strip()
+        if val.endswith("%"):
+            try:
+                return float(val[:-1]) / 100.0
+            except ValueError:
+                return None
+        for unit, mult in GenericAgent._UNIT_MULTIPLIERS.items():
+            if val.endswith(unit):
+                try:
+                    return float(val[:-len(unit)]) * mult
+                except ValueError:
+                    return None
+        return None
+
+    def _extract_numeric_metrics(self, data: Any, prefix: str = "") -> Dict[str, float]:
+        metrics: Dict[str, float] = {}
+        if isinstance(data, dict):
+            for key, val in data.items():
+                full_key = f"{prefix}.{key}" if prefix else key
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    if isinstance(val, float) and val != val:
+                        continue
+                    metrics[full_key] = float(val)
+                elif isinstance(val, str):
+                    parsed = self._parse_chinese_number(val)
+                    if parsed is not None:
+                        metrics[full_key] = parsed
+                    else:
+                        try:
+                            v = float(val)
+                            if v == v:
+                                metrics[full_key] = v
+                        except (ValueError, TypeError):
+                            pass
+                elif isinstance(val, list) and val and isinstance(val[0], dict):
+                    for i, item in enumerate(val[:4]):
+                        item_prefix = f"{full_key}[{i}]"
+                        for ik, iv in item.items():
+                            full_ik = f"{item_prefix}.{ik}"
+                            if isinstance(iv, (int, float)) and not isinstance(iv, bool):
+                                if isinstance(iv, float) and iv != iv:
+                                    continue
+                                metrics[full_ik] = float(iv)
+                            elif isinstance(iv, str):
+                                parsed = self._parse_chinese_number(iv)
+                                if parsed is not None:
+                                    metrics[full_ik] = parsed
+                                else:
+                                    try:
+                                        v = float(iv)
+                                        if v == v:
+                                            metrics[full_ik] = v
+                                    except (ValueError, TypeError):
+                                        pass
+        return metrics
+
+    _FINANCIALS_KEY_COLUMNS = {
+        "income_statement": {
+            "date": ["REPORT_DATE", "报告期", "日期"],
+            "key_cols": ["OPERATE_INCOME", "营业总收入", "TOTAL_OPERATE_INCOME",
+                         "NET_PROFIT", "净利润", "PARENT_NETPROFIT", "归属净利润",
+                         "BASIC_EPS", "基本每股收益"],
+        },
+        "balance_sheet": {
+            "date": ["REPORT_DATE", "报告期", "日期"],
+            "key_cols": ["TOTAL_ASSETS", "总资产", "TOTAL_LIABILITIES", "总负债",
+                         "TOTAL_EQUITY", "所有者权益", "PARENT_EQUITY", "归属母公司权益"],
+        },
+        "cash_flow": {
+            "date": ["REPORT_DATE", "报告期", "日期"],
+            "key_cols": ["OPERATE_CASH_FLOW", "经营活动现金流量", "NET_CASH_OPERATE",
+                         "投资活动现金流量"],
+        },
+    }
+
+    def _format_structured_data(self, data: dict, action: str, symbol: str) -> str:
+        if action == "financials":
+            return self._format_financials(data, symbol)
+        elif action == "price_history":
+            return self._format_price_history(data, symbol)
+        elif action == "key_metrics":
+            return self._format_key_metrics(data, symbol)
+        elif action == "company_info":
+            return self._format_company_info(data, symbol)
+        return ""
+
+    def _format_financials(self, data: dict, symbol: str) -> str:
+        lines = []
+        for section_key, config in self._FINANCIALS_KEY_COLUMNS.items():
+            records = data.get(section_key, [])
+            if not records or not isinstance(records, list):
+                continue
+            section_names = {
+                "income_statement": "利润表",
+                "balance_sheet": "资产负债表",
+                "cash_flow": "现金流量表",
+            }
+            lines.append(f"=== {section_names.get(section_key, section_key)} (最近{min(len(records), 4)}期) ===")
+            date_cols = config["date"]
+            key_cols = config["key_cols"]
+            for rec in records[:4]:
+                date_val = ""
+                for dc in date_cols:
+                    if dc in rec:
+                        date_val = str(rec[dc])[:10]
+                        break
+                parts = []
+                for kc in key_cols:
+                    if kc in rec and rec[kc] is not None:
+                        val = rec[kc]
+                        if isinstance(val, float):
+                            if abs(val) >= 1e8:
+                                parts.append(f"{kc} {val/1e8:.2f}亿")
+                            elif abs(val) >= 1e4:
+                                parts.append(f"{kc} {val/1e4:.2f}万")
+                            else:
+                                parts.append(f"{kc} {val:.2f}")
+                        else:
+                            parts.append(f"{kc} {val}")
+                if date_val or parts:
+                    if parts:
+                        line = f"{date_val}: " + " | ".join(parts[:5]) if date_val else " | ".join(parts[:5])
+                    else:
+                        line = str(date_val)
+                    lines.append(line)
+        return "\n".join(lines) if lines else ""
+
+    def _format_price_history(self, data: dict, symbol: str) -> str:
+        records = data.get("records", [])
+        if not records:
+            return ""
+        lines = [f"=== {symbol} 股价数据 ==="]
+        recent = records[:30]
+        closes = []
+        highs = []
+        lows = []
+        for r in recent:
+            c = r.get("收盘", r.get("close"))
+            h = r.get("最高", r.get("high"))
+            l = r.get("最低", r.get("low"))
+            if isinstance(c, (int, float)):
+                closes.append(c)
+            if isinstance(h, (int, float)):
+                highs.append(h)
+            if isinstance(l, (int, float)):
+                lows.append(l)
+        if closes and highs and lows:
+            lines.append(f"最近{len(recent)}日: 最高{max(highs):.2f} | 最低{min(lows):.2f} | 最新{closes[-1]:.2f}")
+        for rec in recent[:10]:
+            date_val = rec.get("日期", rec.get("date", ""))
+            close = rec.get("收盘", rec.get("close", ""))
+            open_val = rec.get("开盘", rec.get("open", ""))
+            change = rec.get("涨跌幅", rec.get("change_pct", ""))
+            line_parts = [str(date_val)[:10]]
+            if open_val:
+                line_parts.append(f"开{open_val}")
+            if close:
+                line_parts.append(f"收{close}")
+            if change:
+                line_parts.append(f"涨幅{change}")
+            lines.append(" ".join(str(p) for p in line_parts))
+        return "\n".join(lines)
+
+    _THS_METRIC_CN = {
+        "operating_income_total": "营业总收入",
+        "parent_holder_net_profit": "归属净利润",
+        "index_deduct_holder_net_profit": "扣非净利润",
+        "calculate_operating_income_total_yoy_growth_ratio": "营收同比增长",
+        "calculate_parent_holder_net_profit_yoy_growth_ratio": "净利润同比增长",
+        "deduct_net_profit_yoy_growth_ratio": "扣非净利润同比增长",
+        "basic_eps": "基本每股收益",
+        "calc_per_net_assets": "每股净资产",
+        "per_capital_reserve": "每股资本公积金",
+        "per_undistributed_profits": "每股未分配利润",
+        "index_per_operating_cash_flow_net": "每股经营现金流",
+        "sale_net_interest_ratio": "销售净利率",
+        "sale_gross_margin": "销售毛利率",
+        "index_weighted_avg_roe": "加权ROE",
+        "index_full_diluted_roe": "摊薄ROE",
+        "business_cycle": "营业周期",
+        "inventory_turnover_ratio": "存货周转率",
+        "inventory_turnover_days": "存货周转天数",
+        "receive_accounts_turnover_days": "应收账款周转天数",
+        "current_ratio": "流动比率",
+        "quick_ratio": "速动比率",
+        "conservative_quick_ratio": "保守速动比率",
+        "equity_ratio": "产权比率",
+        "assets_debt_ratio": "资产负债率",
+    }
+
+    def _format_key_metrics(self, data: dict, symbol: str) -> str:
+        periods = data.get("periods", [])
+        if not periods:
+            return ""
+        lines = [f"=== {symbol} 关键财务指标 (最近{min(len(periods), 4)}期) ==="]
+        for rec in periods[:4]:
+            period = rec.get("报告期", rec.get("report_date", rec.get("REPORT_DATE", "")))
+            parts = [str(period)[:10]]
+            for k, v in rec.items():
+                if k in ("报告期", "report_date", "REPORT_DATE"):
+                    continue
+                if v is not None and v is not False:
+                    if isinstance(v, float) and v != v:
+                        continue
+                    cn = self._THS_METRIC_CN.get(k, k)
+                    parts.append(f"{cn}:{v}")
+            lines.append(" | ".join(parts[:8]))
+        return "\n".join(lines)
+
+    def _format_company_info(self, data: dict, symbol: str) -> str:
+        if not data:
+            return ""
+        lines = [f"=== {symbol} 公司信息 ==="]
+        key_fields = ["股票简称", "行业", "总股本", "流通股", "主营业务",
+                       "上市时间", "注册资本", "所属申万行业"]
+        found = set()
+        for k in key_fields:
+            if k in data:
+                lines.append(f"{k}: {data[k]}")
+                found.add(k)
+        for k, v in data.items():
+            if k not in found:
+                lines.append(f"{k}: {v}")
+        return "\n".join(lines)
 
     def _extract_stock_symbol(self, topic: str) -> str:
         if not topic:
@@ -1716,15 +1977,16 @@ class GenericAgent(
     def _infer_stock_actions(self, aspect: str) -> List[str]:
         aspect_lower = (aspect or "").lower()
         actions = []
-        if any(kw in aspect_lower for kw in ["financial", "盈利", "利润", "营收", "收入", "研发", "技术", "创新"]):
+        if any(kw in aspect_lower for kw in ["financial", "盈利", "利润", "营收", "收入", "研发", "技术", "创新", "偿债", "现金流", "运营效率"]):
             actions.append("financials")
-        if any(kw in aspect_lower for kw in ["valuation", "估值", "价值", "pe", "pb", "回报", "roe", "roa", "roic"]):
+        if any(kw in aspect_lower for kw in ["valuation", "估值", "价值", "pe", "pb", "回报", "roe", "roa", "roic", "投资价值"]):
             actions.append("key_metrics")
-        if any(kw in aspect_lower for kw in ["leverage", "杠杆", "负债", "资本结构", "稳健", "风险"]):
+            actions.append("financials")
+        if any(kw in aspect_lower for kw in ["leverage", "杠杆", "负债", "资本结构", "稳健"]):
             actions.append("financials")
         if any(kw in aspect_lower for kw in ["industry", "对比", "竞争"]):
             actions.append("industry_comparison")
-        if any(kw in aspect_lower for kw in ["growth", "增长", "增速", "发展"]):
+        if any(kw in aspect_lower for kw in ["growth", "增长", "增速", "发展", "成长性"]):
             actions.append("financials")
             actions.append("key_metrics")
         if any(kw in aspect_lower for kw in ["sales", "销售", "渠道", "营收分析"]):
@@ -1733,6 +1995,8 @@ class GenericAgent(
             actions.append("industry_comparison")
         if any(kw in aspect_lower for kw in ["company", "公司", "企业"]):
             actions.append("company_info")
+        if any(kw in aspect_lower for kw in ["price", "股价", "行情", "走势", "市值变动", "market_cap"]):
+            actions.append("price_history")
         if not actions:
             actions = ["company_info", "financials"]
         return list(dict.fromkeys(actions))
@@ -1742,7 +2006,24 @@ class GenericAgent(
         from datetime import date
         current_year = str(date.today().year)
         aspect_prefix = f"{aspect} " if aspect else ""
-        queries = [f"{topic} {aspect_prefix}财务数据 年报"]
+        queries = []
+
+        raw_entities = getattr(self, '_context', {}).get("entities", [])
+        if raw_entities:
+            from src.core.entity_resolver import EntityInfo
+            entities = [
+                EntityInfo.from_dict(e) if isinstance(e, dict) else e
+                for e in raw_entities
+            ]
+            for entity in entities:
+                if entity.is_listed:
+                    queries.append(f"{entity.name} 年度报告 年报")
+                    queries.append(f"{entity.name} 研究报告 券商")
+                else:
+                    queries.append(f"{entity.name} 最新动态 行业分析")
+                    queries.append(f"{entity.name} 深度分析")
+
+        queries.append(f"{topic} {aspect_prefix}财务数据 年报")
         aspect_lower = (aspect or "").lower()
         if any(kw in aspect_lower for kw in ["financial", "财务", "盈利", "利润", "营收"]):
             queries.append(f"{topic} 营收 净利润 最新")
@@ -2583,8 +2864,8 @@ class GenericAgent(
         仅在启发式检查已触发缺口后由 execute() 调用（成本控制）。
 
         检查维度:
-            1. 结构要素完整性: 核心判断/数据支撑/逻辑推导/反证/含义
-            2. 反证/边界条件: 风险/不确定性/替代情景
+            1. 结构要素完整性: 核心结论/论证分析/数据支撑/风险提示
+            2. 风险提示: 不确定性/假设前提/数据缺口/替代情景
 
         Returns:
             List[str]: 语义缺口描述（最多 2 项）
@@ -2594,9 +2875,9 @@ class GenericAgent(
         prompt = (
             "分析以下研究内容，检测知识缺口。以 JSON 格式输出。\n\n"
             "## 检查维度\n"
-            "1. 结构完整性：是否包含核心判断、数据支持、逻辑推导、"
-            "反证分析、投资含义五个要素？\n"
-            "2. 反证覆盖：是否讨论了风险、边界条件、替代情景？\n\n"
+            "1. 结构完整性：是否包含核心结论、论证分析、"
+            "数据支撑、风险提示四个要素？\n"
+            "2. 风险提示覆盖：是否讨论了不确定性、假设前提、数据缺口？\n\n"
             "## 内容\n"
             f"{summary}\n\n"
             "## 输出格式\n"
@@ -2774,6 +3055,30 @@ class GenericAgent(
                 continue
             if url:
                 seen_urls.add(url)
+            
+            # Step 1.5: Structured data sources get maximum credibility
+            is_structured = (
+                dp.get("credibility") == "structured_source"
+                or any(url.startswith(f"{s}://") for s in ("stock_data", "wind_data", "bloomberg_data"))
+            )
+            if is_structured:
+                year_refs = set()
+                for y in range(current_year - 5, current_year + 2):
+                    if str(y) in source_text:
+                        year_refs.add(y)
+                validated.append({
+                    "title": title,
+                    "content": content,
+                    "url": url,
+                    "domain": "",
+                    "credibility_score": 1.0,
+                    "credibility_source": "structured_database",
+                    "quality_score": max(dp.get("quality_score", 0), 90),
+                    "year_refs": sorted(year_refs) if year_refs else [],
+                    "is_recent": True,
+                })
+                total_score += max(dp.get("quality_score", 0), 90)
+                continue
             
             # Step 2: Source credibility scoring via domain authority
             domain = ""
@@ -3800,8 +4105,11 @@ class GenericAgent(
         data_context = []
         for i, dp in enumerate(data_points[:50], 1):
             title = dp.get("title", "")
-            content = dp.get("content", "")[:300] if dp.get("content") else ""
+            raw_content = dp.get("content", "") or ""
             url = dp.get("url", "")
+            is_structured = any(url.startswith(f"{s}://") for s in ("stock_data", "wind_data", "bloomberg_data"))
+            max_len = 800 if is_structured else 300
+            content = raw_content[:max_len]
             quality = dp.get("quality_score", 0)
             credibility = dp.get("credibility", "unknown")
             
@@ -3811,6 +4119,7 @@ class GenericAgent(
                 "tier3_reputable": " [REPUTABLE]",
                 "tier4_general": " [GENERAL]",
                 "tier5_low_quality": " [LOW QUALITY]",
+                "structured_source": " [STRUCTURED DB]",
             }
             cred_label = cred_labels.get(credibility, "")
             
@@ -4296,20 +4605,22 @@ class GenericAgent(
         data_context = []
         if data_points:
             data_context.append("## 收集的数据点\n")
-            for i, dp in enumerate(data_points[:20], 1):  # 限制数量
+            for i, dp in enumerate(data_points[:20], 1):
                 title = dp.get("title", "")
-                content = dp.get("content", "")[:200] if dp.get("content") else ""
+                raw_content = dp.get("content", "") or ""
                 url = dp.get("url", "")
+                is_structured = any(url.startswith(f"{s}://") for s in ("stock_data", "wind_data", "bloomberg_data"))
+                max_len = 500 if is_structured else 200
+                content = raw_content[:max_len]
                 quality = dp.get("quality_score", 0)
                 
                 data_context.append(f"{i}. **{title}**")
                 if content:
-                    # 清理内容中的来源标注，防止 LLM 重复输出
                     clean_content = re.sub(r'[（(]来源[：:][^）)]+[）)]', '', content)
                     clean_content = re.sub(r'[（(]数据来源[：:][^）)]+[）)]', '', clean_content)
                     clean_content = re.sub(r'，质量分\d+\.?\d*', '', clean_content)
                     clean_content = re.sub(r'，可信度[：:][^，）)]+', '', clean_content)
-                    data_context.append(f"   {clean_content[:200]}...")
+                    data_context.append(f"   {clean_content[:max_len]}...")
                 data_context.append("")
         
         # 构建前序分析摘要
@@ -4387,6 +4698,7 @@ class GenericAgent(
 5. 输出建议 500-800 字，根据内容复杂度适当调整
 6. 你收到的材料来自多个研究维度。请识别各维度结论中的**共同点**和**矛盾点**，如发现同一指标出现不同值（口径冲突），请标记并判断哪个更权威。最终输出基于已确认一致的数据。
 7. **禁止在正文中添加数据来源标注**，如"（来源：XXX，质量分XX）"或"（数据来源：XXX）"等，来源信息仅供你参考
+8. **采用传统行业研报结构**：核心结论（加粗1-2句）→ 论证与分析（2-4个子论点+数据）→ 数据表格（如有必要）→ 风险提示（章节末尾，集中列出不确定性、假设前提、数据缺口）。不要使用"反证与边界条件"等学术讨论段落，不确定性统一放在风险提示中
 
 请撰写【{target_aspect}】章节内容："""
         elif aspect:
@@ -4399,12 +4711,13 @@ class GenericAgent(
 4. 可使用加粗、列表等 Markdown 格式，但禁止使用 #/##/### 标题
 5. 输出建议 800-1200 字，根据内容复杂度适当调整
 6. **禁止在正文中添加数据来源标注**，如"（来源：XXX，质量分XX）"或"（数据来源：XXX）"等，来源信息仅供你参考
+7. **采用传统行业研报结构**：核心结论（加粗1-2句）→ 论证与分析（2-4个子论点+数据）→ 风险提示（章节末尾，集中列出不确定性、假设前提、数据缺口）。不要使用"反证与边界条件"等学术讨论段落
 
 请撰写【{aspect}】章节的深度分析内容："""
         else:
             # research/default：综合分析
             constraint_text = f"""
-请基于以上数据，撰写{aspect_str}的综合分析内容。要求：整合发现、原创洞察、专业结论。直接输出分析正文，使用Markdown格式。注意：**禁止在正文中添加数据来源标注**，如"（来源：XXX）"等格式。"""
+请基于以上数据，撰写{aspect_str}的综合分析内容。要求：整合发现、原创洞察、专业结论。采用传统行业研报结构（核心结论→论证分析→风险提示），不确定性放在章节末尾风险提示中。直接输出分析正文，使用Markdown格式。注意：**禁止在正文中添加数据来源标注**，如"（来源：XXX）"等格式。"""
         
         from src.core.i18n import get_language_instruction
         lang_inst = get_language_instruction()
@@ -4741,7 +5054,6 @@ class GenericAgent(
         try:
             # 延迟导入图表生成器
             from src.services.chart_generator import ChartGenerator, ChartConfig, ChartType
-            import re
             
             # 创建图表输出目录
             output_dir = Path("output/charts")
