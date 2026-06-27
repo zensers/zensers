@@ -174,31 +174,52 @@ class RetryPolicy:
 
 **预期提升**: +2~5分（第2轮有机会继续提升）
 
-#### E2. rewrite路径不与best_score比较
+#### E2. _phase4_fix_and_optimize中rewrite后不保留best版本
 
-**现状**: `_phase4_fix_and_optimize` L629只比较`rewrite_review.score >= re_review.score`，不与best_score比较
+**现状**: `_phase4_fix_and_optimize` L629比较`rewrite_review.score >= re_review.score`就替换章节，但函数内没有best_score跟踪机制
 
-**提升方案**: 改为`rewrite_review.score >= best_score`才替换：
+**根因**: `_phase4_fix_and_optimize`不跟踪全局best_score，rewrite后可能用更差版本替换原版本
+
+**提升方案**: 在`_phase4_fix_and_optimize`中引入best_chapters/best_score跟踪：
 
 ```python
-if rewrite_review.score >= best_score:
-    chapters[i] = rewritten
+async def _phase4_fix_and_optimize(self, chapters, review, ...):
+    # 新增：跟踪每个章节的最佳版本
+    chapter_best_scores = {}
+    for ch in chapters:
+        chapter_best_scores[ch.chapter_id] = 0.0  # 初始为0，任何review分数都更好
+
+    # ...现有逻辑...
+
+    # rewrite路径改为：
+    if rewrite_review.score >= chapter_best_scores.get(chapters[i].chapter_id, 0):
+        chapters[i] = rewritten
+        chapter_best_scores[chapters[i].chapter_id] = rewrite_review.score
 ```
 
 **预期提升**: 防止质量回退
 
 #### E3. review循环缺少提前退出机制
 
-**现状**: 如果best_score已经>=80，仍在review循环中
+**现状**: 如果best_score已经>=TARGET_SCORE(80)，仍在review循环中继续rewrite
 
-**提升方案**: 在rewrite_round循环中增加：
+**注意**: 现有代码在`review.score >= MIN_REVIEW_SCORE_TO_ACCEPT(60)`时退出循环，所以当分数>=60时已经会退出。但TARGET_SCORE(80)高于MIN_REVIEW_SCORE_TO_ACCEPT(60)，因此当分数在60-79之间时会退出循环，即使还未达到80分目标
+
+**提升方案**: 将章节级review循环的退出条件改为区分"可接受"与"达标"：
 
 ```python
-if best_score >= RetryPolicy.TARGET_SCORE:
+# 现有：score >= 60 就退出（太早放弃）
+if review.passed or review.score >= MIN_REVIEW_SCORE_TO_ACCEPT:
     break
+
+# 改为：score >= 80 达标退出，score < 60 强制继续，60-79 之间继续尝试但限制轮数
+if review.score >= RetryPolicy.TARGET_SCORE:
+    break  # 达标退出
+if review.score >= MIN_REVIEW_SCORE_TO_ACCEPT and rewrite_round >= 2:
+    break  # 尝试2轮后仍60-79，退出（避免无限制循环）
 ```
 
-**预期提升**: 减少不必要的LLM调用
+**预期提升**: 60-79分段不再过早放弃，有机会推到80+
 
 #### E4. _diagnose_issue_source触发词不全
 
@@ -303,9 +324,12 @@ async def _quality_convergence_loop(self, chapters, review, ...):
 
 **现状**: `_try_fill_data_gap`只在L1_missing时调用，且EntityResolver首次加载可能超时
 
-**提升方案**: 在`_extract_chapter_data`阶段就尝试预取关键指标：
+**注意**: `_extract_chapter_data`是`@staticmethod`，无法访问`self._skill_registry`
+
+**提升方案**: 将`_extract_chapter_data`改为实例方法，或在调用时传入skill_registry：
 
 ```python
+# 方案A：改为实例方法（推荐）
 def _extract_chapter_data(self, aggregated_result, section_id, content_dependencies):
     # ...现有逻辑...
     # 新增：尝试从StockDataSkill预取
@@ -318,9 +342,15 @@ def _extract_chapter_data(self, aggregated_result, section_id, content_dependenc
                     refined["stock_key_metrics"] = key_metrics["content"]
         except Exception:
             pass
+
+# 方案B：保持static，调用方传入skill_registry
+def _extract_chapter_data(aggregated_result, section_id, content_dependencies, skill_registry=None):
+    ...
 ```
 
 **预期提升**: +1~3分
+
+**实施成本**: 方案A需将@staticmethod改为普通方法+所有调用点去掉类名前缀；方案B只需加参数
 
 #### D3. "来源49"等模糊来源
 
@@ -388,7 +418,11 @@ quant_score = self._check_quantified_decomposition(content) * 0.15  # 10→15
 
 #### S3. "反证与边界条件"不属于risk_disclosure匹配范围
 
-**现状**: v4各章都有"反证与边界条件"而非"风险提示"，risk_disclosure得分可能为0
+**现状**: v4各章都有"反证与边界条件"而非"风险提示"。`_check_structure`的STRUCTURE_MARKERS中risk_disclosure关键词不包含"反证""边界条件"
+
+**影响分析**: `_check_structure`检测到4个结构标记中的3个（core_conclusion/argument_analysis/data_support），但miss了risk_disclosure，structure_found=3/4=75%，structure_score = 75% * 0.40 = 30%（而非满分40%）。仅此一项就丢失10%的structure权重
+
+**现状澄清**: `_check_risk_disclosure`本身用梯度评分，如果正文有"然而""如果...则"等转折词能获得部分分，不会是0分。但"反证与边界条件"段落中的风险内容完全不被识别
 
 **提升方案**: 将"反证""边界条件"纳入risk_disclosure的过渡期兼容匹配：
 
@@ -405,7 +439,7 @@ quant_score = self._check_quantified_decomposition(content) * 0.15  # 10→15
 
 同时在`_check_risk_disclosure`中为"反证"匹配降权(0.6而非1.2)。
 
-**预期提升**: +3~5分（兼容期内不因结构违规直接0分）
+**预期提升**: +3~5分（兼容期内structure_found从3/4恢复到4/4，structure_score恢复到满分）
 
 ---
 
@@ -470,7 +504,29 @@ quant_score = self._check_quantified_decomposition(content) * 0.15  # 10→15
 ## 4. 风险与注意事项
 
 1. **P1(段落黑名单)**可能过度约束LLM——如果某个主题确实需要"反面论证"，黑名单会阻止。建议在黑名单前加"除非研究框架明确要求反面论证"
-2. **S3(反证兼容risk)**是过渡期方案——最终目标仍是让LLM生成"风险提示"而非"反证"，兼容匹配只防0分惩罚
+2. **S3(反证兼容risk)**是过渡期方案——最终目标仍是让LLM生成"风险提示"而非"反证"，兼容匹配只防structure_score从3/4跌到75%的惩罚。长期应在P1(黑名单)生效后移除兼容
 3. **E1(渐进阈值)**可能增加收敛轮数和LLM调用成本——需要在cost和quality之间权衡
 4. **A2/P5(正文摘要)**增加全局审查的token消耗——500字*3章=1500字额外上下文
 5. **S1(权重调整)**影响的是AnalysisQualityChecker，而非chapter_reviewer的LLM评分——两者评分体系不同
+6. **E3(退出条件调整)**需防止无限循环——60-79分段最多尝试2轮后必须退出
+7. **D2(StockData预取)**需将`_extract_chapter_data`从@staticmethod改为实例方法或增加参数，影响调用点(L129, L528)
+
+## 5. 自审记录
+
+### 审计1 (2026-06-27): 逐条对照真实代码验证
+
+| 条目 | 文档断言 | 代码实际 | 结论 |
+|------|---------|---------|------|
+| E2 | "L629只比较rewrite_review.score >= re_review.score，不与best_score比较" | `_phase4_fix_and_optimize`内无best_score变量 | **修正**: 改为"函数内没有best_score跟踪机制"，方案改为引入chapter_best_scores |
+| E3 | "如果best_score已经>=80，仍在review循环中" | review.score>=60就会break退出循环 | **修正**: 实际问题是60-79分段过早退出，而非>=80不退出。方案改为区分"可接受"与"达标" |
+| D2 | 代码示例用`self._skill_registry` | `_extract_chapter_data`是`@staticmethod` | **修正**: 增加注意事项，提供方案A(改实例方法)和方案B(加参数) |
+| S3 | "risk_disclosure得分可能为0" | `_check_risk_disclosure`用梯度评分，"然而""如果...则"等能获部分分 | **修正**: 改为"structure_found=3/4=75%，丢失10%structure权重"，补充影响分析 |
+| P1 | "LLM仍生成反证与边界条件" | v4报告3个章节均有此类段落 | ✅ 确认正确 |
+| P3 | "5个审查维度，不审查结构合规性" | chapter_review.tmpl L27-50确认5维度 | ✅ 确认正确 |
+| P5 | "serialize_report_for_review只输出标题+结论+数据点" | global_reviewer.py L125-137确认 | ✅ 确认正确 |
+| E1 | "MIN_CONVERGENCE_IMPROVEMENT=5" | orchestrator.py L48确认 | ✅ 确认正确 |
+| E4 | "只有4个触发词" | L880确认"缺乏/缺失/未标注/缺口" | ✅ 确认正确 |
+| D3 | "来源49模糊来源" | e2e_v4_report.json确认 | ✅ 确认正确 |
+| S1 | "structure 40% + caliber 30%" | checkers.py L408-411确认 | ✅ 确认正确 |
+| S2 | "据作为关键词匹配据了解" | checkers.py L370确认"据"在keywords中 | ✅ 确认正确 |
+| A1 | "分析Agent的data_points没有传递给chapter_writer" | L134只取chapter_data.get("content") | ✅ 确认正确 |
