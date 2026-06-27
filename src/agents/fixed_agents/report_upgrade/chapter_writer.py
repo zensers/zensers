@@ -32,6 +32,8 @@ class ChapterWriter:
                          if input_data.chapter_data else '无可用数据',
             raw_data_summary=input_data.raw_data_summary if input_data.raw_data_summary else '无原始数据摘要',
             base_content=input_data.base_content if input_data.base_content else '无分析初稿，请基于数据从头撰写',
+            upstream_data_points_json=json.dumps(input_data.upstream_data_points, ensure_ascii=False, indent=2)
+                                      if input_data.upstream_data_points else '无可用数据',
         )
         raw_output = await self._call_llm(prompt)
         return self._parse_output(raw_output, chapter_spec)

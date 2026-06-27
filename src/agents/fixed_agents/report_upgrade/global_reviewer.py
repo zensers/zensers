@@ -126,12 +126,15 @@ def serialize_report_for_review(chapters: List[ChapterWriteOutput],
                                 data_registry) -> str:
     sections_summary = []
     for i, ch in enumerate(chapters):
-        data_summary = []
-        for dp in ch.data_points_used:
-            data_summary.append(f"  {dp.metric}: {dp.value} {dp.unit}")
+        content = ch.content or ""
+        content_head = content[:400]
+        content_tail = content[-400:] if len(content) > 800 else content[400:]
+        data_summary = [f"  {dp.metric}: {dp.value} {dp.unit}" for dp in ch.data_points_used]
         sections_summary.append(
             f"### 第{i+1}章：{ch.title}\n"
             f"核心结论：{'; '.join(str(c) for c in ch.key_conclusions)}\n"
+            f"正文前段：{content_head}\n"
+            f"正文后段：{content_tail}\n"
             f"关键数据：\n" + ("\n".join(data_summary) if data_summary else "  无数据")
         )
     return "\n\n".join(sections_summary)

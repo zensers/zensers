@@ -1,3 +1,5 @@
+__version__ = "1.3.0"
+
 import re
 import os
 import time
@@ -15,7 +17,7 @@ import httpx
 _DEFAULT_VERSION_FILE = Path(__file__).resolve().parent.parent.parent / "VERSION"
 VERSION_FILE = Path(os.getenv("ZENSERS_VERSION_FILE", str(_DEFAULT_VERSION_FILE)))
 
-GITHUB_OWNER = os.getenv("GITHUB_OWNER", "YOUR_ORG")
+GITHUB_OWNER = os.getenv("GITHUB_OWNER", "sunchaokun")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "zensers")
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 

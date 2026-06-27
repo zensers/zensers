@@ -22,8 +22,93 @@ from .global_reviewer import GlobalReviewAgent, serialize_report_for_review
 from .data_repair import DataRepairAgent, ConflictResolver
 from .structured_data_repair import StructuredDataRepairAgent
 from .prompt_manager import PromptManager
+from src.core.quality.checkers import AnalysisQualityChecker
 
 logger = logging.getLogger(__name__)
+
+_FORBIDDEN_SECTION_PATTERNS = [
+    (r'^#+\s*反证(?:与|及|和)?边界条件', 'risk_disclosure'),
+    (r'^#+\s*反证(?:证据)?', 'risk_disclosure'),
+    (r'^#+\s*边界条件(?:假设)?', 'risk_disclosure'),
+    (r'^#+\s*正面?论证', 'argument'),
+    (r'^#+\s*反面?论证', 'argument'),
+    (r'^#+\s*(?:决策)?启示', 'merge_last'),
+    (r'^#+\s*含义', 'merge_last'),
+    (r'^#+\s*影响$', 'merge_last'),
+]
+
+_RISK_DISCLOSURE_HEADING = "#### 风险提示"
+
+
+def _enforce_structure_compliance(content: str) -> str:
+    """N1: 程序化后处理——将违规段落标题替换/收拢为规范结构。"""
+    _MD_STRIP = re.compile(r'[*_]+')
+    if not content:
+        return content
+    lines = content.split('\n')
+    result_lines = []
+    risk_buffer = []
+    has_risk_section = False
+
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        clean_line = _MD_STRIP.sub('', stripped)  # strip bold/italic markdown for pattern matching
+        matched = False
+        for pattern, action in _FORBIDDEN_SECTION_PATTERNS:
+            if re.match(pattern, clean_line):
+                matched = True
+                j = i + 1
+                section_content = []
+                while j < len(lines):
+                    next_stripped = lines[j].strip()
+                    is_next_heading = (next_stripped.startswith('#')
+                                       or (not next_stripped
+                                           and j + 1 < len(lines)
+                                           and lines[j + 1].strip().startswith('#')))
+                    if is_next_heading:
+                        break
+                    section_content.append(lines[j])
+                    j += 1
+                if action == 'risk_disclosure':
+                    risk_buffer.extend(section_content)
+                elif action == 'argument':
+                    matched_text = re.match(pattern, clean_line).group()
+                    result_lines.append(stripped.replace(matched_text, '#### 论证分析'))
+                    result_lines.extend(section_content)
+                elif action == 'merge_last':
+                    if section_content:
+                        summary = section_content[0].strip()
+                        if len(summary) > 100:
+                            summary = summary[:100] + '…'
+                        result_lines.append(summary)
+                i = j
+                break
+        if not matched:
+            if '风险提示' in clean_line:
+                has_risk_section = True
+            result_lines.append(lines[i])
+            i += 1
+
+    if risk_buffer:
+        if has_risk_section:
+            insert_idx = len(result_lines)
+            for idx in range(len(result_lines)):
+                line_check = _MD_STRIP.sub('', result_lines[idx].strip())
+                if line_check.startswith('#') and '风险提示' in line_check:
+                    insert_idx = idx + 1
+                    while insert_idx < len(result_lines) and not result_lines[insert_idx].strip().startswith('#'):
+                        insert_idx += 1
+                    break
+            for k, line in enumerate(risk_buffer):
+                result_lines.insert(insert_idx + k, line)
+        else:
+            result_lines.append('')
+            result_lines.append(_RISK_DISCLOSURE_HEADING)
+            result_lines.extend(risk_buffer)
+
+    return '\n'.join(result_lines)
+
 
 _VAGUE_SOURCE_PATTERNS = re.compile(
     r'^(行业综合数据|综合数据|公开数据|市场数据|统计数据|研究报告|行业报告|综合来源|公开信息|行业信息'
@@ -45,7 +130,8 @@ class RetryPolicy:
     RETRY_BACKOFF_BASE = 2
     MIN_REVIEW_SCORE_TO_ACCEPT = 60
     MAX_CONVERGENCE_ROUNDS = 3
-    MIN_CONVERGENCE_IMPROVEMENT = 5
+    MIN_CONVERGENCE_IMPROVEMENT = 5  # kept for backward compatibility
+    MIN_CONVERGENCE_IMPROVEMENT_ROUNDS = [3, 2, 1]  # E1: progressive thresholds by round_idx
     TARGET_SCORE = 80
 
     NON_RETRYABLE_ERRORS = {"insufficient_balance", "invalid_request_error", "authentication_error"}
@@ -53,6 +139,13 @@ class RetryPolicy:
     @staticmethod
     def get_delay(attempt: int) -> float:
         return RetryPolicy.RETRY_BACKOFF_BASE ** attempt
+
+    @staticmethod
+    def get_min_improvement(round_idx: int) -> int:
+        rounds = RetryPolicy.MIN_CONVERGENCE_IMPROVEMENT_ROUNDS
+        if round_idx < len(rounds):
+            return rounds[round_idx]
+        return rounds[-1]
 
 
 class ReportOrchestrator:
@@ -129,9 +222,11 @@ class ReportOrchestrator:
                     chapter_data, raw_data_summary = self._extract_chapter_data(
                         aggregated_result, section_id,
                         section_spec.get("content_dependency", []),
+                        skill_registry=self._skill_registry,
                     )
 
                     base_content = chapter_data.get("content", "") if isinstance(chapter_data, dict) else ""
+                    upstream_data_points = chapter_data.get("upstream_data_points") if isinstance(chapter_data, dict) else None
 
                     chapter = None
                     last_chapter_error = None
@@ -148,8 +243,11 @@ class ReportOrchestrator:
                                     preceding_summary=preceding_summary,
                                     used_metrics_summary=self._data_registry.serialize_used_metrics(),
                                     base_content=base_content,
+                                    upstream_data_points=upstream_data_points,
                                 )
                             )
+
+                            chapter.content = _enforce_structure_compliance(chapter.content)
 
                             validated_dps = self._extract_and_validate_data_points(chapter)
                             for dp in validated_dps:
@@ -179,7 +277,9 @@ class ReportOrchestrator:
                                     best_chapter = chapter
                                     best_score = review.score
 
-                                if review.passed or review.score >= RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT:
+                                if review.passed or review.score >= RetryPolicy.TARGET_SCORE:
+                                    break
+                                if review.score >= RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT and rewrite_round >= 2:
                                     break
 
                                 anchoring_issues = [
@@ -226,10 +326,12 @@ class ReportOrchestrator:
                                         if patch_review.score > best_score:
                                             best_chapter = chapter
                                             best_score = patch_review.score
-                                        if patch_review.passed or patch_review.score >= RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT:
+                                        if patch_review.passed or patch_review.score >= RetryPolicy.TARGET_SCORE:
+                                            break
+                                        if patch_review.score >= RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT and rewrite_round >= 2:
                                             break
 
-                                if logic_issues and best_score < RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT:
+                                if logic_issues and best_score < RetryPolicy.TARGET_SCORE:
                                     chapter = await self._chapter_writer.rewrite(
                                         original_chapter=chapter,
                                         review_feedback=review,
@@ -252,7 +354,9 @@ class ReportOrchestrator:
                                     if rewrite_review.score > best_score:
                                         best_chapter = chapter
                                         best_score = rewrite_review.score
-                                    if rewrite_review.passed or rewrite_review.score >= RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT:
+                                    if rewrite_review.passed or rewrite_review.score >= RetryPolicy.TARGET_SCORE:
+                                        break
+                                    if rewrite_review.score >= RetryPolicy.MIN_REVIEW_SCORE_TO_ACCEPT and rewrite_round >= 2:
                                         break
 
                             chapter = best_chapter
@@ -400,7 +504,7 @@ class ReportOrchestrator:
                 break
 
             improvement = current_score - prev_score
-            if improvement < RetryPolicy.MIN_CONVERGENCE_IMPROVEMENT:
+            if improvement < RetryPolicy.get_min_improvement(round_idx):
                 logger.info(f"Convergence stalled at round {round_idx + 1}, improvement={improvement:.1f}")
                 break
 
@@ -431,6 +535,14 @@ class ReportOrchestrator:
         rewrite_chapter_ids: Set[str] = set()
         structured_data_repairs: Dict[str, List[Dict[str, Any]]] = {}
 
+        # A3: AnalysisQualityChecker programmatic pre-check
+        _checker = AnalysisQualityChecker()
+        for ch in chapters:
+            checker_result = _checker.check({"content": ch.content})
+            if checker_result.score < 60:
+                if ch.chapter_id not in (patch_chapter_ids | rewrite_chapter_ids):
+                    patch_chapter_ids.add(ch.chapter_id)
+
         for issue in review.issues:
             resolved_id = self._resolve_chapter_id(issue.location, chapters)
             raw_summary = ""
@@ -439,6 +551,7 @@ class ReportOrchestrator:
                 _, raw_summary = self._extract_chapter_data(
                     self._aggregated_result, resolved_id,
                     ch_spec.get("content_dependency", []) if ch_spec else [],
+                    skill_registry=self._skill_registry,
                 )
 
             chapter_issue = ChapterIssue(
@@ -528,6 +641,7 @@ class ReportOrchestrator:
             re_chapter_data, re_raw_summary = self._extract_chapter_data(
                 self._aggregated_result, chapter.chapter_id,
                 chapter_spec.get("content_dependency", []) if chapter_spec else [],
+                skill_registry=self._skill_registry,
             )
 
             if chapter.chapter_id in patch_needed:
@@ -626,7 +740,7 @@ class ReportOrchestrator:
                                 chapter_data=re_chapter_data,
                             )
                         )
-                        if rewrite_review.score >= re_review.score:
+                        if rewrite_review.score > re_review.score:
                             chapters[i] = rewritten
 
         preceding_summary = self._rebuild_preceding_summary(chapters)
@@ -705,6 +819,7 @@ class ReportOrchestrator:
     @staticmethod
     def _extract_chapter_data(
         aggregated_result: Any, section_id: str, content_dependencies: List[str],
+        skill_registry=None,
     ) -> Tuple[Dict[str, Any], str]:
         layered_content = getattr(aggregated_result, 'layered_content', {})
         content_provenance = getattr(aggregated_result, 'content_provenance', {})
@@ -764,8 +879,8 @@ class ReportOrchestrator:
 
         refined = {}
         for k, v in raw_data.items():
-            if k == "data_points":
-                continue
+            if k == "data_points" and isinstance(v, list):
+                refined["upstream_data_points"] = v
             elif isinstance(v, str) and len(v) > 8000:
                 refined[k] = v[:8000]
             else:
@@ -877,7 +992,8 @@ class ReportOrchestrator:
                 source_layer="L2_vague_source",
                 remediation="补充具体来源",
             )
-        if "缺乏" in desc or "缺失" in desc or "未标注" in desc or "缺口" in desc:
+        if "缺乏" in desc or "缺失" in desc or "未标注" in desc or "缺口" in desc \
+           or "未提供" in desc or "不足" in desc or "欠缺" in desc or "缺少" in desc:
             keywords = re.sub(r'^(缺乏|缺失|未标注|缺口|无数据|缺少)', '', desc)
             keywords = re.sub(r'(数据|指标|金额|信息|金额)$', '', keywords).strip()
             extracted = ReportOrchestrator._extract_omitted_data(metric, raw_data_summary)
@@ -1123,7 +1239,7 @@ class ReportOrchestrator:
         if result.get("success"):
             return result["content"]
         logger.error(f"Exec summary LLM call failed: {result}")
-        return "执行摘要生成失败。"
+        return "摘要生成失败。"
 
     _HEADING_PATTERN = re.compile(
         r'^(.{0,20}(核心发现|关键发现|核心结论|执行摘要|主要发现|总结|概述|结论|要点|摘要'
@@ -1170,9 +1286,20 @@ class ReportOrchestrator:
         source_names = [s.get("title", s.get("url", s.get("href", ""))) for s in available_sources if s.get("title") or s.get("url") or s.get("href")]
         fallback_source = source_names[0] if source_names else ""
         grounded = []
+        _SOURCE_INDEX_PATTERN = re.compile(r'^来源(\d+)$')
         for dp in data_points:
             dp_src = dp.get("source", "")
-            if dp_src and not _is_vague_source(dp_src):
+            # D3: check "来源N" pattern first (fuzzy index, not a real source)
+            idx_match = _SOURCE_INDEX_PATTERN.match(dp_src.strip()) if dp_src else None
+            if idx_match:
+                dp = dict(dp)
+                idx = int(idx_match.group(1)) - 1
+                if 0 <= idx < len(source_names):
+                    dp["source"] = source_names[idx]
+                else:
+                    dp["source"] = fallback_source
+                grounded.append(dp)
+            elif dp_src and not _is_vague_source(dp_src):
                 grounded.append(dp)
             else:
                 dp = dict(dp)

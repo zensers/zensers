@@ -32,6 +32,7 @@ class ChapterWriteInput:
     preceding_summary: str = ""
     used_metrics_summary: str = ""
     base_content: str = ""
+    upstream_data_points: List[Dict[str, Any]] = None
 
 
 @dataclass

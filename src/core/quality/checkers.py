@@ -367,12 +367,13 @@ class AnalysisQualityChecker(BaseQualityChecker):
             "min_context_chars": 30,
         },
         "data_support": {
-            "keywords": ["数据来源", "Source", "来源", "数据显示", "据", "统计", "调研"],
-            "min_context_chars": 30,
+            "keywords": ["数据来源", "数据支撑", "Source", "数据显示", "据统计", "据财报"],
+            "min_context_chars": 50,  # S2: increased from 30 to reduce false positives
         },
         "risk_disclosure": {
-            "keywords": ["风险提示", "风险", "不确定性", "假设", "数据缺口", "若", "如果",
-                         "限制", "需要注意的是", "但需注意", "潜在风险"],
+            "keywords": ["风险提示", "风险", "不确定性", "假设", "数据缺口",
+                         "反证", "边界条件", "反面",
+                         "需要注意的是", "但需注意", "潜在风险"],
             "min_context_chars": 30,
             "exclude_trivial": True,
         },
@@ -405,10 +406,10 @@ class AnalysisQualityChecker(BaseQualityChecker):
         if not content:
             return 0.0
         
-        structure_score = self._check_structure(content) * 0.40
-        caliber_score = self._check_caliber_coverage(content) * 0.30
-        counter_score = self._check_risk_disclosure(content) * 0.20
-        quant_score = self._check_quantified_decomposition(content) * 0.10
+        structure_score = self._check_structure(content) * 0.45   # S1: 40→45 (offset by S3 compatibility)
+        caliber_score = self._check_caliber_coverage(content) * 0.20  # S1: 30→20 (caliber over-weighted)
+        counter_score = self._check_risk_disclosure(content) * 0.20      # unchanged
+        quant_score = self._check_quantified_decomposition(content) * 0.15  # S1: 10→15
         
         return min(structure_score + caliber_score + counter_score + quant_score, 100.0)
     
