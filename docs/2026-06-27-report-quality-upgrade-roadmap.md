@@ -1,10 +1,33 @@
 # 报告质量提升全面扫描分析：78→90+路线图（修订版）
 
 > 日期: 2026-06-27
-> 修订日期: 2026-06-27（第二轮代码审查修订）
+> 修订日期: 2026-06-27（第四轮：基于审计3发现重新调整优先级）
 > 基准: e2e v4实测 score=78, convergence_rounds=1, converged=False
 > 目标: 从78分提升到90+分
 > 扫描范围: 9个Prompt模板、orchestrator.py(1304行)、chapter_writer.py(135行)、chapter_reviewer.py(67行)、checkers.py(1085行)、global_reviewer.py(137行)、models.py(168行)、data_registry.py(118行)、structured_data_repair.py(105行)
+
+---
+
+## ⚠️ 关键认知修正（审计3后新增）
+
+### 评分体系不一致问题
+
+v4的78分来自**LLM reviewer**（`chapter_review.tmpl`），不是`AnalysisQualityChecker`（`checkers.py`）。两者独立运行：
+
+| 评分体系 | 用在哪 | 参与收敛循环? | 影响78分? |
+|---------|--------|-------------|----------|
+| LLM reviewer (chapter_review.tmpl) | 收敛循环的score判断 | ✅ 是 | ✅ 直接影响 |
+| AnalysisQualityChecker (checkers.py) | 目前仅独立检查 | ❌ 否 | ❌ 不影响 |
+
+**这意味着S3(反证兼容risk)、S1(权重调整)只影响AnalysisQualityChecker，对收敛循环的目标分数78→80没有任何作用。** 原P0中最大的预期提升(S3, +3~5分)对实际收敛分数**无效**。
+
+### 评分标准变化后分数不可比
+
+P3增加"结构合规度"审查维度后，reviewer的评分维度从5个变为6个。修改后的分数和v4的78分**不在同一标尺**上。"78→85"的比较没有意义。
+
+### LLM遵从度黑盒
+
+`chapter_write.tmpl:67`已有禁止指令"正文中不要出现'反证''边界条件'"，但LLM仍无视生成3个违规段落。黑名单/白名单增强的效果**高度不确定**，不能作为主要依赖。
 
 ---
 
@@ -666,3 +689,154 @@ risk_indicators = [
 | S3 | S3与P1冲突分析 | AnalysisQualityChecker(program化) ≠ chapter_reviewer(LLM) | ✅ 三层机制合理：程序化兼容+降权+LLM扣分，三者独立 |
 | P5 | 风险提示是否在章节末尾 | v4第1章结构：核心判断→逻辑推导→数据支撑→**反证与边界条件**→**决策启示** | ✅ 修订正确：末尾400字能捕获"反证""决策启示" |
 | E1 | v4卡在round_idx=0 | L403: `improvement < MIN_CONVERGENCE_IMPROVEMENT(5)` | ✅ 修订正确：首轮阈值5导致停滞，改为3可解决 |
+
+---
+
+## 6. 诚实评估：哪些改动真正有效？（审计3后新增）
+
+### 6.1 逐项诚实评估
+
+| 提升点 | 原预期 | 修正预期 | 修正原因 |
+|--------|--------|---------|---------|
+| S3(反证兼容risk) | +3~5 | **+0** | 不影响LLM reviewer分数，只改程序化checker |
+| S1(权重调整) | +1~2 | **+0** | 同上，AnalysisQualityChecker不参与收敛循环 |
+| P1+P3(黑名单+合规审查) | +4~7 | **+1~3** | L67已有禁止指令且无效；P3依赖LLM reviewer执行扣分，reviewer本身是LLM，遵从度不确定 |
+| E1(收敛阈值3) | +1~3 | **+1~2** | 多1轮收敛，但每轮patch/rewrite质量不确定 |
+| A1(数据传递) | +3~5 | **+2~4** | 唯一真正解决根因的改动，但writer是LLM，能否有效利用结构化数据仍有不确定性 |
+| P2(逐段精修) | +2~3 | **+1~2** | 依赖LLM遵从度 |
+| P5(正文摘要) | +2~4 | **+1~2** | 让global_reviewer看到更多内容，但影响间接 |
+| P6(摘要结构) | +1~2 | **+0~1** | exec_summary不在收敛循环内，对章节分数无影响 |
+| E3(退出条件+rewrite触发) | +1~3 | **+1~2** | 60-79分段有机会rewrite，但rewrite质量不确定 |
+| E4(触发词) | +1~2 | **+0~1** | 边际改善，影响数据补充触发率 |
+| S2(data_support关键词) | +0.5~1 | **+0** | 不影响LLM reviewer |
+| D1~D3 | +2~6 | **+1~3** | 数据改善间接影响但非直接 |
+
+### 6.2 根本性问题
+
+1. **改评分标准≠改报告质量** — S3/S1/S2只改变AnalysisQualityChecker的评分，不改变报告内容。报告里仍然有"反证与边界条件"，只是checker不再扣分了。这不是真正的质量提升。
+
+2. **LLM遵从度是黑盒** — 从L67已有禁止指令仍被无视来看，黑名单/白名单的有效性存疑。更可靠的方式是**程序化后处理**。
+
+3. **收敛循环的本质** — 多轮收敛=多次LLM调用，但LLM的rewrite质量本身有天花板。78→80差2分可能不是"再试一轮"能解决的，而是需要**不同的数据输入**（A1）或**不同的生成策略**。
+
+4. **分数不可比** — P3改变了reviewer的评分维度（增加结构合规度），修改后的分数和v4的78分不在同一标尺上。
+
+### 6.3 新增：真正有效的4个方向
+
+基于上述分析，以下4个方向**确定性更高**：
+
+#### N1. 程序化后处理（确定性最高，新增提升点）
+
+**原理**: 不依赖LLM遵从度，生成后用正则/规则自动检测并重组违规段落
+
+**方案**: 在`orchestrator.py`的章节生成后、review之前，增加程序化结构修正：
+
+```python
+def _enforce_structure_compliance(self, chapter: ChapterWriteOutput) -> ChapterWriteOutput:
+    """程序化强制结构合规：检测违规段落标题，收拢到风险提示"""
+    VIOLATION_PATTERNS = [
+        (r'\*\*反证与边界条件\*\*[：:]', 'risk_disclosure'),
+        (r'\*\*反证\*\*[：:]', 'risk_disclosure'),
+        (r'\*\*反证证据\*\*[：:]', 'risk_disclosure'),
+        (r'\*\*边界条件\*\*[：:]', 'risk_disclosure'),
+        (r'\*\*含义\*\*[：:]', 'merge_to_argument'),
+        (r'\*\*启示\*\*[：:]', 'merge_to_argument'),
+        (r'\*\*决策启示\*\*[：:]', 'merge_to_argument'),
+        (r'\*\*影响\*\*[：:]', 'merge_to_argument'),
+    ]
+    content = chapter.content
+    # ... 正则替换逻辑：将违规段落内容移到"风险提示"或合并到论证分析
+    return chapter
+```
+
+**预期提升**: **+3~6分**（确定性最高——不依赖LLM，每次100%执行）
+
+**优先级**: 应为**新P0**
+
+#### N2. A1数据传递（根因修复）
+
+（已在A1中详述，优先级从P1提升到P0）
+
+#### N3. A3程序化检查接入收敛循环
+
+**原理**: 把AnalysisQualityChecker作为**硬约束**而非独立评分，结构不合规直接强制rewrite
+
+**方案**: 在`_phase4_fix_and_optimize`入口，先做程序化结构检查，不合规章节强制加入rewrite_chapter_ids：
+
+```python
+async def _phase4_fix_and_optimize(self, chapters, review, ...):
+    checker = AnalysisQualityChecker()
+    for i, ch in enumerate(chapters):
+        result = checker.check({"content": ch.content})
+        if result.score < 60:
+            rewrite_chapter_ids.add(ch.chapter_id)
+```
+
+**预期提升**: **+2~4分**（程序化检查不遗漏，且直接参与收敛循环的决策）
+
+**优先级**: 从P4提升到**P1**
+
+#### N4. D2 StockData预注入
+
+**原理**: 在writer之前就填充好数据，而非等reviewer发现缺失再补
+
+**方案**: （已在D2中详述，优先级从P3提升到P1）
+
+---
+
+## 7. 重新调整后的优先级（审计3后修订）
+
+| 新优先级 | 提升点 | 预期提升 | 确定性 | 涉及文件 | 修订说明 |
+|---------|--------|----------|--------|---------|---------|
+| **P0** | N1(程序化后处理) | +3~6分 | 高 | orchestrator.py(新增) | **新增**：不依赖LLM遵从度 |
+| **P0** | A1(数据传递) | +2~4分 | 中 | models.py+orchestrator.py+chapter_writer.py+chapter_write.tmpl | 从P1提前：根因修复 |
+| **P0** | P1+P3(黑名单+合规审查) | +1~3分 | 低 | chapter_write.tmpl+chapter_review.tmpl | 降预期：LLM遵从度不确定 |
+| **P1** | N3(A3程序化检查接入收敛) | +2~4分 | 高 | orchestrator.py+checkers.py | 从P4提前：直接参与收敛决策 |
+| **P1** | E1(收敛阈值3) | +1~2分 | 高 | orchestrator.py | 降预期：多1轮但质量不确定 |
+| **P1** | D2(StockData预注入) | +1~3分 | 中 | orchestrator.py | 从P3提前：前置数据填充 |
+| **P2** | P5(全局审查看正文) | +1~2分 | 中 | global_reviewer.py | 降预期：间接影响 |
+| **P2** | P2(逐段精修指令) | +1~2分 | 低 | chapter_write.tmpl | 降预期：依赖LLM遵从度 |
+| **P2** | E3(退出条件+rewrite触发) | +1~2分 | 高 | orchestrator.py | 降预期：rewrite质量不确定 |
+| **P3** | E4(触发词) | +0~1分 | 中 | orchestrator.py | 边际改善 |
+| **P3** | D1(跨章冲突) | +1~2分 | 中 | orchestrator.py | |
+| **P3** | E5(patch精确数值) | +1~2分 | 中 | orchestrator.py | |
+| **P3** | D3(来源49修复) | +0.5~1分 | 高 | orchestrator.py | |
+| **P3** | P4(章内自洽性) | +0~1分 | 低 | chapter_review.tmpl | 依赖LLM reviewer |
+| **P3** | P6(摘要结构) | +0~1分 | 低 | exec_summary.tmpl | 不影响章节分数 |
+| **降级** | S3(反证兼容risk) | +0分 | N/A | checkers.py | **不参与收敛循环，对78分无效** |
+| **降级** | S1(权重调整) | +0分 | N/A | checkers.py | **同上** |
+| **降级** | S2(data_support关键词) | +0分 | N/A | checkers.py | **同上** |
+| **P4** | E2(best_score防退) | 防回退 | 高 | orchestrator.py | |
+| **P4** | N3补充(若A3未实施) | +2~3分 | 高 | orchestrator.py+checkers.py | |
+
+### 预期效果（修正）
+
+- **P0三项(1天)**: 78 → **82~88**（核心：程序化后处理+数据传递，确定性高）
+- **P0+P1六项(2天)**: 78 → **86~92**（A3接入收敛+StockData预注入+收敛阈值）
+- **全部项(5天)**: 78 → **88~94**
+
+---
+
+## 8. 重新调整后的实施顺序
+
+### Phase 1: P0三项（预期78→82~88）
+
+1. **新增**`_enforce_structure_compliance`程序化后处理（N1）——在`_chapter_writer.write()`返回后、`_chapter_reviewer.review()`之前调用
+2. 修改`_split_chapter_data`(L767)保留data_points + `models.py`增加upstream_data_points + `chapter_writer.py`传入 + `chapter_write.tmpl`增加结构化数据引用段（A1）
+3. 修改`chapter_write.tmpl`增加段落黑名单+白名单 **同时**修改`chapter_review.tmpl`增加"结构合规度"维度（P1+P3，作为辅助手段而非主要依赖）
+
+### Phase 2: P1三项（预期82~88→86~92）
+
+4. 在`_phase4_fix_and_optimize`入口增加AnalysisQualityChecker硬约束检查（N3/A3）
+5. 修改`orchestrator.py` RetryPolicy，首轮阈值从5改为3（E1）
+6. 修改`_extract_chapter_data`增加skill_registry参数，StockData预注入（D2方案B）
+
+### Phase 3: P2三项（预期86~92→88~93）
+
+7. 修改`global_reviewer.py` serialize_report_for_review增加首400+末400字正文摘要（P5）
+8. 修改`chapter_write.tmpl`增加"逐段精修指令"（P2）
+9. 修改章节级review退出条件+L232 rewrite触发条件（E3）
+
+### Phase 4: P3+P4剩余项（预期88~93→90~94）
+
+10-18. 依次实施E4/D1/E5/D3/P4/P6/E2/S3(S3改为后续可选——当A3接入收敛后S3才有意义)
