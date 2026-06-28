@@ -4,6 +4,18 @@
 
 ---
 
+## [1.3.0] - 2026-06-27
+
+### Report Quality Fixes & e2e Breakthrough (score 82, first convergence)
+
+- **N1 fix**: Changed merge_last→risk_disclosure, preserving full analytical content from forbidden sections ("含义"/"启示"/"影响") instead of discarding to first sentence only. Expanded violation patterns for bold-embedded headings.
+- **key_findings fix**: Changed numbered-list filter from aggressive removal to 3+ consecutive sequence detection. Restored key findings from 2→7.
+- **Title robustness fix**: Added `_SKIP_TITLES` filter in `_parse_output` to prevent prompt names (e.g., "数据精准修补任务") from overriding chapter titles.
+- **e2e v7 result**: Score 82.0 (first time above 80 target), converged=True, 7121 words, 0 vague sources.
+- 277/277 unit tests passing.
+
+---
+
 ## [1.2.0] - 2026-06-27
 
 ### Report Quality Upgrade Roadmap (78→90+)

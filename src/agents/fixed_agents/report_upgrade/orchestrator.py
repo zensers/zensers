@@ -32,9 +32,11 @@ _FORBIDDEN_SECTION_PATTERNS = [
     (r'^#+\s*边界条件(?:假设)?', 'risk_disclosure'),
     (r'^#+\s*正面?论证', 'argument'),
     (r'^#+\s*反面?论证', 'argument'),
-    (r'^#+\s*(?:决策)?启示', 'merge_last'),
-    (r'^#+\s*含义', 'merge_last'),
-    (r'^#+\s*影响$', 'merge_last'),
+    (r'^#+\s*(?:决策)?启示', 'risk_disclosure'),  # merge全量内容到风险提示
+    (r'^#+\s*含义', 'risk_disclosure'),             # 同上，保留分析内容
+    (r'^#+\s*影响$', 'risk_disclosure'),            # 同上
+    (r'^\*\*经营现金流[^**]+\*\*', 'risk_disclosure'),  # 经营现金流等违规内嵌标题
+    (r'^\*\*研发投入[^**]+\*\*', 'risk_disclosure'),
 ]
 
 _RISK_DISCLOSURE_HEADING = "#### 风险提示"
@@ -76,12 +78,6 @@ def _enforce_structure_compliance(content: str) -> str:
                     matched_text = re.match(pattern, clean_line).group()
                     result_lines.append(stripped.replace(matched_text, '#### 论证分析'))
                     result_lines.extend(section_content)
-                elif action == 'merge_last':
-                    if section_content:
-                        summary = section_content[0].strip()
-                        if len(summary) > 100:
-                            summary = summary[:100] + '…'
-                        result_lines.append(summary)
                 i = j
                 break
         if not matched:
@@ -1257,6 +1253,7 @@ class ReportOrchestrator:
     def _clean_key_findings(raw_summary: str) -> List[str]:
         lines = raw_summary.split("\n")
         cleaned = []
+        _NUM_LIST_PATTERN = re.compile(r'^\d+[.、]\s+')  # "1. xxx" or "1、xxx" numbered items
         for line in lines[:20]:
             line = line.strip()
             if not line:
@@ -1273,7 +1270,23 @@ class ReportOrchestrator:
                 continue
             if len(line) < 8:
                 continue
+            # 只过滤3+连续编号行（列表而非独立发现）
             cleaned.append(line)
+        # 后处理：删除连续3+编号行（表示是列表子项而非独立发现）
+        _NUM_SEQ = re.compile(r'^\d+[.、]\s+')
+        num_indices = [i for i, line in enumerate(cleaned) if _NUM_SEQ.match(line)]
+        if len(num_indices) >= 3:
+            remove_set = set()
+            start = 0
+            while start < len(num_indices):
+                end = start + 1
+                while end < len(num_indices) and num_indices[end] == num_indices[end-1] + 1:
+                    end += 1
+                if end - start >= 3:
+                    for j in range(start, end):
+                        remove_set.add(num_indices[j])
+                start = end
+            cleaned = [line for i, line in enumerate(cleaned) if i not in remove_set]
         return cleaned
 
     @staticmethod

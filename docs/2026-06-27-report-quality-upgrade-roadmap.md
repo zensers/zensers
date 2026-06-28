@@ -1,7 +1,7 @@
 # 报告质量提升全面扫描分析：78→90+路线图（修订版）
 
 > 日期: 2026-06-27
-> 修订日期: 2026-06-27（第五轮：将审计4结论回写全文，消除前后矛盾）
+> 修订日期: 2026-06-27（第六轮：消除审计5-9残留矛盾）
 > 基准: e2e v4实测 score=78, convergence_rounds=1, converged=False
 > 目标: 从78分提升到90+分
 > 扫描范围: 9个Prompt模板、orchestrator.py(1304行)、chapter_writer.py(135行)、chapter_reviewer.py(67行)、checkers.py(1085行)、global_reviewer.py(137行)、models.py(168行)、data_registry.py(118行)、structured_data_repair.py(105行)
@@ -27,7 +27,7 @@ P3增加"结构合规度"审查维度后，reviewer的评分维度从5个变为6
 
 ### LLM遵从度黑盒
 
-`chapter_write.tmpl:67`已有禁止指令"正文中不要出现'反证''边界条件'"，但LLM仍无视生成3个违规段落。黑名单/白名单增强的效果**高度不确定**，不能作为主要依赖。**程序化后处理(N1)才是确定性方案**。
+`chapter_write.tmpl:67`已有禁止指令"正文中不要出现'反证''边界条件'"，但LLM仍无视生成3个违规段落。黑名单/白名单增强的效果**高度不确定**，不能作为主要依赖。**程序化后处理(N1)是确定性最高的方案**，但需注意其局限性（见N1方案详述）。
 
 ---
 
@@ -49,7 +49,7 @@ P3增加"结构合规度"审查维度后，reviewer的评分维度从5个变为6
 
 ---
 
-## 1. 五层18个提升点
+## 1. 五层提升点
 
 ### 第一层：Prompt层面（影响最大，直接决定LLM输出质量）
 
@@ -156,8 +156,9 @@ P3增加"结构合规度"审查维度后，reviewer的评分维度从5个变为6
 def serialize_report_for_review(chapters, data_registry):
     sections_summary = []
     for i, ch in enumerate(chapters):
-        content_head = ch.content[:400] if len(ch.content) > 400 else ch.content
-        content_tail = ch.content[-400:] if len(ch.content) > 400 else ""
+        content = ch.content or ""
+        content_head = content[:400]
+        content_tail = content[-400:] if len(content) > 800 else content[400:]
         data_summary = [f"  {dp.metric}: {dp.value} {dp.unit}" for dp in ch.data_points_used]
         sections_summary.append(
             f"### 第{i+1}章：{ch.title}\n"
@@ -169,7 +170,10 @@ def serialize_report_for_review(chapters, data_registry):
     return "\n\n".join(sections_summary)
 ```
 
-**⚠️ 修订要点**: 原方案取前500字摘要，但风险提示通常在章节末尾（`chapter_write.tmpl:66`明确要求"风险提示放在章节最后一部分"），前500字可能遗漏末尾的结构违规。改为首400字+末400字，总增加800字*3章=2400字额外上下文，相比原方案500字*3=1500字增加900字，但确保末尾内容也被审查。
+**⚠️ 修订要点**:
+- 原方案取前500字摘要，但风险提示通常在章节末尾（`chapter_write.tmpl:66`明确要求"风险提示放在章节最后一部分"），前500字可能遗漏末尾的结构违规
+- 改为首400字+末400字，当章节长度>800字时head和tail无重叠；当400<len<=800时tail从400字开始取，避免重叠；当len<=400时head已覆盖全文
+- 总增加约800字*3章=2400字额外上下文，比原方案500字*3=1500字多900字，但确保末尾内容也被审查
 
 **预期提升**: +2~4分
 
@@ -188,6 +192,123 @@ def serialize_report_for_review(chapters, data_registry):
 ```
 
 **预期提升**: +1~2分
+
+---
+
+### 第二层：执行逻辑层面
+
+#### N1. 程序化结构后处理（新增，确定性方案）
+
+**问题**: LLM生成的章节中存在"反证与边界条件""决策启示""含义""影响"等非研报规范段落，LLM对禁止指令遵从度低（L67已有禁止指令但仍生成3个违规段落）
+
+**方案**: 在`chapter_writer.write()`返回后、`_chapter_reviewer.review()`之前（orchestrator.py L152-153之间），增加程序化后处理函数，对`chapter.content`进行确定性修正：
+
+```python
+import re
+
+_FORBIDDEN_SECTION_PATTERNS = [
+    (r'^#{1,3}\s*反证(?:与|及|和)?边界条件', 'risk_disclosure'),
+    (r'^#{1,3}\s*反证(?:证据)?', 'risk_disclosure'),
+    (r'^#{1,3}\s*边界条件(?:假设)?', 'risk_disclosure'),
+    (r'^#{1,3}\s*正面?论证', 'argument'),
+    (r'^#{1,3}\s*反面?论证', 'argument'),
+    (r'^#{1,3}\s*(?:决策)?启示', 'merge_last'),
+    (r'^#{1,3}\s*含义', 'merge_last'),
+    (r'^#{1,3}\s*影响$', 'merge_last'),
+]
+
+_RISK_DISCLOSURE_HEADING = "#### 风险提示"
+
+def _enforce_structure_compliance(content: str) -> str:
+    """
+    程序化后处理：将违规段落标题替换/收拢为规范结构。
+    在chapter_writer.write()返回后、chapter_reviewer.review()之前调用。
+    """
+    lines = content.split('\n')
+    result_lines = []
+    risk_buffer = []  # 收拢的违规段落内容
+    has_risk_section = False
+    
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        matched = False
+        for pattern, action in _FORBIDDEN_SECTION_PATTERNS:
+            if re.match(pattern, stripped):
+                matched = True
+                # 收集该标题下的内容（直到下一个标题或空行+标题）
+                j = i + 1
+                section_content = []
+                while j < len(lines):
+                    next_stripped = lines[j].strip()
+                    if next_stripped.startswith('#') or (not next_stripped and j + 1 < len(lines) and lines[j+1].strip().startswith('#')):
+                        break
+                    section_content.append(lines[j])
+                    j += 1
+                if action == 'risk_disclosure':
+                    risk_buffer.extend(section_content)
+                elif action == 'argument':
+                    result_lines.append(lines[i].replace(re.match(pattern, stripped).group(), '#### 论证分析'))
+                    result_lines.extend(section_content)
+                elif action == 'merge_last':
+                    # 精简1-2句，并入最后的论证分析段落
+                    if section_content:
+                        summary = section_content[0].strip()
+                        if len(summary) > 100:
+                            summary = summary[:100] + '…'
+                        result_lines.append(summary)
+                i = j
+                break
+        if not matched:
+            if stripped.startswith('#') and '风险提示' in stripped:
+                has_risk_section = True
+            result_lines.append(lines[i])
+            i += 1
+    
+    # 将收拢的违规内容追加到风险提示段
+    if risk_buffer:
+        if has_risk_section:
+            # 插入到风险提示段末尾
+            insert_idx = len(result_lines)
+            for idx in range(len(result_lines)):
+                if result_lines[idx].strip().startswith('#') and '风险提示' in result_lines[idx]:
+                    # 找到风险提示段的结束位置
+                    insert_idx = idx + 1
+                    while insert_idx < len(result_lines):
+                        if result_lines[insert_idx].strip().startswith('#'):
+                            break
+                        insert_idx += 1
+                    break
+            for k, line in enumerate(risk_buffer):
+                result_lines.insert(insert_idx + k, line)
+        else:
+            # 没有风险提示段，新增一个
+            result_lines.append('')
+            result_lines.append(_RISK_DISCLOSURE_HEADING)
+            result_lines.extend(risk_buffer)
+    
+    return '\n'.join(result_lines)
+```
+
+**插入位置**: orchestrator.py L152后、L154前：
+```python
+chapter = await self._chapter_writer.write(...)
+# 新增：程序化结构后处理
+chapter.content = _enforce_structure_compliance(chapter.content)
+```
+
+**⚠️ 局限性**:
+1. Markdown标题匹配依赖正则，边界情况下（如"反证"出现在正文而非标题中、标题格式不规范如加粗`**反证与边界条件**`）可能漏检。确定性应为"中高"而非"高"。
+2. "影响"关键词匹配需排除正常用法（如"受到影响"），当前用`影响$`限制为标题行结尾。
+3. 收拢后的风险提示内容可能冗余或措辞不统一——这是程序化处理的代价，后续可通过P3审查维度进一步修正。
+
+**⚠️ 与P1+P3的关系**: N1与P1+P3目标重叠但机制互补：
+- N1是确定性后处理，不管LLM是否遵从都能修正结构
+- P1+P3是通过扣分机制从源头阻止LLM生成违规段落
+- **两者同时实施时，N1会先修正结构→P3审查不再发现违规→P3扣分机制不起作用**。这是预期行为：N1作为保底，P1+P3作为源头预防
+- **预期提升不应简单叠加**：N1(+3~6)和P1+P3(+1~3)都针对同一问题，实际效果取max而非求和。P1+P3的+1~3是在N1修正后LLM下次生成时减少违规（源头改善），而非额外消除当前违规
+
+**预期提升**: **+3~5分**（取N1的确定性修正效果，P1+P3的源头预防效果叠加后边际递减。N1单独约+3~4分，P1+P3叠加后额外+0~1分。**注意**：N1只在初始write后调用，不覆盖patch/rewrite路径——patch_data(L550)和rewrite(L610)后不会自动N1处理，但后续reviewer会捕获新引入的违规并触发再修正。）
 
 ---
 
@@ -232,21 +353,19 @@ if improvement < RetryPolicy.get_min_improvement(round_idx):
 
 **⚠️ 修订要点**: 外层`_quality_convergence_loop` L393-395已跟踪best_chapters/best_score，即使_phase4产生更差版本，收敛循环最终会选用best_chapters。E2的真正风险是**单轮内退化**（_phase4可能在一个收敛轮次内让某章节变差），但不会跨轮退化（外层收敛循环有保底机制）。
 
-**提升方案（简化）**: 在`_phase4_fix_and_optimize`入口记录章节快照，rewrite路径只在确实更好时替换：
+**提升方案（简化）**: L629处已有`re_review.score`（rewrite前的review分数），直接比较即可，无需额外LLM调用：
 
 ```python
-async def _phase4_fix_and_optimize(self, chapters, review, ...):
-    # 记录初始版本分数，用于比较
-    initial_scores = {}
-    for i, chapter in enumerate(chapters):
-        if chapter.chapter_id in rewrite_needed:
-            initial_review = await self._chapter_reviewer.review(...)
-            initial_scores[chapter.chapter_id] = initial_review.score
-    
-    # rewrite路径改为：
-    if rewrite_review.score > initial_scores.get(chapters[i].chapter_id, 0):
-        chapters[i] = rewritten
+# L629 现有：
+if rewrite_review.score >= re_review.score:
+    chapters[i] = rewritten
+
+# 改为严格大于（>= → >），避免相同分数时无意义替换：
+if rewrite_review.score > re_review.score:
+    chapters[i] = rewritten
 ```
+
+这是最小改动方案。更完善的方案是引入chapter_best_scores跟踪，但需额外LLM调用成本，暂不推荐。
 
 **预期提升**: 防止单轮内质量回退（非加分，防退分）
 
@@ -431,7 +550,10 @@ def _extract_chapter_data(aggregated_result, section_id, content_dependencies, s
 
 所有调用点（L129, L439, L528）增加可选参数传入self._skill_registry。方案B改动最小，方案A（改实例方法）需要去掉3个调用点的类名前缀，风险更大。
 
-**⚠️ 修订要点**: 原文档推荐方案A，但方案B改动更小、风险更低。推荐方案B。
+**⚠️ 修订要点**: 
+- 原文档推荐方案A，但方案B改动更小、风险更低。推荐方案B。
+- **注意**: 如需在_extract_chapter_data内调用StockDataSkill（需要`await`），需将方法声明改为`@staticmethod async def _extract_chapter_data(...)`，所有调用点改为`await self._extract_chapter_data(...)`（L129, L439, L528均已在async函数内，无需额外调整）。
+- 如果仅传skill_registry参数但并不立即执行skill（懒加载，留待_try_fill_data_gap内部调用），则无需async改造。
 
 **预期提升**: +1~3分
 
@@ -573,12 +695,13 @@ risk_indicators = [
 
 | 优先级 | 提升点 | 预期提升 | 确定性 | 涉及文件 | 说明 |
 |--------|--------|----------|--------|---------|------|
-| **P0** | N1(程序化后处理) | +3~6分 | 高 | orchestrator.py(新增) | 不依赖LLM遵从度，每次100%执行 |
+| **P0** | N1(程序化后处理) | +3~5分 | 中高 | orchestrator.py(新增) | 确定性最高但仍非100%，标题格式不规范等边界情况可能漏检 |
 | **P0** | A1(数据传递) | +2~4分 | 中 | models.py+orchestrator.py+chapter_writer.py+chapter_write.tmpl | 根因修复：修改L767保留data_points |
 | **P0** | P1+P3(黑名单+合规审查) | +1~3分 | 低 | chapter_write.tmpl+chapter_review.tmpl | 辅助手段，LLM遵从度不确定 |
 | **P1** | A3(程序化检查接入收敛) | +2~4分 | 高 | orchestrator.py+checkers.py | AnalysisQualityChecker作为硬约束参与收敛 |
 | **P1** | E1(收敛阈值3) | +1~2分 | 高 | orchestrator.py | 首轮阈值从5改为3 |
 | **P1** | D2(StockData预注入) | +1~3分 | 中 | orchestrator.py | 方案B：保持static+加参数 |
+| **P2** | S3(反证兼容risk)+S1(权重45%)+S2(关键词收紧) | +3~5分 | 高 | checkers.py | **A3实施后立即生效，不独立** |
 | **P2** | P5(全局审查看正文) | +1~2分 | 中 | global_reviewer.py | 首400+末400字摘要 |
 | **P2** | P2(逐段精修指令) | +1~2分 | 低 | chapter_write.tmpl | 依赖LLM遵从度 |
 | **P2** | E3(退出条件+rewrite触发) | +1~2分 | 高 | orchestrator.py | 同步修改L182+L232 |
@@ -588,60 +711,54 @@ risk_indicators = [
 | **P3** | D3(来源49修复) | +0.5~1分 | 高 | orchestrator.py | |
 | **P3** | P4(章内自洽性) | +0~1分 | 低 | chapter_review.tmpl | 依赖LLM reviewer |
 | **P3** | P6(摘要结构) | +0~1分 | 低 | exec_summary.tmpl | 不影响章节分数 |
-| **P4** | E2(best_score防退) | 防回退 | 高 | orchestrator.py | 外层收敛循环已有保底 |
-| **后续** | S3(反证兼容risk) | 0分(独立) | N/A | checkers.py | 仅当A3接入后有意义 |
-| **后续** | S1(权重调整) | 0分(独立) | N/A | checkers.py | 同上 |
-| **后续** | S2(data_support关键词) | 0分(独立) | N/A | checkers.py | 同上 |
+| **P4** | E2(best_score防退) | 防回退 | 高 | orchestrator.py | L629改为严格大于比较 |
 
 ### 预期效果
 
-- **P0三项(1天)**: 78 → **82~88**（核心：程序化后处理+数据传递）
-- **P0+P1六项(2天)**: 78 → **86~92**（A3接入收敛+StockData预注入+收敛阈值）
+- **P0三项(1天)**: 78 → **81~85**（N1确定性修正+3~4分，A1数据传递+2~4分，P1+P3边际+0~1分。注意：N1与P1+P3目标重叠，不应简单叠加）
+- **P0+P1六项(2天)**: 78 → **85~90**（A3接入收敛+S3/S1/S2权重调整+E1收敛阈值+D2预注入）
 - **全部项(5天)**: 78 → **88~94**
 
 ---
 
 ## 3. 实施顺序
 
-### Phase 1: P0三项（预期78→82~88）
+### Phase 1: P0三项（预期78→81~85）
 
 1. **新增**`_enforce_structure_compliance`程序化后处理（N1）——在`_chapter_writer.write()`返回后、`_chapter_reviewer.review()`之前调用
 2. 修改`_split_chapter_data`(L767)保留data_points为upstream_data_points + `models.py`增加upstream_data_points字段 + `chapter_writer.py`传入 + `orchestrator.py`提取 + `chapter_write.tmpl`增加结构化数据引用段（A1）
 3. 修改`chapter_write.tmpl`增加段落黑名单+白名单 **同时**修改`chapter_review.tmpl`增加"结构合规度"维度（P1+P3，辅助手段）
 
-### Phase 2: P1三项（预期82~88→86~92）
+### Phase 2: P1三项（预期81~85→85~90）
 
-4. 在`_phase4_fix_and_optimize`入口增加AnalysisQualityChecker硬约束检查（A3）
+4. 在`_phase4_fix_and_optimize`入口增加AnalysisQualityChecker硬约束检查（A3）**同时**修改checkers.py的S3(反证兼容risk+降权)+S1(权重45%)+S2(关键词收紧)——A3接入后S3/S1/S2立即生效
 5. 修改`orchestrator.py` RetryPolicy，首轮阈值从5改为3（E1）
 6. 修改`_extract_chapter_data`增加skill_registry参数，StockData预注入（D2方案B）
 
-### Phase 3: P2三项（预期86~92→88~93）
+### Phase 3: P2三项（预期85~90→87~92）
 
 7. 修改`global_reviewer.py` serialize_report_for_review增加首400+末400字正文摘要（P5）
 8. 修改`chapter_write.tmpl`增加"逐段精修指令"（P2）
 9. 修改章节级review退出条件+L232 rewrite触发条件（E3）
 
-### Phase 4: P3+P4剩余项（预期88~93→90~94）
+### Phase 4: P3+P4剩余项（预期87~92→88~94）
 
 10-15. 依次实施E4/D1/E5/D3/P4/P6/E2
-
-### Phase 5: 后续项（A3接入后S3/S1/S2才有意义）
-
-16-18. 实施S3/S1/S2（仅当A3已将AnalysisQualityChecker接入收敛循环后）
 
 ---
 
 ## 4. 风险与注意事项
 
-1. **P1+P3为辅助手段**：单独的黑名单(P1)依赖LLM遵从度，L67已有同类指令且无效。P3通过扣分强制LLM修正，但reviewer本身也是LLM。**N1程序化后处理才是确定性方案**。
-2. **S3/S1/S2对78分无效**：只影响AnalysisQualityChecker，不影响LLM reviewer。仅当A3接入收敛循环后才有意义，排在Phase 5。
-3. **A1实施需修改L767**：`_split_chapter_data`显式剥离data_points，必须先修改此处。上游不存在`key_conclusions`字段。
+1. **N1与P1+P3目标重叠**：N1程序化后处理先修正结构→P3审查不再发现违规→P3扣分机制不起作用。这是预期行为：N1保底+P1+P3源头预防。预期提升取max而非求和。
+2. **S3/S1/S2与A3捆绑**：S3/S1/S2只影响AnalysisQualityChecker，仅当A3接入收敛循环后有效。已将S3/S1/S2与A3捆绑在Phase 2实施。
+3. **A1实施需修改L767**：`_split_chapter_data`显式剥离data_points，必须先修改此处。上游不存在`key_conclusions`字段。注意：当raw_data不是dict时（走L752-763分支），refined只有{"content":...}，没有data_points，此时upstream_data_points为空。
 4. **E3防无限循环**：60-79分段最多2轮后必须退出，且需同步修改L232的rewrite触发条件。
 5. **E4误判风险**：排除"没有""无"，避免正常描述被误判为数据缺失。
-6. **E1成本风险**：降低首轮阈值可能增加收敛轮数和LLM调用成本。
-7. **P5增加token消耗**：首400+末400字*3章=2400字额外上下文。
+6. **E1成本风险**：降低首轮阈值可能增加收敛轮数和LLM调用成本。但v4实际只跑了1轮就停滞，E1让第2轮有机会执行，而非无限制循环。
+7. **P5增加token消耗**：首400+末400字*3章≈2400字额外上下文。
 8. **D2方案B**：保持static+加参数，改动最小风险最低。
 9. **分数不可比**：P3改变了reviewer评分维度，修改后分数与v4的78分不在同一标尺。
+10. **E2简化方案**：L629改为严格大于比较(>而非>=)，避免相同分数时无意义替换。无需额外LLM调用。
 
 ## 5. 自审记录
 
@@ -695,10 +812,10 @@ risk_indicators = [
 
 | 发现 | 影响 | 处理 |
 |------|------|------|
-| 78分来自LLM reviewer，不是AnalysisQualityChecker | S3/S1/S2对78分无效 | 降级为"后续"，仅A3接入后有意义 |
+| 78分来自LLM reviewer，不是AnalysisQualityChecker | S3/S1/S2对78分无效 | S3/S1/S2与A3捆绑在Phase 2 |
 | L67已有禁止指令被LLM无视 | P1黑名单预期从+5~8降为+1~3 | 新增N1程序化后处理为P0 |
 | P3改变reviewer评分维度 | 修改后分数与78不可比 | 在§4风险中标注 |
-| 收敛循环多轮=LLM天花板 | 78→80可能不是重试能解决 | A1数据传递提升为P0 |
+| E1阈值5导致首轮停滞 | 第二轮未有机会尝试 | A1数据传递提升为P0（根因修复）+E1阈值降为3 |
 
 ### 审计5 (2026-06-27): 前后矛盾消除
 
