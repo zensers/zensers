@@ -7,14 +7,14 @@ from .models import (
     ReviewInput, ReviewOutput, ReviewIssue, FixSuggestion, ChapterWriteOutput,
 )
 from .prompt_manager import PromptManager
+from src.core.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
 
 class GlobalReviewAgent:
 
-    def __init__(self, llm_skill, prompt_manager: PromptManager) -> None:
-        self._llm = llm_skill
+    def __init__(self, llm_skill=None, prompt_manager: PromptManager = None) -> None:
         self._prompts = prompt_manager
 
     async def review(self, input_data: ReviewInput) -> ReviewOutput:
@@ -25,7 +25,7 @@ class GlobalReviewAgent:
             conflicts_summary=input_data.conflicts_summary,
         )
 
-        result = await self._llm.execute(prompt=prompt, max_tokens=4096, temperature=0.3)
+        result = await call_llm(prompt=prompt, max_tokens=4096, temperature=0.3)
         if not result.get("success"):
             raise RuntimeError(f"Global review LLM call failed: {result}")
 
@@ -48,7 +48,7 @@ class GlobalReviewAgent:
         )
         prompt = self._prompts.get("global_verify_issues", issues_context=issues_context)
 
-        result = await self._llm.execute(prompt=prompt, max_tokens=4096, temperature=0.3)
+        result = await call_llm(prompt=prompt, max_tokens=4096, temperature=0.3)
         if not result.get("success"):
             return issues
 

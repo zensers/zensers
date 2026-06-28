@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from src.agents.fixed_agents.report_upgrade.chapter_reviewer import ChapterReviewAgent
 from src.agents.fixed_agents.report_upgrade.models import ChapterReviewInput, ChapterReviewOutput
@@ -20,8 +20,8 @@ def mock_prompts(tmp_path):
 
 
 @pytest.fixture
-def reviewer(mock_llm, mock_prompts):
-    return ChapterReviewAgent(llm_skill=mock_llm, prompt_manager=mock_prompts)
+def reviewer(mock_prompts):
+    return ChapterReviewAgent(prompt_manager=mock_prompts)
 
 
 def make_review_input(**overrides):
@@ -39,32 +39,35 @@ def make_review_input(**overrides):
 
 class TestChapterReviewAgentReview:
     @pytest.mark.asyncio
-    async def test_review_passes(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"passed": true, "score": 85, "issues": []}\n```',
-        }
-        result = await reviewer.review(make_review_input())
-        assert isinstance(result, ChapterReviewOutput)
-        assert result.passed is True
-        assert result.score == 85.0
+    async def test_review_passes(self, reviewer):
+        with patch("src.agents.fixed_agents.report_upgrade.chapter_reviewer.call_llm", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "content": '```json\n{"passed": true, "score": 85, "issues": []}\n```',
+            }
+            result = await reviewer.review(make_review_input())
+            assert isinstance(result, ChapterReviewOutput)
+            assert result.passed is True
+            assert result.score == 85.0
 
     @pytest.mark.asyncio
-    async def test_review_fails_with_issues(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"passed": false, "score": 45, "issues": [{"category": "data_support", "severity": "HIGH", "location": "data:市场规模", "description": "无数据支撑", "suggestion": "补充数据"}]}\n```',
-        }
-        result = await reviewer.review(make_review_input())
-        assert result.passed is False
-        assert len(result.issues) == 1
-        assert result.issues[0].category == "data_support"
+    async def test_review_fails_with_issues(self, reviewer):
+        with patch("src.agents.fixed_agents.report_upgrade.chapter_reviewer.call_llm", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "content": '```json\n{"passed": false, "score": 45, "issues": [{"category": "data_anchoring", "severity": "CRITICAL", "location": "p3", "description": "无数据支撑", "suggestion": "补充数据"}]}\n```',
+            }
+            result = await reviewer.review(make_review_input())
+            assert result.passed is False
+            assert len(result.issues) == 1
+            assert result.issues[0].category == "data_anchoring"
 
     @pytest.mark.asyncio
-    async def test_review_llm_failure_raises(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {"success": False}
-        with pytest.raises(RuntimeError):
-            await reviewer.review(make_review_input())
+    async def test_review_llm_failure_raises(self, reviewer):
+        with patch("src.agents.fixed_agents.report_upgrade.chapter_reviewer.call_llm", new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {"success": False, "message": "LLM error"}
+            with pytest.raises(RuntimeError):
+                await reviewer.review(make_review_input())
 
 
 class TestChapterReviewAgentParseOutput:

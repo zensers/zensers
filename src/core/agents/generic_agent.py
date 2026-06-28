@@ -56,6 +56,8 @@ if TYPE_CHECKING:
     from src.core.agents.session_persistence import SessionPersistenceManager
     from src.core.agents.agent_session import AgentSession
 
+from src.core.llm_client import call_llm
+
 logger = logging.getLogger(__name__)
 
 _AUTHORITY_DOMAINS = {
@@ -1083,141 +1085,139 @@ class GenericAgent(
                     result = await skill.execute(**parameters)
                     return self._ensure_standard_result(result, action)
         
-        # LLM fallback: use llm_skill for unhandled actions.
+        # LLM fallback: call_llm() for unhandled actions (no longer a skill).
         # P0-3: Before generating, attempt a search so we have real data,
         # not just LLM training-cutoff knowledge.
-        if skill_registry and "llm_skill" in skill_registry._skills:
-            llm_skill = skill_registry.get("llm_skill")
-            if llm_skill:
-                logger.info(f"GenericAgent {self.agent_id}: LLM fallback for action '{action}'")
-                # Extract topic/aspect from Agent context or task
-                context = self._context or {}
-                topic = context.get("topic") or task.get("topic", "")
-                aspect = context.get("aspect") or task.get("aspect", "")
-                aspects = task.get("aspects", [])
+        if True:  # always available as intrinsic capability
+            logger.info(f"GenericAgent {self.agent_id}: LLM fallback for action '{action}'")
+            # Extract topic/aspect from Agent context or task
+            context = self._context or {}
+            topic = context.get("topic") or task.get("topic", "")
+            aspect = context.get("aspect") or task.get("aspect", "")
+            aspects = task.get("aspects", [])
 
                 # Normalise topic to string
-                if hasattr(topic, 'topic'):
-                    topic = topic.topic
-                if not isinstance(topic, str):
-                    topic = str(topic) if topic else ""
-                if not isinstance(aspect, str):
-                    aspect = str(aspect) if aspect else ""
+            if hasattr(topic, 'topic'):
+                topic = topic.topic
+            if not isinstance(topic, str):
+                topic = str(topic) if topic else ""
+            if not isinstance(aspect, str):
+                aspect = str(aspect) if aspect else ""
 
                 # P0-3: Attempt search before pure LLM generation.
-                # Even though we reached the fallback path, the registry may
-                # still have search_skill available — use it to get real data.
-                search_results = None
-                if topic and skill_registry:
-                    search_skill = (
-                        skill_registry.get("search_skill")
-                        or skill_registry.get("web_search")
-                        or skill_registry.get("multi_search")
-                    )
-                    if search_skill:
-                        try:
-                            logger.info(
-                                f"GenericAgent {self.agent_id}: fallback attempting "
-                                f"search for topic='{topic[:50]}...'"
-                            )
-                            search_results = await self._do_deep_research(
-                                topic=topic,
-                                aspect=aspect,
-                                aspects=aspects,
-                                skill_registry=skill_registry,
-                            )
-                        except Exception as search_err:
-                            logger.warning(
-                                f"GenericAgent {self.agent_id}: fallback search failed: {search_err}"
-                            )
-                            search_results = None
+            # Even though we reached the fallback path, the registry may
+            # still have search_skill available — use it to get real data.
+            search_results = None
+            if topic and skill_registry:
+                search_skill = (
+                    skill_registry.get("search_skill")
+                    or skill_registry.get("web_search")
+                    or skill_registry.get("multi_search")
+                )
+                if search_skill:
+                    try:
+                        logger.info(
+                            f"GenericAgent {self.agent_id}: fallback attempting "
+                            f"search for topic='{topic[:50]}...'"
+                        )
+                        search_results = await self._do_deep_research(
+                            topic=topic,
+                            aspect=aspect,
+                            aspects=aspects,
+                            skill_registry=skill_registry,
+                        )
+                    except Exception as search_err:
+                        logger.warning(
+                            f"GenericAgent {self.agent_id}: fallback search failed: {search_err}"
+                        )
+                        search_results = None
 
                 # Build prompt — enriched with search results if available
-                if search_results and search_results.get("searches"):
-                    prompt = self._build_research_prompt_with_data(
-                        topic=topic,
-                        aspect=aspect,
-                        aspects=aspects,
-                        search_results=search_results,
+            if search_results and search_results.get("searches"):
+                prompt = self._build_research_prompt_with_data(
+                    topic=topic,
+                    aspect=aspect,
+                    aspects=aspects,
+                    search_results=search_results,
+                )
+                logger.info(
+                    f"GenericAgent {self.agent_id}: fallback prompt built "
+                    f"from {search_results.get('total_sources', 0)} search results"
+                )
+            elif topic:
+                _fb_date = datetime.now().strftime("%Y-%m-%d")
+                if aspect:
+                    prompt = (
+                        f"[SYSTEM DATE: {_fb_date}]\n\n"
+                        f"请基于以下搜索数据进行深度研究分析。\n\n"
+                        f"研究主题：{topic}\n"
+                        f"重点关注维度：{aspect}\n\n"
+                        f"请提供详细的分析结果，包括关键发现、数据支持和结论。\n"
+                        f"注意：如果未提供搜索数据，请明确说明数据来源于模型知识而非实时搜索。\n"
+                        f"重要：当前真实日期为 {_fb_date}，所有年份引用必须与此一致。"
                     )
-                    logger.info(
-                        f"GenericAgent {self.agent_id}: fallback prompt built "
-                        f"from {search_results.get('total_sources', 0)} search results"
+                elif aspects:
+                    aspects_str = "、".join([a for a in aspects if a])
+                    prompt = (
+                        f"[SYSTEM DATE: {_fb_date}]\n\n"
+                        f"请基于以下搜索数据进行深度研究分析。\n\n"
+                        f"研究主题：{topic}\n"
+                        f"需要分析的维度：{aspects_str}\n\n"
+                        f"请逐一分析每个维度，提供详细的研究发现和结论。\n"
+                        f"注意：如果未提供搜索数据，请明确说明数据来源于模型知识而非实时搜索。\n"
+                        f"重要：当前真实日期为 {_fb_date}，所有年份引用必须与此一致。"
                     )
-                elif topic:
-                    _fb_date = datetime.now().strftime("%Y-%m-%d")
-                    if aspect:
-                        prompt = (
-                            f"[SYSTEM DATE: {_fb_date}]\n\n"
-                            f"请基于以下搜索数据进行深度研究分析。\n\n"
-                            f"研究主题：{topic}\n"
-                            f"重点关注维度：{aspect}\n\n"
-                            f"请提供详细的分析结果，包括关键发现、数据支持和结论。\n"
-                            f"注意：如果未提供搜索数据，请明确说明数据来源于模型知识而非实时搜索。\n"
-                            f"重要：当前真实日期为 {_fb_date}，所有年份引用必须与此一致。"
-                        )
-                    elif aspects:
-                        aspects_str = "、".join([a for a in aspects if a])
-                        prompt = (
-                            f"[SYSTEM DATE: {_fb_date}]\n\n"
-                            f"请基于以下搜索数据进行深度研究分析。\n\n"
-                            f"研究主题：{topic}\n"
-                            f"需要分析的维度：{aspects_str}\n\n"
-                            f"请逐一分析每个维度，提供详细的研究发现和结论。\n"
-                            f"注意：如果未提供搜索数据，请明确说明数据来源于模型知识而非实时搜索。\n"
-                            f"重要：当前真实日期为 {_fb_date}，所有年份引用必须与此一致。"
-                        )
-                    else:
-                        prompt = (
-                            f"[SYSTEM DATE: {_fb_date}]\n\n"
-                            f"请研究并分析以下主题：{topic}\n\n"
-                            f"请提供全面的分析，包括背景、现状、关键因素和未来趋势。\n"
-                            f"注意：如果未提供搜索数据，请明确说明数据来源于模型知识而非实时搜索。\n"
-                            f"重要：当前真实日期为 {_fb_date}，所有年份引用必须与此一致。"
-                        )
                 else:
-                    prompt = parameters.get(
-                        "prompt",
-                        f"执行任务: {action}\n参数: {parameters}"
+                    prompt = (
+                        f"[SYSTEM DATE: {_fb_date}]\n\n"
+                        f"请研究并分析以下主题：{topic}\n\n"
+                        f"请提供全面的分析，包括背景、现状、关键因素和未来趋势。\n"
+                        f"注意：如果未提供搜索数据，请明确说明数据来源于模型知识而非实时搜索。\n"
+                        f"重要：当前真实日期为 {_fb_date}，所有年份引用必须与此一致。"
                     )
+            else:
+                prompt = parameters.get(
+                    "prompt",
+                    f"执行任务: {action}\n参数: {parameters}"
+                )
 
-                result = await llm_skill.execute(prompt=prompt)
+                result = await call_llm(prompt=prompt)
 
                 # 日期验证
-                if result.get("success") and result.get("content"):
-                    validated = self._validate_output_dates(result["content"], self.agent_id)
-                    if validated != result["content"]:
-                        logger.warning(f"GenericAgent {self.agent_id}: fallback路径日期验证修正了年份")
-                        result["content"] = validated
+            if result.get("success") and result.get("content"):
+                validated = self._validate_output_dates(result["content"], self.agent_id)
+                if validated != result["content"]:
+                    logger.warning(f"GenericAgent {self.agent_id}: fallback路径日期验证修正了年份")
+                    result["content"] = validated
 
                 # P0-3: Attach search data to result so downstream
-                # quality checks and synthesis agents can access sources.
-                if search_results:
-                    data_points = []
-                    sources = []
-                    for search in search_results.get("searches", []):
-                        for item in search.get("results", []):
-                            data_points.append({
-                                "title": item.get("title", ""),
-                                "content": item.get("body", "") or item.get("snippet", ""),
-                                "url": item.get("href", "") or item.get("url", ""),
-                                "quality_score": item.get("quality_score", 0),
-                                "credibility": item.get("credibility", "unknown"),
-                            })
-                            sources.append({
-                                "title": item.get("title", ""),
-                                "url": item.get("href", "") or item.get("url", ""),
-                                "type": "web",
-                                "quality_score": item.get("quality_score", 0),
-                            })
-                    result["data_points"] = data_points
-                    result["sources"] = sources
-                    result["total_sources"] = search_results.get("total_sources", 0)
-                    result["quality_stats"] = search_results.get("quality_stats", {})
-                    logger.info(
-                        f"GenericAgent {self.agent_id}: fallback enriched with "
-                        f"{len(data_points)} data_points, {len(sources)} sources"
-                    )
+            # quality checks and synthesis agents can access sources.
+            if search_results:
+                data_points = []
+                sources = []
+                for search in search_results.get("searches", []):
+                    for item in search.get("results", []):
+                        data_points.append({
+                            "title": item.get("title", ""),
+                            "content": item.get("body", "") or item.get("snippet", ""),
+                            "url": item.get("href", "") or item.get("url", ""),
+                            "quality_score": item.get("quality_score", 0),
+                            "credibility": item.get("credibility", "unknown"),
+                        })
+                        sources.append({
+                            "title": item.get("title", ""),
+                            "url": item.get("href", "") or item.get("url", ""),
+                            "type": "web",
+                            "quality_score": item.get("quality_score", 0),
+                        })
+                result["data_points"] = data_points
+                result["sources"] = sources
+                result["total_sources"] = search_results.get("total_sources", 0)
+                result["quality_stats"] = search_results.get("quality_stats", {})
+                logger.info(
+                    f"GenericAgent {self.agent_id}: fallback enriched with "
+                    f"{len(data_points)} data_points, {len(sources)} sources"
+                )
 
                 return self._ensure_standard_result(result, action)
         

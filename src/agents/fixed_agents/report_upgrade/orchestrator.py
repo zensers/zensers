@@ -23,6 +23,7 @@ from .data_repair import DataRepairAgent, ConflictResolver
 from .structured_data_repair import StructuredDataRepairAgent
 from .prompt_manager import PromptManager
 from src.core.quality.checkers import AnalysisQualityChecker
+from src.core.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,6 @@ class ReportOrchestrator:
 
     def __init__(
         self,
-        llm_skill,
         chapter_writer: ChapterWriter,
         chapter_reviewer: ChapterReviewAgent,
         global_reviewer: GlobalReviewAgent,
@@ -156,8 +156,9 @@ class ReportOrchestrator:
         conflict_resolver: ConflictResolver,
         prompt_manager: PromptManager = None,
         skill_registry=None,
+        llm_skill=None,  # kept for backward compatibility; agents use call_llm() directly
     ) -> None:
-        self._llm = llm_skill
+        # self._llm removed - agents use call_llm() from src.core.llm_client directly
         self._chapter_writer = chapter_writer
         self._chapter_reviewer = chapter_reviewer
         self._global_reviewer = global_reviewer
@@ -1182,7 +1183,8 @@ class ReportOrchestrator:
 
     async def _call_llm_tracked(self, prompt: str, max_tokens: int = 8192, temperature: float = 0.7, phase: str = "") -> Dict[str, Any]:
         self._llm_call_count += 1
-        result = await self._llm.execute(prompt=prompt, max_tokens=max_tokens, temperature=temperature)
+        result = await call_llm(prompt=prompt, max_tokens=max_tokens, temperature=temperature)
+
         trace_entry = {
             "call_id": self._llm_call_count,
             "phase": phase,

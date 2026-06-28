@@ -5,6 +5,7 @@ from typing import Dict, Any, List
 
 from .models import ChapterWriteInput, ChapterWriteOutput, DataPoint
 from .prompt_manager import PromptManager
+from src.core.llm_client import call_llm
 
 DATAPOINT_FIELDS = {"metric", "value", "unit", "source", "chapter_id", "confidence"}
 
@@ -13,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 class ChapterWriter:
 
-    def __init__(self, llm_skill, prompt_manager: PromptManager) -> None:
-        self._llm = llm_skill
+    def __init__(self, llm_skill=None, prompt_manager: PromptManager = None) -> None:
+        # llm_skill kept for backward compatibility; agents use call_llm() directly now
         self._prompts = prompt_manager
 
     async def write(self, input_data: ChapterWriteInput) -> ChapterWriteOutput:
@@ -75,11 +76,7 @@ class ChapterWriter:
         return self._parse_output(raw_output, chapter_spec)
 
     async def _call_llm(self, prompt: str) -> str:
-        result = await self._llm.execute(
-            prompt=prompt,
-            max_tokens=8192,
-            temperature=0.7,
-        )
+        result = await call_llm(prompt=prompt, max_tokens=8192, temperature=0.7)
         if not result.get("success"):
             raise RuntimeError(f"LLM call failed: {result}")
         return result["content"]

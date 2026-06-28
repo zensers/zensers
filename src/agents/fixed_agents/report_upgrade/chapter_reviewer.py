@@ -5,14 +5,14 @@ from typing import Dict, Any
 
 from .models import ChapterReviewInput, ChapterReviewOutput, ChapterIssue
 from .prompt_manager import PromptManager
+from src.core.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
 
 class ChapterReviewAgent:
 
-    def __init__(self, llm_skill, prompt_manager: PromptManager) -> None:
-        self._llm = llm_skill
+    def __init__(self, llm_skill=None, prompt_manager: PromptManager = None) -> None:
         self._prompts = prompt_manager
 
     async def review(self, input_data: ChapterReviewInput) -> ChapterReviewOutput:
@@ -33,7 +33,7 @@ class ChapterReviewAgent:
                          if input_data.chapter_data else '无可用数据',
         )
 
-        result = await self._llm.execute(prompt=prompt, max_tokens=4096, temperature=0.3)
+        result = await call_llm(prompt=prompt, max_tokens=4096, temperature=0.3)
         if not result.get("success"):
             raise RuntimeError(f"Chapter review LLM call failed: {result}")
 

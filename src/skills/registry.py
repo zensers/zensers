@@ -320,7 +320,9 @@ class SkillRegistry:
                 self.register(DocxSkill())
                 count += 1
             
-            # Register LLM Skill (core reasoning capability)
+            # Register LLM Skill (deprecated — LLM is an intrinsic agent capability,
+            # not a skill. New agents use call_llm() from src.core.llm_client directly.
+            # Kept for backward compatibility with existing code.
             if "llm_skill" not in self._skills:
                 from .llm_skill import LLMSkill
                 self.register(LLMSkill())

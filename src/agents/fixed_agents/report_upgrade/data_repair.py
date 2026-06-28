@@ -11,6 +11,7 @@ from src.agents.fixed_agents.report_upgrade.models import (
     DataRepairResult,
 )
 from src.agents.fixed_agents.report_upgrade.prompt_manager import PromptManager
+from src.core.llm_client import call_llm
 
 logger = logging.getLogger(__name__)
 
@@ -40,13 +41,12 @@ class DataRepairAgent:
     def __init__(
         self,
         search_skill,
-        web_scraper_skill,
-        llm_skill,
-        prompt_manager: PromptManager,
+        web_scraper_skill=None,
+        llm_skill=None,
+        prompt_manager: PromptManager = None,
     ):
         self._search = search_skill
         self._scraper = web_scraper_skill
-        self._llm = llm_skill
         self._prompts = prompt_manager
 
     async def repair_gap(self, gap: DataGap, topic: str) -> DataRepairResult:
@@ -80,7 +80,7 @@ class DataRepairAgent:
             topic=topic,
             search_results=search_results_text,
         )
-        llm_result = await self._llm.execute(prompt=prompt, max_tokens=2048)
+        llm_result = await call_llm(prompt=prompt, max_tokens=2048)
         if not llm_result.get("success"):
             return DataRepairResult(gap=gap, found=False)
 
@@ -121,12 +121,11 @@ class DataRepairAgent:
 class ConflictResolver:
     def __init__(
         self,
-        llm_skill,
+        llm_skill=None,
         search_skill=None,
         web_scraper_skill=None,
         prompt_manager: PromptManager = None,
     ):
-        self._llm = llm_skill
         self._search = search_skill
         self._scraper = web_scraper_skill
         self._prompts = prompt_manager
@@ -213,7 +212,7 @@ class ConflictResolver:
             conflict_entries=conflict_entries_text,
             search_results=search_results_text,
         )
-        llm_result = await self._llm.execute(prompt=prompt, max_tokens=2048)
+        llm_result = await call_llm(prompt=prompt, max_tokens=2048)
         if not llm_result.get("success"):
             first = conflict.entries[0] if conflict.entries else {}
             return DataConflictResolution(
