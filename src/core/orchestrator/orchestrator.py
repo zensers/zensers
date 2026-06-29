@@ -741,10 +741,12 @@ class ResearchOrchestrator:
                     research_type="market_research")
             logger.info(f"[{task_id}] Created {len(agents)} Agents")
             agent_section_map: Dict[str, str] = {}
+            _session_id_for_agents = getattr(requirement, 'session_id', task_id)
             for _agent in agents:
-                _sid = getattr(_agent, 'section_id', None) or ''
-                if _sid:
-                    agent_section_map[_agent.agent_id] = _sid
+                _asec = getattr(_agent, 'section_id', None) or ''
+                if _asec:
+                    agent_section_map[_agent.agent_id] = _asec
+                _agent._current_session_id = _session_id_for_agents
             session_registry = self._agent_factory.get_registry(task_id)
             if session_registry:
                 logger.info(
@@ -765,6 +767,13 @@ class ResearchOrchestrator:
             # Check if incremental execution with phase skipping is requested
             # ★ session_id for cancel/pause checkpoints
             _sid = getattr(requirement, 'session_id', task_id)
+            if _sid:
+                try:
+                    from src.core.progress_streamer import start_phase as _start_phase, update_progress as _update_progress
+                    _update_progress(_sid, 0.2, phase_id="agent_creation", message="Agents created, starting execution...")
+                    _start_phase(_sid, "execution", "Agent Execution", description="Running research agents...")
+                except Exception:
+                    pass
 
             if skip_phases is not None and existing_results is not None:
                 logger.info(f"[{task_id}] Using incremental execution with {len(skip_phases)} skipped phases")
@@ -817,6 +826,12 @@ class ResearchOrchestrator:
             if exec_result.status == "failed":
                 error_detail = "; ".join(exec_result.errors[:5]) if exec_result.errors else "Quality check failed"
                 logger.error(f"[{task_id}] Execution aborted due to quality failure: {error_detail}")
+                if _sid:
+                    try:
+                        from src.core.progress_streamer import fail_task as _fail_task
+                        _fail_task(_sid, f"Aborted: {error_detail[:200]}")
+                    except Exception:
+                        pass
                 return ResearchResult(
                     task_id=task_id, status="failed",
                     topic=requirement.topic,
@@ -837,6 +852,12 @@ class ResearchOrchestrator:
                         exec_result.stage_results["recovered"] = recovered
                         logger.info(f"[{task_id}] Recovered {len(recovered)} results from cancelled agents, continuing aggregation")
                     else:
+                        if _sid:
+                            try:
+                                from src.core.progress_streamer import fail_task as _fail_task
+                                _fail_task(_sid, "Research cancelled, no partial data")
+                            except Exception:
+                                pass
                         return ResearchResult(
                             task_id=task_id, status="cancelled",
                             topic=requirement.topic,
@@ -918,6 +939,14 @@ class ResearchOrchestrator:
             logger.info(
                 f"[{task_id}] Execution complete, got {len(results_for_aggregation)} results")
 
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress, complete_phase as _complete_phase
+                    _update_progress(_sid, 0.7, phase_id="execution", message="All agents completed")
+                    _complete_phase(_sid, "execution")
+                except Exception:
+                    pass
+
             # 6. Aggregate results (aggregation layer) - pass framework section structure
             aggregated = self._result_aggregator.aggregate(
                 results_for_aggregation,
@@ -958,10 +987,25 @@ class ResearchOrchestrator:
             except Exception:
                 logger.exception(f"[{task_id}] Canonical validation skipped")
 
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress
+                    _update_progress(_sid, 0.8, message="Integrating analysis results...")
+                except Exception:
+                    pass
+
             # 8. Generate report/document (output layer)
             output_dir_path = Path(
                 output_dir) if output_dir else self._storage_path / "reports"
             output_dir_path.mkdir(parents=True, exist_ok=True)
+
+            if _sid:
+                try:
+                    from src.core.progress_streamer import start_phase as _start_phase, update_progress as _update_progress
+                    _start_phase(_sid, "report_generation", "Report Generation", description="Generating research report...")
+                    _update_progress(_sid, 0.8, phase_id="report_generation", message="Generating report...")
+                except Exception:
+                    pass
 
             # === Report Upgrade: framework-driven report generation (non-routing path) ===
             try:
@@ -1115,6 +1159,14 @@ class ResearchOrchestrator:
             # P1-1 fix: Quality check with optional auto-repair (max 1 retry).
             # Only retries when actual content adjustments were applied.
             # Empty adjustments (no section field) → fail immediately, no empty burn.
+            if _sid:
+                try:
+                    from src.core.progress_streamer import start_phase as _start_phase, update_progress as _update_progress, complete_phase as _complete_phase
+                    _complete_phase(_sid, "report_generation")
+                    _start_phase(_sid, "quality_check", "Quality Check", description="Checking report quality...")
+                    _update_progress(_sid, 0.9, phase_id="quality_check", message="Running quality checks...")
+                except Exception:
+                    pass
             quality_result = None
             quality_passed = False
             issues = []
@@ -1448,6 +1500,13 @@ class ResearchOrchestrator:
             )
             logger.info(f"[{task_id}] Results stored")
 
+            if _sid:
+                try:
+                    from src.core.progress_streamer import complete_phase as _complete_phase
+                    _complete_phase(_sid, "quality_check")
+                except Exception:
+                    pass
+
             # 9.5 Save quality metadata (new)
             try:
                 quality_metadata = self._build_quality_metadata(
@@ -1535,6 +1594,13 @@ class ResearchOrchestrator:
                 )
             except Exception as pe:
                 logger.warning(f"[{task_id}] Failed to update task failure state: {pe}")
+            _sid = _sid or task_id
+            if _sid:
+                try:
+                    from src.core.progress_streamer import fail_task as _fail_task
+                    _fail_task(_sid, str(e))
+                except Exception:
+                    pass
             # Clean up Agent Session Registry
             self._cleanup_agents(task_id)
             return ResearchResult(
@@ -1598,6 +1664,7 @@ class ResearchOrchestrator:
             )
 
         start_time = datetime.now()
+        _sid = ""
 
         # Create task persistence state
         try:
@@ -1665,11 +1732,25 @@ class ResearchOrchestrator:
                     requirement.session_id = req_session_id
             if not hasattr(requirement, 'session_id') or not requirement.session_id:
                 requirement.session_id = task_id
+            _sid = requirement.session_id
 
             # Update task state
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.1, message="Requirement parsing complete"
             )
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress
+                    from src.core.session_streamer import SessionStreamer
+                    _update_progress(_sid, 0.1, phase_id="requirement_analysis", message="Requirement parsed")
+                    SessionStreamer.push_agent_message(_sid, {
+                        "agent_id": "orchestrator",
+                        "agent_name": "Research Orchestrator",
+                        "action": "analyzing",
+                        "content": "Requirement analysis complete",
+                    })
+                except Exception:
+                    pass
 
             # === Phase 2: Intelligent routing analysis ===
             logger.info(f"[{task_id}] Executing intelligent routing analysis...")
@@ -1708,6 +1789,19 @@ class ResearchOrchestrator:
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.2, message="Intelligent routing analysis complete"
             )
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress
+                    from src.core.session_streamer import SessionStreamer
+                    _update_progress(_sid, 0.15, phase_id="routing", message="Routing analysis complete")
+                    SessionStreamer.push_agent_message(_sid, {
+                        "agent_id": "orchestrator",
+                        "agent_name": "Research Orchestrator",
+                        "action": "analyzing",
+                        "content": f"Intelligent routing: {len(routing_result.execution_plan.phases)} phases planned",
+                    })
+                except Exception:
+                    pass
 
             # 3b. Wisdom recommends Skills (same as research() path)
             recommended_skills = []
@@ -1779,15 +1873,25 @@ class ResearchOrchestrator:
             # from spec.output_keys (which carries routing section_ids). Using this map
             # avoids relying on engine-side section_id injection which may be incomplete.
             agent_section_map: Dict[str, str] = {}
+            _session_id_for_agents = getattr(requirement, 'session_id', task_id)
             for _agent in agents:
-                _sid = getattr(_agent, 'section_id', None) or ''
-                if _sid:
-                    agent_section_map[_agent.agent_id] = _sid
+                _asec = getattr(_agent, 'section_id', None) or ''
+                if _asec:
+                    agent_section_map[_agent.agent_id] = _asec
+                _agent._current_session_id = _session_id_for_agents
 
             # Update progress: Agent creation complete
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.3, message="Agent creation complete, starting execution"
             )
+            _sid = _session_id_for_agents
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress, start_phase as _start_phase
+                    _update_progress(_sid, 0.2, phase_id="agent_creation", message="Agents created, starting execution...")
+                    _start_phase(_sid, "execution", "Agent Execution", description="Running research agents...")
+                except Exception:
+                    pass
 
             # Get ContentLockManager
             lock_manager = self._routing_adapter.get_lock_manager()
@@ -1868,6 +1972,12 @@ class ResearchOrchestrator:
                     task_id, TaskState.FAILED, progress=0.0,
                     message=f"Aborted: {error_detail[:200]}"
                 )
+                if _sid:
+                    try:
+                        from src.core.progress_streamer import fail_task as _fail_task
+                        _fail_task(_sid, f"Aborted: {error_detail[:200]}")
+                    except Exception:
+                        pass
                 return ResearchResult(
                     task_id=task_id, status="failed",
                     topic=requirement.topic, agents_used=[a.agent_id for a in agents],
@@ -1891,6 +2001,12 @@ class ResearchOrchestrator:
                             task_id, TaskState.FAILED, progress=0.0,
                             message="Research cancelled, no partial data"
                         )
+                        if _sid:
+                            try:
+                                from src.core.progress_streamer import fail_task as _fail_task
+                                _fail_task(_sid, "Research cancelled, no partial data")
+                            except Exception:
+                                pass
                         return ResearchResult(
                             task_id=task_id, status="cancelled",
                             topic=requirement.topic, agents_used=[a.agent_id for a in agents],
@@ -1904,11 +2020,24 @@ class ResearchOrchestrator:
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.7, message="Execution complete"
             )
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress, complete_phase as _complete_phase
+                    _update_progress(_sid, 0.7, phase_id="execution", message="All agents completed")
+                    _complete_phase(_sid, "execution")
+                except Exception:
+                    pass
 
             # Update progress: start aggregating results
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.8, message="Integrating analysis results..."
             )
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress
+                    _update_progress(_sid, 0.8, message="Integrating analysis results...")
+                except Exception:
+                    pass
 
             # === Phase 5: Result aggregation ===
             # Convert stage_results to format expected by ResultAggregator
@@ -2037,6 +2166,13 @@ class ResearchOrchestrator:
             self._task_persistence.update_task_state(
                 task_id, TaskState.RUNNING, progress=0.9, message="Generating HTML preview..."
             )
+            if _sid:
+                try:
+                    from src.core.progress_streamer import update_progress as _update_progress, start_phase as _start_phase
+                    _start_phase(_sid, "report_generation", "Report Generation", description="Generating research report...")
+                    _update_progress(_sid, 0.8, phase_id="report_generation", message="Generating report...")
+                except Exception:
+                    pass
 
             # === Phase 6: HTML preview generation (must go through user confirmation) ===
             # User explicitly requested: must go through HTML preview + user confirmation before generating Word doc
@@ -2146,6 +2282,15 @@ class ResearchOrchestrator:
                 logger.info(f"[{task_id}] Research result cached at {cache_path}")
             except Exception as cache_err:
                 logger.warning(f"[{task_id}] Failed to cache research result: {cache_err}")
+
+            if _sid:
+                try:
+                    from src.core.progress_streamer import complete_phase as _complete_phase, start_phase as _start_phase, update_progress as _update_progress
+                    _complete_phase(_sid, "report_generation")
+                    _start_phase(_sid, "quality_check", "Quality Check", description="Checking report quality...")
+                    _update_progress(_sid, 0.9, phase_id="quality_check", message="Running quality checks...")
+                except Exception:
+                    pass
 
             logger.info(
                 f"[{task_id}] Document generation input: {len(research_result_data['sections'])} sections")
@@ -2424,6 +2569,12 @@ class ResearchOrchestrator:
             self._task_persistence.update_task_state(
                 task_id, TaskState.COMPLETED, progress=1.0, message="Research complete"
             )
+            if _sid:
+                try:
+                    from src.core.progress_streamer import complete_phase as _complete_phase
+                    _complete_phase(_sid, "quality_check")
+                except Exception:
+                    pass
 
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -2462,6 +2613,13 @@ class ResearchOrchestrator:
                 )
             except Exception:
                 pass
+            _sid = _sid or task_id
+            if _sid:
+                try:
+                    from src.core.progress_streamer import fail_task as _fail_task
+                    _fail_task(_sid, str(e))
+                except Exception:
+                    pass
 
             return ResearchResult(
                 task_id=task_id,

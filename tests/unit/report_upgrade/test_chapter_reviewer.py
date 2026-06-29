@@ -94,3 +94,15 @@ class TestChapterReviewAgentParseOutput:
         raw = '```json\n{"passed": false, "score": 50, "issues": [{"category": "logic", "severity": "MEDIUM", "location": "", "description": "逻辑跳跃", "suggestion": "补充过渡"}]}\n```'
         result = reviewer._parse_output(raw)
         assert len(result.issues) == 1
+
+    def test_parse_truncated_json_no_code_block(self, reviewer):
+        raw = '{"passed": true, "score": 74, "issues": []}'
+        result = reviewer._parse_output(raw)
+        assert result.passed is True
+        assert result.score == 74.0
+
+    def test_parse_truncated_json_with_partial_code_block(self, reviewer):
+        raw = '```json\n{"passed": true, "score": 82, "issues": [{"category": "data_support", "severity": "MEDIUM", "location": "ch1", "description": "缺少数据", "suggestion": "补充'
+        result = reviewer._parse_output(raw)
+        assert result.passed is False
+        assert result.score == 0.0

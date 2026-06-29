@@ -137,6 +137,21 @@ class FixedAgent(
     
     # === Core execution methods ===
     
+    def _report_progress(self, message: str, action: str = "analyzing"):
+        _sid = getattr(self, '_current_session_id', None)
+        if not _sid:
+            return
+        try:
+            from src.core.session_streamer import SessionStreamer
+            SessionStreamer.push_agent_message(_sid, {
+                "agent_id": self.agent_id,
+                "agent_name": self.name,
+                "action": action,
+                "content": message,
+            })
+        except Exception:
+            pass
+    
     @abstractmethod
     async def execute(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
         """

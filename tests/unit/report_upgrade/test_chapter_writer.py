@@ -1,6 +1,6 @@
 import pytest
 import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, patch
 
 from src.agents.fixed_agents.report_upgrade.chapter_writer import (
     ChapterWriter, DATAPOINT_FIELDS,
@@ -12,11 +12,6 @@ from src.agents.fixed_agents.report_upgrade.prompt_manager import PromptManager
 
 
 @pytest.fixture
-def mock_llm():
-    return AsyncMock()
-
-
-@pytest.fixture
 def mock_prompts(tmp_path):
     (tmp_path / "chapter_write.tmpl").write_text("${topic} ${section_name} ${base_content}", encoding="utf-8")
     (tmp_path / "chapter_rewrite.tmpl").write_text("${original_content} ${review_feedback}", encoding="utf-8")
@@ -25,8 +20,22 @@ def mock_prompts(tmp_path):
 
 
 @pytest.fixture
-def writer(mock_llm, mock_prompts):
-    return ChapterWriter(llm_skill=mock_llm, prompt_manager=mock_prompts)
+def writer(mock_prompts):
+    return ChapterWriter(prompt_manager=mock_prompts)
+
+
+def _llm_ok(content_json: str) -> dict:
+    return {"success": True, "content": content_json, "model": "test", "usage": {}}
+
+
+_VALID_CHAPTER_JSON = json.dumps({
+    "title": "市场规模",
+    "content": "正文",
+    "data_points_used": [{"metric": "市场规模", "value": "2000", "unit": "亿元", "source": "iimedia.cn"}],
+    "key_conclusions": ["市场规模达2000亿"],
+    "self_check_passed": True,
+    "self_check_issues": [],
+}, ensure_ascii=False)
 
 
 def make_input(**overrides):
@@ -42,14 +51,15 @@ def make_input(**overrides):
     return ChapterWriteInput(**defaults)
 
 
+_CALL_LLM_PATH = "src.agents.fixed_agents.report_upgrade.chapter_writer.call_llm"
+
+
 class TestChapterWriterWrite:
     @pytest.mark.asyncio
-    async def test_write_returns_chapter_output(self, writer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"title": "市场规模", "content": "正文", "data_points_used": [{"metric": "市场规模", "value": "2000", "unit": "亿元", "source": "iimedia.cn"}], "key_conclusions": ["市场规模达2000亿"], "self_check_passed": true, "self_check_issues": []}\n```',
-        }
-        result = await writer.write(make_input())
+    async def test_write_returns_chapter_output(self, writer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = _llm_ok(f"```json\n{_VALID_CHAPTER_JSON}\n```")
+            result = await writer.write(make_input())
         assert isinstance(result, ChapterWriteOutput)
         assert result.title == "市场规模"
         assert result.content == "正文"
@@ -57,49 +67,43 @@ class TestChapterWriterWrite:
         assert result.self_check_passed is True
 
     @pytest.mark.asyncio
-    async def test_write_passes_base_content(self, writer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"title": "市场规模", "content": "正文", "data_points_used": [], "key_conclusions": [], "self_check_passed": true, "self_check_issues": []}\n```',
-        }
-        inp = make_input(base_content="分析Agent的精炼内容")
-        await writer.write(inp)
-        call_args = mock_llm.execute.call_args
-        prompt_text = call_args[1]["prompt"]
+    async def test_write_passes_base_content(self, writer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = _llm_ok(f'```json\n{{"title": "市场规模", "content": "正文", "data_points_used": [], "key_conclusions": [], "self_check_passed": true, "self_check_issues": []}}\n```')
+            inp = make_input(base_content="分析Agent的精炼内容")
+            await writer.write(inp)
+            prompt_text = mock_call.call_args[1]["prompt"]
         assert "分析Agent的精炼内容" in prompt_text
 
     @pytest.mark.asyncio
-    async def test_write_llm_failure_raises(self, writer, mock_llm):
-        mock_llm.execute.return_value = {"success": False}
-        with pytest.raises(RuntimeError):
-            await writer.write(make_input())
+    async def test_write_llm_failure_raises(self, writer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {"success": False, "message": "error"}
+            with pytest.raises(RuntimeError):
+                await writer.write(make_input())
 
 
 class TestChapterWriterRewrite:
     @pytest.mark.asyncio
-    async def test_rewrite_with_review_feedback(self, writer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"title": "市场规模", "content": "重写正文", "data_points_used": [], "key_conclusions": [], "self_check_passed": true, "self_check_issues": []}\n```',
-        }
-        original = ChapterWriteOutput(chapter_id="ch1", title="市场规模", content="旧正文")
-        review = ChapterReviewOutput(
-            passed=False, score=40,
-            issues=[ChapterIssue(category="data_support", severity="HIGH", location="p:1", description="无数据", suggestion="补充数据")],
-        )
-        result = await writer.rewrite(original, review, {"name": "行业研究"}, {"section_id": "ch1", "section_name": "市场规模"}, "前文")
+    async def test_rewrite_with_review_feedback(self, writer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = _llm_ok('```json\n{"title": "市场规模", "content": "重写正文", "data_points_used": [], "key_conclusions": [], "self_check_passed": true, "self_check_issues": []}\n```')
+            original = ChapterWriteOutput(chapter_id="ch1", title="市场规模", content="旧正文")
+            review = ChapterReviewOutput(
+                passed=False, score=40,
+                issues=[ChapterIssue(category="data_support", severity="HIGH", location="p:1", description="无数据", suggestion="补充数据")],
+            )
+            result = await writer.rewrite(original, review, {"name": "行业研究"}, {"section_id": "ch1", "section_name": "市场规模"}, "前文")
         assert result.content == "重写正文"
 
 
 class TestChapterWriterPatchData:
     @pytest.mark.asyncio
-    async def test_patch_data(self, writer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"title": "市场规模", "content": "修补后正文", "data_points_used": [], "key_conclusions": [], "self_check_passed": true, "self_check_issues": []}\n```',
-        }
-        chapter = ChapterWriteOutput(chapter_id="ch1", title="市场规模", content="旧正文")
-        result = await writer.patch_data(chapter, ["补充数据：市场规模=2000亿元"], {"name": "行业研究"})
+    async def test_patch_data(self, writer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = _llm_ok('```json\n{"title": "市场规模", "content": "修补后正文", "data_points_used": [], "key_conclusions": [], "self_check_passed": true, "self_check_issues": []}\n```')
+            chapter = ChapterWriteOutput(chapter_id="ch1", title="市场规模", content="旧正文")
+            result = await writer.patch_data(chapter, ["补充数据：市场规模=2000亿元"], {"name": "行业研究"})
         assert result.content == "修补后正文"
 
 
@@ -127,7 +131,16 @@ class TestChapterWriterParseOutput:
     def test_parse_missing_json_block_fallback(self, writer):
         raw = '{"title": "测试", "content": "正文"}'
         result = writer._parse_output(raw, {"section_id": "ch1", "section_name": "测试"})
-        assert result.self_check_passed is False
+        assert result.title == "测试"
+        assert result.content == "正文"
+        assert result.self_check_passed is True
+
+    def test_parse_raw_json_no_code_block(self, writer):
+        raw = '一些文字\n{"title": "市场分析", "content": "市场规模达2000亿", "data_points_used": [], "key_conclusions": ["增速15%"], "self_check_passed": true}\n更多文字'
+        result = writer._parse_output(raw, {"section_id": "ch2", "section_name": "默认标题"})
+        assert result.title == "市场分析"
+        assert result.content == "市场规模达2000亿"
+        assert len(result.key_conclusions) == 1
 
 
 class TestChapterWriterExtractConclusions:

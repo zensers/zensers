@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from src.agents.fixed_agents.report_upgrade.global_reviewer import (
     GlobalReviewAgent, serialize_report_for_review,
@@ -10,11 +10,6 @@ from src.agents.fixed_agents.report_upgrade.models import (
 )
 from src.agents.fixed_agents.report_upgrade.prompt_manager import PromptManager
 from src.agents.fixed_agents.report_upgrade.data_registry import DataRegistry
-
-
-@pytest.fixture
-def mock_llm():
-    return AsyncMock()
 
 
 @pytest.fixture
@@ -29,8 +24,8 @@ def mock_prompts(tmp_path):
 
 
 @pytest.fixture
-def reviewer(mock_llm, mock_prompts):
-    return GlobalReviewAgent(llm_skill=mock_llm, prompt_manager=mock_prompts)
+def reviewer(mock_prompts):
+    return GlobalReviewAgent(prompt_manager=mock_prompts)
 
 
 def make_chapters():
@@ -49,30 +44,35 @@ def make_chapters():
     ]
 
 
+_CALL_LLM_PATH = "src.agents.fixed_agents.report_upgrade.global_reviewer.call_llm"
+
+
 class TestGlobalReviewAgentReview:
     @pytest.mark.asyncio
-    async def test_review_with_valid_output(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '```json\n{"overall_score": 75, "dimension_scores": {"data_consistency": 70}, "issues": [{"dimension": "data_consistency", "severity": "CRITICAL", "description": "矛盾", "location": "ch1", "evidence": "ev"}], "fix_suggestions": [{"target_chapter": "ch1", "issue_id": "i1", "fix_type": "patch", "fix_instruction": "修正", "priority": "CRITICAL"}]}\n```',
-        }
-        inp = ReviewInput(
-            framework_config={"name": "行业研究"},
-            report_summary="摘要",
-            conflicts_summary="冲突",
-        )
-        result = await reviewer.review(inp)
+    async def test_review_with_valid_output(self, reviewer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "content": '```json\n{"overall_score": 75, "dimension_scores": {"data_consistency": 70}, "issues": [{"dimension": "data_consistency", "severity": "CRITICAL", "description": "矛盾", "location": "ch1", "evidence": "ev"}], "fix_suggestions": [{"target_chapter": "ch1", "issue_id": "i1", "fix_type": "patch", "fix_instruction": "修正", "priority": "CRITICAL"}]}\n```',
+            }
+            inp = ReviewInput(
+                framework_config={"name": "行业研究"},
+                report_summary="摘要",
+                conflicts_summary="冲突",
+            )
+            result = await reviewer.review(inp)
         assert isinstance(result, ReviewOutput)
         assert result.overall_score == 75.0
         assert len(result.issues) == 1
         assert len(result.fix_suggestions) == 1
 
     @pytest.mark.asyncio
-    async def test_review_llm_failure_raises(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {"success": False}
-        inp = ReviewInput(framework_config={}, report_summary="", conflicts_summary="")
-        with pytest.raises(RuntimeError):
-            await reviewer.review(inp)
+    async def test_review_llm_failure_raises(self, reviewer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {"success": False, "message": "error"}
+            inp = ReviewInput(framework_config={}, report_summary="", conflicts_summary="")
+            with pytest.raises(RuntimeError):
+                await reviewer.review(inp)
 
 
 class TestGlobalReviewAgentParseOutput:
@@ -85,6 +85,11 @@ class TestGlobalReviewAgentParseOutput:
         result = reviewer._parse_output("不是JSON")
         assert result.overall_score == 0.0
 
+    def test_parse_raw_json_no_code_block(self, reviewer):
+        raw = '{"overall_score": 78, "dimension_scores": {}, "issues": [], "fix_suggestions": []}'
+        result = reviewer._parse_output(raw)
+        assert result.overall_score == 78.0
+
     def test_parse_partial_json(self, reviewer):
         raw = '```json\n{"overall_score": 60}\n```'
         result = reviewer._parse_output(raw)
@@ -95,40 +100,43 @@ class TestGlobalReviewAgentParseOutput:
 
 class TestGlobalReviewAgentVerifyIssues:
     @pytest.mark.asyncio
-    async def test_verify_confirmed_issues(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '[{"confirmed": true, "refined_description": "确认矛盾", "refined_evidence": "证据"}]',
-        }
-        issues = [ReviewIssue(dimension="data_consistency", severity="CRITICAL", description="矛盾", location="ch1", evidence="ev")]
-        chapters = make_chapters()
-        result = await reviewer.verify_issues(issues, chapters)
+    async def test_verify_confirmed_issues(self, reviewer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "content": '[{"confirmed": true, "refined_description": "确认矛盾", "refined_evidence": "证据"}]',
+            }
+            issues = [ReviewIssue(dimension="data_consistency", severity="CRITICAL", description="矛盾", location="ch1", evidence="ev")]
+            chapters = make_chapters()
+            result = await reviewer.verify_issues(issues, chapters)
         assert len(result) == 1
         assert result[0].description == "确认矛盾"
 
     @pytest.mark.asyncio
-    async def test_verify_filters_unconfirmed(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {
-            "success": True,
-            "content": '[{"confirmed": false, "refined_description": "", "refined_evidence": ""}]',
-        }
-        issues = [ReviewIssue(dimension="data_consistency", severity="CRITICAL", description="矛盾", location="ch1", evidence="ev")]
-        chapters = make_chapters()
-        result = await reviewer.verify_issues(issues, chapters)
+    async def test_verify_filters_unconfirmed(self, reviewer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {
+                "success": True,
+                "content": '[{"confirmed": false, "refined_description": "", "refined_evidence": ""}]',
+            }
+            issues = [ReviewIssue(dimension="data_consistency", severity="CRITICAL", description="矛盾", location="ch1", evidence="ev")]
+            chapters = make_chapters()
+            result = await reviewer.verify_issues(issues, chapters)
         assert len(result) == 0
 
     @pytest.mark.asyncio
-    async def test_verify_empty_issues(self, reviewer, mock_llm):
+    async def test_verify_empty_issues(self, reviewer):
         chapters = make_chapters()
         result = await reviewer.verify_issues([], chapters)
         assert result == []
 
     @pytest.mark.asyncio
-    async def test_verify_llm_failure_returns_original(self, reviewer, mock_llm):
-        mock_llm.execute.return_value = {"success": False}
-        issues = [ReviewIssue(dimension="data_consistency", severity="CRITICAL", description="矛盾", location="ch1", evidence="ev")]
-        chapters = make_chapters()
-        result = await reviewer.verify_issues(issues, chapters)
+    async def test_verify_llm_failure_returns_original(self, reviewer):
+        with patch(_CALL_LLM_PATH, new_callable=AsyncMock) as mock_call:
+            mock_call.return_value = {"success": False, "message": "error"}
+            issues = [ReviewIssue(dimension="data_consistency", severity="CRITICAL", description="矛盾", location="ch1", evidence="ev")]
+            chapters = make_chapters()
+            result = await reviewer.verify_issues(issues, chapters)
         assert len(result) == 1
         assert result[0].description == "矛盾"
 

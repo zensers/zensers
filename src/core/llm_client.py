@@ -11,8 +11,56 @@ Features:
 - Token usage tracking
 - Configuration-driven (settings.llm.*)
 """
-from typing import Any, Dict, Optional
+import logging
+from typing import Any, AsyncGenerator, Dict, Optional
 from src.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+async def call_llm_stream(
+    prompt: str,
+    model: Optional[str] = None,
+    system_prompt: str = "",
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+) -> AsyncGenerator[str, None]:
+    """Streaming variant of call_llm. Yields content tokens as they arrive.
+
+    No retry/fallback — callers should catch exceptions and degrade to call_llm().
+    Does NOT trigger _on_complete_var (not defined in this module).
+    """
+    model = model or settings.llm.model
+    max_tokens = max_tokens or settings.llm.max_tokens
+    temperature = temperature or settings.llm.temperature
+
+    if not prompt or not prompt.strip():
+        return
+
+    from openai import AsyncOpenAI
+    client = AsyncOpenAI(api_key=settings.llm.api_key, base_url=settings.llm.base_url)
+
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    response = await client.chat.completions.create(
+        model=model,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=settings.llm.top_p,
+        frequency_penalty=settings.llm.frequency_penalty,
+        presence_penalty=settings.llm.presence_penalty,
+        stream=True,
+    )
+    async for chunk in response:
+        choices = chunk.choices if chunk.choices else []
+        if choices:
+            delta = choices[0].delta
+            if delta and delta.content:
+                yield delta.content
 
 
 async def call_llm(

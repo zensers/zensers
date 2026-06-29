@@ -325,6 +325,12 @@ class ResearchExecutor:
                 })
             except ImportError:
                 pass
+
+            try:
+                from src.core.progress_heartbeat import ProgressHeartbeat
+                ProgressHeartbeat.start(session_id)
+            except Exception:
+                pass
             
             # === 检查是否有可跳过的已完成阶段 ===
             skip_phases = plan.get("skip_phases", [])
@@ -396,6 +402,11 @@ class ResearchExecutor:
             finally:
                 async with self._tasks_lock:
                     self._main_tasks.pop(session_id, None)
+                try:
+                    from src.core.progress_heartbeat import ProgressHeartbeat
+                    ProgressHeartbeat.stop(session_id)
+                except Exception:
+                    pass
             
             # 转换结果为统一格式
             if orchestrator_result.status in ("completed", "completed_with_warnings"):

@@ -25,47 +25,38 @@ class TestRetryJsonOnlyMaxTokens:
     @pytest.mark.asyncio
     async def test_uses_config_max_tokens(self):
         api = self._make_api()
-        llm_skill = AsyncMock()
-        llm_skill.execute.return_value = {'success': True, 'content': '{"message":"ok"}'}
         llm_config = {'model': 'test-model', 'max_tokens': 9999}
         mock_settings = MagicMock()
         mock_settings.llm.model = 'default-model'
         mock_settings.llm.max_tokens = 4096
 
-        with patch('src.api.research_api.asyncio.wait_for', side_effect=lambda coro, timeout: coro) as mock_wait:
-            with patch.dict('sys.modules', {'src.config.settings': MagicMock(settings=mock_settings)}):
+        mock_call_llm = AsyncMock(return_value={'success': True, 'content': '{"message":"ok"}'})
+        with patch('src.api.research_api.call_llm', mock_call_llm):
+            with patch('src.api.research_api.asyncio.wait_for', side_effect=lambda coro, timeout: coro):
                 with patch('src.api.research_api.app_settings', mock_settings, create=True):
-                    with patch('src.api.research_api.asyncio') as mock_aio:
-                        mock_aio.wait_for = AsyncMock(return_value={'success': True, 'content': '{"message":"ok"}'})
-                        result = await api._retry_json_only(llm_skill, 'sys', llm_config, 'sess1')
+                    result = await api._retry_json_only('sys', llm_config, 'sess1')
 
-        call_args = llm_skill.execute.call_args
-        assert call_args is not None, "llm_skill.execute was not called"
-        assert call_args.kwargs.get('max_tokens') == 9999 or \
-               (call_args[1] if len(call_args) > 1 else {}).get('max_tokens') == 9999, \
-               f"max_tokens should come from llm_config, got: {call_args}"
+        call_kwargs = mock_call_llm.call_args.kwargs if mock_call_llm.call_args else {}
+        assert call_kwargs.get('max_tokens') == 9999, \
+               f"max_tokens should come from llm_config, got: {call_kwargs}"
 
     @pytest.mark.asyncio
     async def test_falls_back_to_settings_max_tokens(self):
         api = self._make_api()
-        llm_skill = AsyncMock()
-        llm_skill.execute.return_value = {'success': True, 'content': '{"message":"ok"}'}
         llm_config = {'model': 'test-model'}
         mock_settings = MagicMock()
         mock_settings.llm.model = 'default-model'
         mock_settings.llm.max_tokens = 4096
 
-        with patch('src.api.research_api.asyncio.wait_for', side_effect=lambda coro, timeout: coro):
-            with patch('src.api.research_api.app_settings', mock_settings, create=True):
-                with patch('src.api.research_api.asyncio') as mock_aio:
-                    mock_aio.wait_for = AsyncMock(return_value={'success': True, 'content': '{"message":"ok"}'})
-                    result = await api._retry_json_only(llm_skill, 'sys', llm_config, 'sess1')
+        mock_call_llm = AsyncMock(return_value={'success': True, 'content': '{"message":"ok"}'})
+        with patch('src.api.research_api.call_llm', mock_call_llm):
+            with patch('src.api.research_api.asyncio.wait_for', side_effect=lambda coro, timeout: coro):
+                with patch('src.api.research_api.app_settings', mock_settings, create=True):
+                    result = await api._retry_json_only('sys', llm_config, 'sess1')
 
-        call_args = llm_skill.execute.call_args
-        assert call_args is not None
-        max_tokens_used = call_args.kwargs.get('max_tokens')
-        assert max_tokens_used == 4096, \
-               f"max_tokens should fall back to app_settings.llm.max_tokens (4096), got: {max_tokens_used}"
+        call_kwargs = mock_call_llm.call_args.kwargs if mock_call_llm.call_args else {}
+        assert call_kwargs.get('max_tokens') == 4096, \
+               f"max_tokens should fall back to app_settings.llm.max_tokens (4096), got: {call_kwargs}"
 
 
 class TestToolResultSynthesisMaxTokens:

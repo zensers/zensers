@@ -25,7 +25,7 @@ class GlobalReviewAgent:
             conflicts_summary=input_data.conflicts_summary,
         )
 
-        result = await call_llm(prompt=prompt, max_tokens=4096, temperature=0.3)
+        result = await call_llm(prompt=prompt, max_tokens=8192, temperature=0.3)
         if not result.get("success"):
             raise RuntimeError(f"Global review LLM call failed: {result}")
 
@@ -48,7 +48,7 @@ class GlobalReviewAgent:
         )
         prompt = self._prompts.get("global_verify_issues", issues_context=issues_context)
 
-        result = await call_llm(prompt=prompt, max_tokens=4096, temperature=0.3)
+        result = await call_llm(prompt=prompt, max_tokens=8192, temperature=0.3)
         if not result.get("success"):
             return issues
 
@@ -86,37 +86,47 @@ class GlobalReviewAgent:
 
     def _parse_output(self, raw: str) -> ReviewOutput:
         try:
+            json_str = None
             json_match = re.search(r'```json\s*(.*?)\s*```', raw, re.DOTALL)
             if json_match:
-                json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', json_match.group(1))
+                json_str = json_match.group(1)
+            else:
+                logger.warning(f"GlobalReviewAgent: no ```json``` block found, trying raw JSON. Raw len={len(raw)}")
+                brace_match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if brace_match:
+                    json_str = brace_match.group(0)
+            if json_str:
+                json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', json_str)
                 data = json.loads(json_str)
-                issues = [
-                    ReviewIssue(
-                        dimension=iss.get("dimension", ""),
-                        severity=iss.get("severity", "MEDIUM"),
-                        description=iss.get("description", ""),
-                        location=iss.get("location", ""),
-                        evidence=iss.get("evidence", ""),
-                    )
-                    for iss in data.get("issues", [])
-                ]
-                fix_suggestions = [
-                    FixSuggestion(
-                        target_chapter=fix.get("target_chapter", ""),
-                        issue_id=fix.get("issue_id", ""),
-                        fix_type=fix.get("fix_type", "rewrite"),
-                        fix_instruction=fix.get("fix_instruction", ""),
-                        priority=fix.get("priority", "MEDIUM"),
-                    )
-                    for fix in data.get("fix_suggestions", [])
-                ]
-                return ReviewOutput(
-                    overall_score=float(data.get("overall_score") or 100.0),
-                    dimension_scores=data.get("dimension_scores", {}),
-                    issues=issues,
-                    fix_suggestions=fix_suggestions,
+            else:
+                raise ValueError("No JSON content found")
+            issues = [
+                ReviewIssue(
+                    dimension=iss.get("dimension", ""),
+                    severity=iss.get("severity", "MEDIUM"),
+                    description=iss.get("description", ""),
+                    location=iss.get("location", ""),
+                    evidence=iss.get("evidence", ""),
                 )
-        except (json.JSONDecodeError, KeyError, TypeError) as e:
+                for iss in data.get("issues", [])
+            ]
+            fix_suggestions = [
+                FixSuggestion(
+                    target_chapter=fix.get("target_chapter", ""),
+                    issue_id=fix.get("issue_id", ""),
+                    fix_type=fix.get("fix_type", "rewrite"),
+                    fix_instruction=fix.get("fix_instruction", ""),
+                    priority=fix.get("priority", "MEDIUM"),
+                )
+                for fix in data.get("fix_suggestions", [])
+            ]
+            return ReviewOutput(
+                overall_score=float(data.get("overall_score") or 100.0),
+                dimension_scores=data.get("dimension_scores", {}),
+                issues=issues,
+                fix_suggestions=fix_suggestions,
+            )
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"Failed to parse global review output: {e}")
 
         return ReviewOutput(overall_score=0.0)

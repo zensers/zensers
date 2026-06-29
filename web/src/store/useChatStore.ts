@@ -8,6 +8,7 @@ import { useSessionStore } from './useSessionStore';
 interface ChatState {
   messages: ChatMessage[];
   addMessage: (msg: ChatMessage) => void;
+  updateMessage: (id: string, updates: Partial<ChatMessage>) => void;
   prependMessages: (msgs: ChatMessage[]) => void;
   clearMessages: () => void;
 }
@@ -27,6 +28,14 @@ export const useChatStore = create<ChatState>()((set, get) => {
 
     addMessage: (msg) => {
       const messages = [...get().messages, msg];
+      set({ messages });
+      useSessionStore.getState().syncActive({ messages });
+    },
+
+    updateMessage: (id, updates) => {
+      const messages = get().messages.map(m =>
+        m.id === id ? { ...m, ...updates } : m
+      );
       set({ messages });
       useSessionStore.getState().syncActive({ messages });
     },

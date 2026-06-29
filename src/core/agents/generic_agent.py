@@ -174,7 +174,22 @@ class GenericAgent(
         # 这样 ExecutionEngine._get_section_id_from_agent() 可以正确获取 section_id
         # 用于 ContentLockManager 的章节锁定机制
         self.section_id = self._context.get("section_id", "")
-    
+
+    def _report_progress(self, message: str, action: str = "analyzing"):
+        _sid = getattr(self, '_current_session_id', None)
+        if not _sid:
+            return
+        try:
+            from src.core.session_streamer import SessionStreamer
+            SessionStreamer.push_agent_message(_sid, {
+                "agent_id": self.agent_id,
+                "agent_name": self.config.get("context", {}).get("aspect", self.agent_type),
+                "action": action,
+                "content": message,
+            })
+        except Exception:
+            pass
+
     # === 核心执行方法（有默认实现） ===
     
     async def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
@@ -247,8 +262,10 @@ class GenericAgent(
         
         if skill_name and skill_name in available_skills and skill_registry:
             skill = skill_registry.get(skill_name)
-            if skill:
-                logger.info(f"GenericAgent {self.agent_id}: 找到Skill '{skill_name}'，开始执行")
+            # LLM是Agent内在能力，不依赖registry实例；其他skill仍需registry实例
+            if skill_name == "llm_skill" or skill:
+                _label = "LLM=intrinsic" if skill_name == "llm_skill" else "via-registry"
+                logger.info(f"GenericAgent {self.agent_id}: 执行 '{skill_name}' ({_label})")
                 # 对于 LLM skill，需要构建 prompt
                 if skill_name == "llm_skill":
                     # 优先从 Agent context 获取 topic/aspect，再从 task 获取
@@ -312,6 +329,7 @@ class GenericAgent(
                     # Phase 1: DATA_COLLECTION - priority-driven execution
                     # structured_db skills first, web_search as supplement, llm last
                     if agent_category == "research":
+                        self._report_progress("Starting data collection...", "searching")
                         data_points = []
                         sources = []
                         _structured_data_fetched = False
@@ -362,10 +380,12 @@ class GenericAgent(
                                 )
                             except Exception as struct_err:
                                 logger.warning(f"GenericAgent {self.agent_id}: {db_skill_name} failed: {struct_err}")
+                        self._report_progress(f"结构化数据库查询完成，获取 {len(data_points)} 条数据", "searching")
 
                         # Tier 2: web_search (search_skill, news_search) — supplement for structured gaps
                         search_results = None
                         if topic and tiered_skills.get("web_search"):
+                            self._report_progress(f"Searching web sources for '{aspect or topic}'...", "searching")
                             web_skills = tiered_skills.get("web_search", [])
                             preloaded = task.get("preloaded_search_results")
 
@@ -400,6 +420,7 @@ class GenericAgent(
                                             "type": "web",
                                             "quality_score": item.get("quality_score", 0),
                                         })
+                            self._report_progress(f"网络搜索完成，共 {len(data_points)} 条数据", "searching")
 
                             if "news_search" in web_skills and skill_registry and topic:
                                 news_skill = skill_registry.get("news_search")
@@ -431,6 +452,7 @@ class GenericAgent(
                                                     "quality_score": 70,
                                                 })
                                             logger.info(f"GenericAgent {self.agent_id}: news_search 补充 {len(news_result.get('results', []))} 条新闻")
+                                            self._report_progress(f"新闻搜索补充 {len(news_result.get('results', []))} 条", "searching")
                                     except Exception as news_err:
                                         logger.warning(f"GenericAgent {self.agent_id}: news_search failed: {news_err}")
 
@@ -491,6 +513,7 @@ class GenericAgent(
                     
                     # Phase 2: DATA_VALIDATION - cross-validate collected data for quality
                     if agent_category == "quality-check":
+                        self._report_progress("Validating collected data...", "analyzing")
                         data_points = task.get("aggregated_data_points", [])
                         sources = task.get("aggregated_sources", [])
                         if data_points:
@@ -501,6 +524,7 @@ class GenericAgent(
                                 f"quality={validation_result['average_quality_score']}, "
                                 f"conflicts={len(validation_result['conflicts'])}"
                             )
+                            self._report_progress(f"数据验证完成，{validation_result['total_validated']}/{validation_result['total_input']} 个数据点，质量评分 {validation_result['average_quality_score']}", "analyzing")
                             # IMP-4: auto-resolve numerical conflicts
                             resolved_conflicts = []
                             if validation_result.get("has_conflicts"):
@@ -511,6 +535,7 @@ class GenericAgent(
                                     logger.info(
                                         f"GenericAgent {self.agent_id}: resolved {len(resolved_conflicts)} conflicts"
                                     )
+                            self._report_progress(f"冲突解决完成，{len(resolved_conflicts)} 个冲突已处理", "analyzing")
                             # IMP-3: targeted re-collection on low quality (max 1 round)
                             recollection_attempted = False
                             if validation_result.get("quality_rating") == "low" and skill_registry:
@@ -548,6 +573,7 @@ class GenericAgent(
                                                 f"re-validating {len(data_points)} total points"
                                             )
                                             validation_result = self._validate_collected_data(data_points, sources)
+                                            self._report_progress(f"补充收集后重新验证，{validation_result['total_validated']} 个有效数据点", "analyzing")
                                         except Exception as rc_err:
                                             logger.warning(f"GenericAgent {self.agent_id}: re-collection failed: {rc_err}")
                             validation_result["resolved_conflicts"] = resolved_conflicts
@@ -571,6 +597,7 @@ class GenericAgent(
                     # These agents receive dependency-filtered data_points/sources from upstream phases.
                     # No search_skill is assigned (see ASPECT_SKILL_MAP in strategies.py).
                     if agent_category in ("market-analysis", "analysis", "financial-analysis"):
+                        self._report_progress(f"Analyzing {aspect or topic}...", "analyzing")
                         aggregated_data_points = task.get("aggregated_data_points", [])
                         aggregated_sources = task.get("aggregated_sources", [])
                         # P-FIX-DEEP: search fallback when no upstream data available
@@ -596,6 +623,7 @@ class GenericAgent(
                                             "type": "web",
                                         })
                                 logger.info(f"GenericAgent {self.agent_id}: 降级搜索收集 {len(aggregated_data_points)} 数据点")
+                                self._report_progress(f"降级搜索完成，获取 {len(aggregated_data_points)} 条数据", "searching")
                         canonical_data = task.get("canonical_data", {}) or {}
                         # Filter to target currency only: zh report→CNY, en report→USD
                         _target_cur = task.get("target_currency", "CNY")
@@ -668,7 +696,7 @@ class GenericAgent(
                                     _ds = "\n".join([f"- {k}: {v.get('value','')}{v.get('unit','')} (口径: {v.get('caliber','不详')})" for k, v in _diff.items()])
                                     prompt += f"\n\n## 实时更新规范数据（其他agent已完成）\n{_ds}\n"
                                     prompt += "**注意**: 这些数据来自刚刚完成的其他agent，优先级高于前面列出的规范数据。"
-                        result = await skill.execute(prompt=prompt, system_prompt=system_prompt)
+                        result = await call_llm(prompt=prompt, system_prompt=system_prompt)
 
                         # M3: canonical enforcement after LLM output
                         if result.get("success") and result.get("content") and canonical_data:
@@ -694,6 +722,7 @@ class GenericAgent(
 
                             if gaps:
                                 logger.info(f"GenericAgent {self.agent_id}: detected {len(gaps)} knowledge gaps, performing supplementary search")
+                                self._report_progress(f"分析内容知识检测完成{', 发现 '+str(len(gaps))+' 个缺口' if gaps else ', 无需补充'}", "analyzing")
                                 supp_result = await self._supplementary_search_for_gaps(
                                     topic=topic, aspect=aspect, gaps=gaps,
                                     skill_registry=skill_registry,
@@ -709,7 +738,7 @@ class GenericAgent(
                                         sibling_aspects=sibling_aspects,
                                         sub_aspects=self._context.get("sub_aspects"),
                                     )
-                                    revised = await skill.execute(prompt=prompt2, system_prompt=system_prompt)
+                                    revised = await call_llm(prompt=prompt2, system_prompt=system_prompt)
 
                                     # M3: canonical enforcement on revised content
                                     if revised.get("success") and revised.get("content") and canonical_data:
@@ -726,6 +755,7 @@ class GenericAgent(
                                         aggregated_data_points = new_data_points
                                         aggregated_sources = new_sources
                                         logger.info(f"GenericAgent {self.agent_id}: analysis revised with supplementary data")
+                                        self._report_progress(f"补充搜索后修订完成，新增 {len(new_data_points)} 数据点", "analyzing")
 
                         # 自评: 对生成内容进行质量评估
                         max_self_eval = self.config.get("max_self_eval_iterations", 0)
@@ -733,6 +763,7 @@ class GenericAgent(
                             content_text = result.get("content", "")
                             eval_result = await self._self_evaluate(content_text)
                             result["self_evaluation"] = eval_result
+                            self._report_progress(f"分析内容自评完成，评分 {eval_result.get('score', 'N/A')}", "analyzing")
 
                         if result.get("success"):
                             result["data_points"] = aggregated_data_points
@@ -741,6 +772,7 @@ class GenericAgent(
                     
                     # M5-b: CALIBRATION - cross-agent numeric consistency check
                     if agent_category == "calibration":
+                        self._report_progress("校准跨章节数值一致性...", "analyzing")
                         all_results = task.get("parameters", {}).get("all_results", context.get("all_results", []))
                         canonical_data = task.get("parameters", {}).get("canonical_data", context.get("canonical_data", {}))
                         from src.core.prompts.calibration_prompt import (
@@ -762,7 +794,7 @@ class GenericAgent(
                             all_sections_report="\n\n".join(all_sections) if all_sections else "(no sections to calibrate)",
                             target_currency=task.get("target_currency", "CNY"),
                         )
-                        result = await skill.execute(
+                        result = await call_llm(
                             prompt=prompt,
                             system_prompt=CALIBRATION_SYSTEM_PROMPT,
                         )
@@ -853,9 +885,11 @@ class GenericAgent(
                         enrichment = getattr(self, '_knowledge_enrichment', {})
                         if enrichment.get("entities") or enrichment.get("methodologies"):
                             system_prompt = self._get_professional_role_prompt(aspect)
-                            result = await skill.execute(prompt=prompt, system_prompt=system_prompt)
+                            self._report_progress(f"Generating analysis for {aspect or topic}...", "writing")
+                            result = await call_llm(prompt=prompt, system_prompt=system_prompt)
                         else:
-                            result = await skill.execute(prompt=prompt)
+                            self._report_progress(f"Generating analysis for {aspect or topic}...", "writing")
+                            result = await call_llm(prompt=prompt)
 
                         # M3: canonical enforcement on synthesis output
                         if result.get("success") and result.get("content") and _canonical_data_syn:
@@ -940,6 +974,9 @@ class GenericAgent(
                             aspects=aspects,
                             skill_registry=skill_registry,
                         )
+                        if search_results:
+                            _n = sum(len(s.get('results', [])) for s in search_results.get('searches', []))
+                            self._report_progress(f"搜索完成，获取 {_n} 条结果", "searching")
                         
                         # 构建包含搜索结果的 prompt
                         if search_results:
@@ -970,7 +1007,7 @@ class GenericAgent(
                     # 根据章节类型选择专业角色
                     system_prompt = self._get_professional_role_prompt(aspect)
                     
-                    result = await skill.execute(prompt=prompt, system_prompt=system_prompt)
+                    result = await call_llm(prompt=prompt, system_prompt=system_prompt)
                     
                     # 修复1: 清理LLM输出中的prompt残留文字
                     if result.get("success") and result.get("content"):

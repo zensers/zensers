@@ -281,6 +281,7 @@ class ReportGenerationAgent(FixedAgent):
         
         # Publish start event
         await self.publish_event("report_generation_started", {"title": title})
+        self._report_progress(f"Generating report: {title}", "writing")
         
         # 1. Generate cover
         cover = self._generate_cover(title, template_type, lang)

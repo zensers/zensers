@@ -4,7 +4,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useResearchStore } from '@/store/useResearchStore';
 import { sseManager } from '@/lib/sse';
 import { api } from '@/lib/api';
-import type { SSEMessage, ProgressData, PhaseData, CompleteData, Phase, ChatResponseData, AgentMessageData, QualityResultEventData, SectionQualityEventData, PreviewRefreshEventData, QualityConfirmedEventData } from '@/types/api';
+import type { SSEMessage, ProgressData, PhaseData, CompleteData, Phase, ChatResponseData, ChatTokenData, ChatThinkingData, AgentMessageData, QualityResultEventData, SectionQualityEventData, PreviewRefreshEventData, QualityConfirmedEventData } from '@/types/api';
 
 export interface UseProgressOptions {
   onChatResponse?: (data: ChatResponseData) => void;
@@ -93,9 +93,15 @@ export function useProgress(taskId: string | null, options?: UseProgressOptions)
           updatePhase(d.phase_id, { progress: d.progress });
           break;
         }
-        case 'phase_start':
-          updatePhase((message.data as PhaseData).phase_id, { status: 'running' });
+        case 'phase_start': {
+          const d = message.data as PhaseData;
+          updatePhase(d.phase_id, {
+            status: 'running',
+            name: d.phase_name || d.phase_id,
+            description: d.description || '',
+          });
           break;
+        }
         case 'phase_complete':
           updatePhase((message.data as PhaseData).phase_id, { status: 'completed', progress: 100 });
           break;
@@ -218,6 +224,8 @@ export function useProgress(taskId: string | null, options?: UseProgressOptions)
  */
 export interface UseSessionStreamOptions {
   onChatResponse?: (data: ChatResponseData) => void;
+  onChatToken?: (data: ChatTokenData) => void;
+  onChatThinking?: (data: ChatThinkingData) => void;
   onAgentMessage?: (data: AgentMessageData) => void;
   onQualityResult?: (data: QualityResultEventData) => void;
   onSectionQuality?: (data: SectionQualityEventData) => void;
@@ -230,6 +238,8 @@ export function useSessionStream(
   options?: UseSessionStreamOptions | ((data: ChatResponseData) => void),
 ) {
   const onChatResponse = typeof options === 'function' ? options : options?.onChatResponse;
+  const onChatToken = typeof options === 'function' ? undefined : options?.onChatToken;
+  const onChatThinking = typeof options === 'function' ? undefined : options?.onChatThinking;
   const onAgentMessage = typeof options === 'function' ? undefined : options?.onAgentMessage;
   const onQualityResult = typeof options === 'function' ? undefined : options?.onQualityResult;
   const onSectionQuality = typeof options === 'function' ? undefined : options?.onSectionQuality;
@@ -238,6 +248,10 @@ export function useSessionStream(
 
   const onChatResponseRef = useRef(onChatResponse);
   onChatResponseRef.current = onChatResponse;
+  const onChatTokenRef = useRef(onChatToken);
+  onChatTokenRef.current = onChatToken;
+  const onChatThinkingRef = useRef(onChatThinking);
+  onChatThinkingRef.current = onChatThinking;
   const onAgentMessageRef = useRef(onAgentMessage);
   onAgentMessageRef.current = onAgentMessage;
   const onQualityResultRef = useRef(onQualityResult);
@@ -256,6 +270,8 @@ export function useSessionStream(
       sessionId,
       (data) => { if (onChatResponseRef.current) onChatResponseRef.current(data); },
       onAgentMessage ? (data) => { if (onAgentMessageRef.current) onAgentMessageRef.current(data); } : undefined,
+      onChatToken ? (data) => { if (onChatTokenRef.current) onChatTokenRef.current(data); } : undefined,
+      onChatThinking ? (data) => { if (onChatThinkingRef.current) onChatThinkingRef.current(data); } : undefined,
       onQualityResult ? (data) => { if (onQualityResultRef.current) onQualityResultRef.current(data); } : undefined,
       onSectionQuality ? (data) => { if (onSectionQualityRef.current) onSectionQualityRef.current(data); } : undefined,
       onPreviewRefresh ? (data) => { if (onPreviewRefreshRef.current) onPreviewRefreshRef.current(data); } : undefined,

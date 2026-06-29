@@ -228,11 +228,6 @@ class DynamicAgentFactory(AgentFactory):
             )
             norm_required = ["llm_skill"]
 
-        # Ensure llm_skill is present for agents that need reasoning
-        if "llm_skill" not in norm_required and "llm_skill" not in norm_optional:
-            norm_optional.append("llm_skill")
-            logger.debug(f"Agent {agent_id}: auto-added 'llm_skill' as optional")
-
         return norm_required, norm_optional
 
     def create_agent(

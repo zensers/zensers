@@ -28,6 +28,7 @@ import uuid
 import logging
 import os
 import re
+from src.core.llm_client import call_llm, call_llm_stream
 import time
 import traceback
 import shutil
@@ -165,6 +166,73 @@ class ConversationToolSet:
         except Exception as e:
             logger.warning(f"{tool_name} failed: {e}")
             return {'success': False, 'error': str(e)}
+
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+
+
+class _ThinkTagFilter:
+    """Splits streaming tokens into thinking and normal content.
+
+    feed() returns a list of (type, text) tuples where type is 'think' or 'text'.
+    """
+
+    def __init__(self):
+        self._in_think = False
+        self._buffer = ""
+
+    @staticmethod
+    def _partial_tag_prefix(tag: str, buf: str) -> int:
+        for i in range(1, min(len(tag), len(buf) + 1)):
+            if buf.endswith(tag[:i]):
+                return i
+        return 0
+
+    def feed(self, token: str) -> list[tuple[str, str]]:
+        emitted: list[tuple[str, str]] = []
+        self._buffer += token
+        while self._buffer:
+            if self._in_think:
+                close_idx = self._buffer.find(_THINK_CLOSE)
+                if close_idx != -1:
+                    if close_idx > 0:
+                        emitted.append(('think', self._buffer[:close_idx]))
+                    self._buffer = self._buffer[close_idx + len(_THINK_CLOSE):]
+                    self._in_think = False
+                else:
+                    partial_len = self._partial_tag_prefix(_THINK_CLOSE, self._buffer)
+                    safe_len = len(self._buffer) - partial_len if partial_len else len(self._buffer)
+                    if safe_len > 0:
+                        emitted.append(('think', self._buffer[:safe_len]))
+                        self._buffer = self._buffer[safe_len:]
+                    else:
+                        break
+            else:
+                open_idx = self._buffer.find(_THINK_OPEN)
+                if open_idx != -1:
+                    if open_idx > 0:
+                        emitted.append(('text', self._buffer[:open_idx]))
+                    self._buffer = self._buffer[open_idx + len(_THINK_OPEN):]
+                    self._in_think = True
+                else:
+                    partial_len = self._partial_tag_prefix(_THINK_OPEN, self._buffer)
+                    safe_len = len(self._buffer) - partial_len if partial_len else len(self._buffer)
+                    if safe_len > 0:
+                        emitted.append(('text', self._buffer[:safe_len]))
+                        self._buffer = self._buffer[safe_len:]
+                    else:
+                        break
+        return emitted
+
+    def flush(self) -> list[tuple[str, str]]:
+        if not self._buffer:
+            return []
+        result = self._buffer
+        self._buffer = ""
+        if self._in_think:
+            return [('think', result)]
+        return [('text', result)]
+
 
 class ResearchAPI:
     """ResearchAPI"""
@@ -888,21 +956,15 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
         if conversation_state:
             dialogue_context = self._build_dialogue_context(conversation_state)
         domain_guard = '\n## SCOPE REMINDER\nYou are a professional market research assistant. But you can handle ANY question\nthe user asks — answer directly or search the web. You are not limited to research.\nOnly start a formal research framework when the user EXPLICITLY asks for it.\n\n'
-        try:
-            from src.skills.llm_skill import LLMSkill
-            llm_skill = LLMSkill()
-        except ImportError:
-            import sys, pathlib
-            project_root = pathlib.Path(__file__).parent.parent.parent
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-            from src.skills.llm_skill import LLMSkill
-            llm_skill = LLMSkill()
         cancel_flag = self._loop_cancel_flags.get(session_id, 0)
         accumulated_context = ''
         tool_history = []
         parsed = {}
         MAX_ITERATIONS = self._get_max_tool_iterations()
+        try:
+            from src.core.session_streamer import SessionStreamer
+        except ImportError:
+            SessionStreamer = None
         for iteration in range(MAX_ITERATIONS):
             if self._loop_cancel_flags.get(session_id, 0) != cancel_flag:
                 logger.info(f"Cancelling loop iteration {iteration} — new message detected")
@@ -916,28 +978,60 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
                 user_prompt = self._build_followup_prompt(accumulated_context, tool_history, user_input, history_text, dialogue_context)
             try:
                 from src.config.settings import settings as app_settings
-                _execute_kwargs = dict(prompt=user_prompt, system_prompt=system_prompt, model=llm_config.get('model', app_settings.llm.model), max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens))
-                if temperature is not None:
-                    _execute_kwargs['temperature'] = temperature
-                result = await asyncio.wait_for(
-                    llm_skill.execute(**_execute_kwargs),
-                    timeout=60)
+                _model = llm_config.get('model', app_settings.llm.model)
+                _max_tokens = llm_config.get('max_tokens', app_settings.llm.max_tokens)
+                _temperature = temperature if temperature is not None else app_settings.llm.temperature
+
+                if SessionStreamer and iteration == 0:
+                    full_content = ""
+                    think_filter = _ThinkTagFilter()
+                    try:
+                        async for token in call_llm_stream(
+                            prompt=user_prompt, system_prompt=system_prompt,
+                            model=_model, max_tokens=_max_tokens, temperature=_temperature,
+                        ):
+                            full_content += token
+                            for typ, text in think_filter.feed(token):
+                                if typ == 'think':
+                                    SessionStreamer.push_chat_thinking(session_id, text)
+                                else:
+                                    SessionStreamer.push_chat_token(session_id, text)
+                        for typ, text in think_filter.flush():
+                            if typ == 'think':
+                                SessionStreamer.push_chat_thinking(session_id, text)
+                            else:
+                                SessionStreamer.push_chat_token(session_id, text)
+                    except Exception as stream_err:
+                        logger.warning(f"Stream failed (iteration {iteration}), degrading: {stream_err}")
+                        result = await asyncio.wait_for(
+                            call_llm(prompt=user_prompt, system_prompt=system_prompt,
+                                     model=_model, max_tokens=_max_tokens, temperature=_temperature),
+                            timeout=60)
+                        if not result.get('success'):
+                            raise ValueError(f"LLM call failed: {result.get('error', 'Unknown error')}")
+                        full_content = result.get('content', '')
+                else:
+                    result = await asyncio.wait_for(
+                        call_llm(prompt=user_prompt, system_prompt=system_prompt,
+                                 model=_model, max_tokens=_max_tokens, temperature=_temperature),
+                        timeout=60)
+                    if not result.get('success'):
+                        raise ValueError(f"LLM call failed: {result.get('error', 'Unknown error')}")
+                    full_content = result.get('content', '')
             except asyncio.TimeoutError:
                 logger.warning(f"LLM call timed out (iteration {iteration}), using accumulated results")
                 break
             except Exception as e:
                 logger.error(f"LLM call failed: {e}")
                 break
-            if not result.get('success'):
-                raise ValueError(f"LLM call failed: {result.get('error', 'Unknown error')}")
-            content = result.get('content', '')
+            content = full_content
             if not content or not content.strip():
                 raise ValueError('LLM returned empty content')
             json_str = self._extract_json_from_llm_content(content)
             if not json_str:
                 logger.error(f"Could not extract JSON from LLM response (iteration {iteration}), content preview: {content[:200]}")
                 if iteration == 0:
-                    retry_content = await self._retry_json_only(llm_skill, system_prompt, llm_config, session_id)
+                    retry_content = await self._retry_json_only(system_prompt, llm_config, session_id)
                     if retry_content:
                         content = retry_content
                         json_str = self._extract_json_from_llm_content(content)
@@ -948,7 +1042,7 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
             except json.JSONDecodeError as e:
                 logger.error(f"LLM JSON parse failed (iteration {iteration}): {e}")
                 if iteration == 0:
-                    retry_content = await self._retry_json_only(llm_skill, system_prompt, llm_config, session_id)
+                    retry_content = await self._retry_json_only(system_prompt, llm_config, session_id)
                     if retry_content:
                         json_str = self._extract_json_from_llm_content(retry_content)
                         if json_str:
@@ -1031,16 +1125,16 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
             return json_in_text.group(1).strip()
         return None
 
-    async def _retry_json_only(self, llm_skill, system_prompt, llm_config, session_id):
+    async def _retry_json_only(self, system_prompt, llm_config, session_id):
         """Retry LLM call with stricter JSON-only instruction and lower temperature."""
         retry_prompt = f"""## CRITICAL: Your previous response was not valid JSON.\nYou MUST respond with ONLY a valid JSON object starting with `{{` and ending with `}}`.\nNo markdown, no code fences, no explanation before or after the JSON.\nNo natural language text outside the JSON structure.\n\n{self._JSON_OUTPUT_SCHEMA}\n\nOutput ONLY the JSON object now."""
         try:
             from src.config.settings import settings as app_settings
             result = await asyncio.wait_for(
-                    llm_skill.execute(prompt=retry_prompt, system_prompt=system_prompt,
-                                      model=llm_config.get('model', app_settings.llm.model),
-                                      max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens), temperature=0.1),
-                    timeout=60)
+                call_llm(prompt=retry_prompt, system_prompt=system_prompt,
+                         model=llm_config.get('model', app_settings.llm.model),
+                         max_tokens=llm_config.get('max_tokens', app_settings.llm.max_tokens), temperature=0.1),
+                timeout=60)
             if not result.get('success'):
                 return None
             content = result.get('content', '')

@@ -182,6 +182,18 @@ class ReportOrchestrator:
         topic: str = "",
         task_id: Optional[str] = None,
     ) -> Dict[str, Any]:
+        return await self._generate_report_impl(
+            task_structure, framework_config, aggregated_result, topic, task_id,
+        )
+
+    async def _generate_report_impl(
+        self,
+        task_structure: Dict[str, Any],
+        framework_config: Dict[str, Any],
+        aggregated_result: Any,
+        topic: str = "",
+        task_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
         last_error = None
 
         for full_attempt in range(RetryPolicy.MAX_FULL_RETRIES + 1):
@@ -1184,7 +1196,6 @@ class ReportOrchestrator:
     async def _call_llm_tracked(self, prompt: str, max_tokens: int = 8192, temperature: float = 0.7, phase: str = "") -> Dict[str, Any]:
         self._llm_call_count += 1
         result = await call_llm(prompt=prompt, max_tokens=max_tokens, temperature=temperature)
-
         trace_entry = {
             "call_id": self._llm_call_count,
             "phase": phase,

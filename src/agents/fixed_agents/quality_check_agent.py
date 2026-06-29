@@ -225,6 +225,7 @@ class QualityCheckAgent(FixedAgent):
         
         # Publish start event
         await self.publish_event("quality_check_started", {})
+        self._report_progress("Running quality checks...", "analyzing")
         
         issues = []
         suggestions = []

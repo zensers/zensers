@@ -98,6 +98,7 @@ class DataCollectionAgent(FixedAgent):
         
         # Publish start event
         await self.publish_event("collection_started", {"query": query})
+        self._report_progress(f"Collecting data: {query}", "searching")
         
         collected_data = []
         sources_info = []

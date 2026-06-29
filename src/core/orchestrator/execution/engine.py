@@ -1086,8 +1086,35 @@ class ExecutionEngine:
                     _section_to_agent[_sid] = _a
                     self._agent_id_to_section_id[_a.agent_id] = _sid
             
+            _esid = requirement.get("session_id") or requirement.get("task_id", "")
+            _total_batches = len(execution_batches)
+
             for batch_index, batch_agent_ids in enumerate(execution_batches):
                 logger.info(f"[批次{batch_index + 1}/{len(execution_batches)}] 执行: {batch_agent_ids}")
+
+                _batch_progress = 0.2 + (batch_index / max(_total_batches, 1)) * 0.5
+                if _esid:
+                    try:
+                        from src.core.progress_streamer import update_progress as _up
+                        _up(_esid, _batch_progress, phase_id="execution",
+                            message=f"Executing batch {batch_index+1}/{_total_batches}...")
+                    except Exception:
+                        pass
+
+                for _aid in batch_agent_ids:
+                    _a = scheduler.get_agent_by_id(_aid)
+                    if _a and _esid:
+                        try:
+                            from src.core.session_streamer import SessionStreamer
+                            _aname = _a.config.get("context", {}).get("aspect", "") or _a.agent_type
+                            SessionStreamer.push_agent_message(_esid, {
+                                "agent_id": _a.agent_id,
+                                "agent_name": _aname,
+                                "action": "analyzing",
+                                "content": f"Starting {_aname}...",
+                            })
+                        except Exception:
+                            pass
                 
                 # 获取批次中的 Agent
                 batch_agents = []
@@ -1340,6 +1367,22 @@ class ExecutionEngine:
                     scheduler=scheduler,
                     stage_name=f"batch_{batch_index + 1}",
                 )
+
+                for _ar in batch_results:
+                    if _ar.get("success") and _esid:
+                        _arid = _ar.get("agent_id", "")
+                        _aobj = scheduler.get_agent_by_id(_arid)
+                        _arname = (_aobj.config.get("context", {}).get("aspect", "") or _aobj.agent_type) if _aobj else _arid
+                        try:
+                            from src.core.session_streamer import SessionStreamer
+                            SessionStreamer.push_agent_message(_esid, {
+                                "agent_id": _arid,
+                                "agent_name": _arname,
+                                "action": "completed",
+                                "content": f"{_arname} completed.",
+                            })
+                        except Exception:
+                            pass
                 
                 # 更新调度状态和内容锁
                 for agent_result in batch_results:

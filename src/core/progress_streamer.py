@@ -313,6 +313,7 @@ class ProgressStreamer:
             "task_id": task_id,
             "phase_id": phase_id,
             "phase_name": phase_name,
+            "description": description,
             "timestamp": datetime.now().isoformat(),
         })
 

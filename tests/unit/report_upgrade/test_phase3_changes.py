@@ -61,6 +61,6 @@ class TestE3ReviewLoopExit:
     def test_rewrite_trigger_condition_best_score_below_target(self):
         from src.agents.fixed_agents.report_upgrade.orchestrator import ReportOrchestrator
         import inspect
-        source = inspect.getsource(ReportOrchestrator.generate_report)
+        source = inspect.getsource(ReportOrchestrator._generate_report_impl)
         # L232附近应使用TARGET_SCORE而非MIN_REVIEW_SCORE_TO_ACCEPT
         assert 'TARGET_SCORE' in source, "rewrite触发条件应使用TARGET_SCORE"

@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 class SessionSSEEventType(str, Enum):
     """Session SSE event types"""
     CHAT_RESPONSE = "chat_response"
+    CHAT_TOKEN = "chat_token"
+    CHAT_THINKING = "chat_thinking"
     AGENT_MESSAGE = "agent_message"
     HEARTBEAT = "heartbeat"
     CONNECTED = "connected"
@@ -73,6 +75,8 @@ class SessionStreamer:
     # Recent messages buffer for replay on late connections (Issue 2 fix)
     _recent_messages: Dict[str, List[SessionMessage]] = {}
     _MAX_REPLAY = 20
+    _last_agent_msg_times: Dict[str, float] = {}
+    _AGENT_MSG_THROTTLE_SECONDS = 0.2
 
     def __init__(self, session_id: str):
         self.session_id = session_id
@@ -198,8 +202,58 @@ class SessionStreamer:
         logger.info(f"Session stream chat_response pushed: {session_id}")
 
     @classmethod
+    def push_chat_token(cls, session_id: str, token: str):
+        """Push a single chat token for streaming display.
+
+        Bypasses _notify_subscribers() to avoid buffering individual tokens
+        in _recent_messages (which would flood the replay buffer).
+        Does NOT persist to conversation_history.
+        """
+        message = SessionMessage(event=SessionSSEEventType.CHAT_TOKEN.value, data={
+            "session_id": session_id,
+            "token": token,
+        })
+        subscribers = cls._subscribers.get(session_id)
+        if not subscribers:
+            return
+        for queue in list(subscribers):
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                pass
+
+    @classmethod
+    def push_chat_thinking(cls, session_id: str, token: str):
+        """Push a single thinking token for streaming display.
+
+        Same delivery semantics as push_chat_token:
+        - Bypasses _notify_subscribers() to avoid buffering in _recent_messages
+        - Does NOT persist to conversation_history
+        """
+        message = SessionMessage(event=SessionSSEEventType.CHAT_THINKING.value, data={
+            "session_id": session_id,
+            "token": token,
+        })
+        subscribers = cls._subscribers.get(session_id)
+        if not subscribers:
+            return
+        for queue in list(subscribers):
+            try:
+                queue.put_nowait(message)
+            except asyncio.QueueFull:
+                pass
+
+    @classmethod
     def push_agent_message(cls, session_id: str, agent_data: Dict[str, Any]):
         """Push an agent_message event to all session subscribers"""
+        import time
+        _action = agent_data.get("action", "")
+        if _action != "heartbeat":
+            _now = time.monotonic()
+            _last = cls._last_agent_msg_times.get(session_id, 0.0)
+            if _now - _last < cls._AGENT_MSG_THROTTLE_SECONDS:
+                return
+            cls._last_agent_msg_times[session_id] = _now
         _ts = datetime.now().isoformat()
         cls._notify_subscribers(session_id, SessionSSEEventType.AGENT_MESSAGE, {
             "session_id": session_id,

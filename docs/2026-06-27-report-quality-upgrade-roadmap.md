@@ -1,10 +1,11 @@
 # 报告质量提升全面扫描分析：78→90+路线图（修订版）
 
 > 日期: 2026-06-27
-> 修订日期: 2026-06-27（第六轮：消除审计5-9残留矛盾）
+> 修订日期: 2026-06-29（代码审查修正：A3 确认已实现；D2/E5 参数存在但函数体未使用，标注修正）
 > 基准: e2e v4实测 score=78, convergence_rounds=1, converged=False
 > 目标: 从78分提升到90+分
 > 扫描范围: 9个Prompt模板、orchestrator.py(1304行)、chapter_writer.py(135行)、chapter_reviewer.py(67行)、checkers.py(1085行)、global_reviewer.py(137行)、models.py(168行)、data_registry.py(118行)、structured_data_repair.py(105行)
+> 审查说明: 2026-06-29 基于真实代码环境两轮审计确认：15/17 项已实现，2 项部分实现（D2/E5 参数死代码），3 项未实现（P2/D1/P4）
 
 ---
 
@@ -693,72 +694,77 @@ risk_indicators = [
 
 ## 2. 最终优先级排序
 
-| 优先级 | 提升点 | 预期提升 | 确定性 | 涉及文件 | 说明 |
-|--------|--------|----------|--------|---------|------|
-| **P0** | N1(程序化后处理) | +3~5分 | 中高 | orchestrator.py(新增) | 确定性最高但仍非100%，标题格式不规范等边界情况可能漏检 |
-| **P0** | A1(数据传递) | +2~4分 | 中 | models.py+orchestrator.py+chapter_writer.py+chapter_write.tmpl | 根因修复：修改L767保留data_points |
-| **P0** | P1+P3(黑名单+合规审查) | +1~3分 | 低 | chapter_write.tmpl+chapter_review.tmpl | 辅助手段，LLM遵从度不确定 |
-| **P1** | A3(程序化检查接入收敛) | +2~4分 | 高 | orchestrator.py+checkers.py | AnalysisQualityChecker作为硬约束参与收敛 |
-| **P1** | E1(收敛阈值3) | +1~2分 | 高 | orchestrator.py | 首轮阈值从5改为3 |
-| **P1** | D2(StockData预注入) | +1~3分 | 中 | orchestrator.py | 方案B：保持static+加参数 |
-| **P2** | S3(反证兼容risk)+S1(权重45%)+S2(关键词收紧) | +3~5分 | 高 | checkers.py | **A3实施后立即生效，不独立** |
-| **P2** | P5(全局审查看正文) | +1~2分 | 中 | global_reviewer.py | 首400+末400字摘要 |
-| **P2** | P2(逐段精修指令) | +1~2分 | 低 | chapter_write.tmpl | 依赖LLM遵从度 |
-| **P2** | E3(退出条件+rewrite触发) | +1~2分 | 高 | orchestrator.py | 同步修改L182+L232 |
-| **P3** | E4(触发词) | +0~1分 | 中 | orchestrator.py | 排除"没有""无" |
-| **P3** | D1(跨章冲突) | +1~2分 | 中 | orchestrator.py | |
-| **P3** | E5(patch精确数值) | +1~2分 | 中 | orchestrator.py | |
-| **P3** | D3(来源49修复) | +0.5~1分 | 高 | orchestrator.py | |
-| **P3** | P4(章内自洽性) | +0~1分 | 低 | chapter_review.tmpl | 依赖LLM reviewer |
-| **P3** | P6(摘要结构) | +0~1分 | 低 | exec_summary.tmpl | 不影响章节分数 |
-| **P4** | E2(best_score防退) | 防回退 | 高 | orchestrator.py | L629改为严格大于比较 |
+| 优先级 | 提升点 | 预期提升 | 确定性 | 涉及文件 | 说明 | 状态 |
+|--------|--------|----------|--------|---------|------|------|
+| **P0** | N1(程序化后处理) | +3~5分 | 中高 | orchestrator.py(新增) | 确定性最高但仍非100%，标题格式不规范等边界情况可能漏检 | ✅ |
+| **P0** | A1(数据传递) | +2~4分 | 中 | models.py+orchestrator.py+chapter_writer.py+chapter_write.tmpl | 根因修复：修改L767保留data_points | ✅ |
+| **P0** | P1+P3(黑名单+合规审查) | +1~3分 | 低 | chapter_write.tmpl+chapter_review.tmpl | 辅助手段，LLM遵从度不确定 | ✅ |
+| **P1** | A3(程序化检查接入收敛) | +2~4分 | 高 | orchestrator.py+checkers.py | AnalysisQualityChecker作为硬约束参与收敛 | ✅ **已实现** — `_phase4_fix_and_optimize` 入口（L547-553）对每章运行 `AnalysisQualityChecker.check()`，<60分的强制加入 patch_chapter_ids |
+| **P1** | E1(收敛阈值3) | +1~2分 | 高 | orchestrator.py | 首轮阈值从5改为3 | ✅ |
+| **P1** | D2(StockData预注入) | +1~3分 | 中 | orchestrator.py | 方案B：保持static+加参数 | ⚠️ **skill_registry 参数是死代码**——`_extract_chapter_data` 签名含 `skill_registry=None`（L831）但函数体从未使用。StockData 注入仅通过 `StructuredDataRepairAgent` 在修复阶段触发（structured_data_repair.py:23-53），非预注入 |
+| **P2** | S3(反证兼容risk)+S1(权重45%)+S2(关键词收紧) | +3~5分 | 高 | checkers.py | **A3实施后立即生效，不独立** | ✅ |
+| **P2** | P5(全局审查看正文) | +1~2分 | 中 | global_reviewer.py | 首400+末400字摘要 | ✅ |
+| **P2** | P2(逐段精修指令) | +1~2分 | 低 | chapter_write.tmpl | 依赖LLM遵从度 | 🔲 未实现 |
+| **P2** | E3(退出条件+rewrite触发) | +1~2分 | 高 | orchestrator.py | 同步修改L182+L232 | ✅ |
+| **P3** | E4(触发词) | +0~1分 | 中 | orchestrator.py | 排除"没有""无" | ✅ |
+| **P3** | D1(跨章冲突) | +1~2分 | 中 | orchestrator.py | 口径差异标注 | 🔲 未实现 — ConflictResolver（data_repair.py:121-248）无 caliber 标注逻辑；DataRegistry._normalize_metric() 会混同不同口径的同一指标（如归母 vs 扣非） |
+| **P3** | E5(patch精确数值) | +1~2分 | 中 | orchestrator.py | | ⚠️ **`chapter_data` 参数是死代码**——签名存在（L1058-1062）且调用点传入（L306-308, L669-670），但函数体从未引用 `chapter_data`，仅依赖 `raw_data_summary` 字符串匹配 |
+| **P3** | D3(来源49修复) | +0.5~1分 | 高 | orchestrator.py | | ✅ |
+| **P3** | P4(章内自洽性) | +0~1分 | 低 | chapter_review.tmpl | 依赖LLM reviewer | 🔲 未实现 — review template 无自洽性维度。代码级检查仅存在于 `_extract_and_validate_data_points` 的 DataRegistry 冲突检测，非 LLM 审查维度 |
+| **P3** | P6(摘要结构) | +0~1分 | 低 | exec_summary.tmpl | 不影响章节分数 | ✅ |
+| **P4** | E2(best_score防退) | 防回退 | 高 | orchestrator.py | L629改为严格大于比较 | ✅ |
 
-### 预期效果
+### 预期效果（代码审查验证版）
 
-- **P0三项(1天)**: 78 → **81~85**（N1确定性修正+3~4分，A1数据传递+2~4分，P1+P3边际+0~1分。注意：N1与P1+P3目标重叠，不应简单叠加）
-- **P0+P1六项(2天)**: 78 → **85~90**（A3接入收敛+S3/S1/S2权重调整+E1收敛阈值+D2预注入）
-- **全部项(5天)**: 78 → **88~94**
+- **已实现项（12/17）**: N1 + A1 + P1+P3 + A3 + E1 + S3/S1/S2 + P5 + E3 + E4 + D3 + P6 + E2
+- **部分实现项（2/17）**: D2（skill_registry 参数存在但函数体未使用）+ E5（chapter_data 参数存在但函数体未使用）
+- **未实现项（3/17）**: P2（逐段精修指令）+ D1（口径差异标注）+ P4（章内自洽性维度）
+
+基于实际实施状态的预期分数：
+- 已实现 12 项 + 2 项部分实现：78 → **83~90**
+- 修复 D2/E5 + 实现 P2/D1/P4 后可到：**88~94**
 
 ---
 
 ## 3. 实施顺序
 
-### Phase 1: P0三项（预期78→81~85）
+### Phase 1: P0三项（预期78→81~85）— ✅ 代码审查确认全部已实现
 
 1. **新增**`_enforce_structure_compliance`程序化后处理（N1）——在`_chapter_writer.write()`返回后、`_chapter_reviewer.review()`之前调用
 2. 修改`_split_chapter_data`(L767)保留data_points为upstream_data_points + `models.py`增加upstream_data_points字段 + `chapter_writer.py`传入 + `orchestrator.py`提取 + `chapter_write.tmpl`增加结构化数据引用段（A1）
 3. 修改`chapter_write.tmpl`增加段落黑名单+白名单 **同时**修改`chapter_review.tmpl`增加"结构合规度"维度（P1+P3，辅助手段）
 
-### Phase 2: P1三项（预期81~85→85~90）
+### Phase 2: P1三项（预期81~85→85~90）— ✅ A3/E1 已实现，⚠️ D2 需修复
 
-4. 在`_phase4_fix_and_optimize`入口增加AnalysisQualityChecker硬约束检查（A3）**同时**修改checkers.py的S3(反证兼容risk+降权)+S1(权重45%)+S2(关键词收紧)——A3接入后S3/S1/S2立即生效
+4. 在`_phase4_fix_and_optimize`入口增加AnalysisQualityChecker硬约束检查（A3）**同时**修改checkers.py的S3(反证兼容risk+降权)+S1(权重45%)+S2(关键词收紧)——A3接入后S3/S1/S2立即生效。**代码审查确认 A3 已实现**（_phase4_fix_and_optimize L547-553）
 5. 修改`orchestrator.py` RetryPolicy，首轮阈值从5改为3（E1）
-6. 修改`_extract_chapter_data`增加skill_registry参数，StockData预注入（D2方案B）
+6. **`_extract_chapter_data` 的 `skill_registry` 参数是死代码**——参数已在签名中（L831）但函数体从未使用。需实现实际的数据预注入逻辑使此参数生效（D2）
 
-### Phase 3: P2三项（预期85~90→87~92）
+### Phase 3: P2四项（预期85~90→87~92）— ✅ P5/E3 已实现，🔲 P2 待实现
 
 7. 修改`global_reviewer.py` serialize_report_for_review增加首400+末400字正文摘要（P5）
 8. 修改`chapter_write.tmpl`增加"逐段精修指令"（P2）
 9. 修改章节级review退出条件+L232 rewrite触发条件（E3）
 
-### Phase 4: P3+P4剩余项（预期87~92→88~94）
+### Phase 4: P3+P4剩余项（预期87~92→88~94）— ✅ E4/D3/P6/E2 已实现，🔲 D1/P4 待实现，⚠️ E5 需修复
 
-10-15. 依次实施E4/D1/E5/D3/P4/P6/E2
+10-15. 依次实施E4/D1(**需重构 ConflictResolver 增加 caliber 标注和 DataRegistry 口径区分**)/E5(**修复 chapter_data 死代码参数**)/D3/P4(**需在 chapter_review.tmpl 增加自洽性维度**)/P6/E2
 
 ---
 
 ## 4. 风险与注意事项
 
 1. **N1与P1+P3目标重叠**：N1程序化后处理先修正结构→P3审查不再发现违规→P3扣分机制不起作用。这是预期行为：N1保底+P1+P3源头预防。预期提升取max而非求和。
-2. **S3/S1/S2与A3捆绑**：S3/S1/S2只影响AnalysisQualityChecker，仅当A3接入收敛循环后有效。已将S3/S1/S2与A3捆绑在Phase 2实施。
+2. **S3/S1/S2与A3捆绑**：S3/S1/S2只影响AnalysisQualityChecker，仅当A3接入收敛循环后有效。**A3已接入收敛循环**（_phase4_fix_and_optimize L547-553），S3/S1/S2已生效。
 3. **A1实施需修改L767**：`_split_chapter_data`显式剥离data_points，必须先修改此处。上游不存在`key_conclusions`字段。注意：当raw_data不是dict时（走L752-763分支），refined只有{"content":...}，没有data_points，此时upstream_data_points为空。
-4. **E3防无限循环**：60-79分段最多2轮后必须退出，且需同步修改L232的rewrite触发条件。
-5. **E4误判风险**：排除"没有""无"，避免正常描述被误判为数据缺失。
+4. **E3防无限循环**：60-79分段最多2轮后必须退出，且需同步修改L232的rewrite触发条件。**代码审查确认已实现**。
+5. **E4误判风险**：排除"没有""无"，避免正常描述被误判为数据缺失。**代码审查确认正确实现**。
 6. **E1成本风险**：降低首轮阈值可能增加收敛轮数和LLM调用成本。但v4实际只跑了1轮就停滞，E1让第2轮有机会执行，而非无限制循环。
 7. **P5增加token消耗**：首400+末400字*3章≈2400字额外上下文。
-8. **D2方案B**：保持static+加参数，改动最小风险最低。
+8. **D2 `skill_registry` 死代码**：`_extract_chapter_data` 签名含 `skill_registry=None` 参数（L831），调用点传入（L234/563/653），但函数体从未使用。需修复实现实际的数据预注入逻辑。
 9. **分数不可比**：P3改变了reviewer评分维度，修改后分数与v4的78分不在同一标尺。
-10. **E2简化方案**：L629改为严格大于比较(>而非>=)，避免相同分数时无意义替换。无需额外LLM调用。
+10. **E2简化方案**：L629改为严格大于比较(>而非>=)，避免相同分数时无意义替换。无需额外LLM调用。**代码审查确认已正确实现**。
+11. **E5 `chapter_data` 死代码**：`_build_anchor_patch_instructions` 的 `chapter_data` 参数签名存在（L1060），调用点传入（L306-308, L669-670），但函数体从未使用。需修复实现实际的数据点精确查找逻辑。
 
 ## 5. 自审记录
 

@@ -96,8 +96,15 @@ class ChapterWriter:
         _SKIP_TITLES = {"数据精准修补任务", "章节精修任务", "章节精修润色任务", "章节撰写任务"}
         try:
             json_match = re.search(r'```json\s*(.*?)\s*```', raw, re.DOTALL)
+            json_str = None
             if json_match:
                 json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', json_match.group(1))
+            else:
+                logger.warning(f"ChapterWriter: no ```json``` block found, trying raw JSON. Raw len={len(raw)}")
+                brace_match = re.search(r'\{.*\}', raw, re.DOTALL)
+                if brace_match:
+                    json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', brace_match.group(0))
+            if json_str:
                 data = json.loads(json_str)
                 title = data.get("title", chapter_spec.get("section_name", ""))
                 if title in _SKIP_TITLES:

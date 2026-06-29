@@ -211,16 +211,17 @@ export interface Phase {
 // ============ SSE Types ============
 
 export interface SSEMessage {
-  event: 'progress' | 'phase_start' | 'phase_complete' | 'error' | 'complete' | 'chat_response' | 'agent_message' | 'heartbeat' | 'connected' | 'message' | 'cancelled' | 'quality_result' | 'section_quality' | 'preview_refresh' | 'quality_confirmed';
-  data: ProgressData | PhaseData | ErrorData | CompleteData | ChatResponseData | AgentMessageData | QualityResultEventData | SectionQualityEventData | PreviewRefreshEventData | QualityConfirmedEventData;
+  event: 'progress' | 'phase_start' | 'phase_complete' | 'error' | 'complete' | 'chat_response' | 'chat_token' | 'chat_thinking' | 'agent_message' | 'heartbeat' | 'connected' | 'message' | 'cancelled' | 'quality_result' | 'section_quality' | 'preview_refresh' | 'quality_confirmed';
+  data: ProgressData | PhaseData | ErrorData | CompleteData | ChatResponseData | ChatTokenData | ChatThinkingData | AgentMessageData | QualityResultEventData | SectionQualityEventData | PreviewRefreshEventData | QualityConfirmedEventData;
 }
 
 export interface AgentMessageData {
   session_id: string;
   agent_id: string;
   agent_name: string;
-  action: string; // "searching" | "analyzing" | "writing" | "completed"
+  action: 'searching' | 'analyzing' | 'writing' | 'completed' | 'heartbeat' | 'error';
   content: string;
+  progress?: number;
   timestamp: string;
 }
 
@@ -232,6 +233,16 @@ export interface ChatResponseData {
   directions?: string[];
   suggestions?: Array<{ id: string; label: string; example: string }>;
   timestamp: string;
+}
+
+export interface ChatTokenData {
+  session_id: string;
+  token: string;
+}
+
+export interface ChatThinkingData {
+  session_id: string;
+  token: string;
 }
 
 export interface QualityIssueData {
@@ -318,6 +329,7 @@ export interface PhaseData {
   task_id: string;
   phase_id: string;
   phase_name: string;
+  description?: string;
   status: 'running' | 'completed' | 'error';
   timestamp: string;
 }
@@ -398,6 +410,7 @@ export interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'agent' | 'system';
   content: string;
+  thinkingContent?: string;
   timestamp: string;
   metadata?: Record<string, any>;
   agent?: {
