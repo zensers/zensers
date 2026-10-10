@@ -22,6 +22,7 @@
 """
 import yaml
 import logging
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
@@ -44,7 +45,12 @@ class SearchConfig:
         # Framework YAMLs are user-editable and historically contain larger
         # values. Enforce the quota-safe ceiling at the runtime boundary.
         self.max_queries_per_section = min(max(int(self.max_queries_per_section), 3), 5)
-        self.max_total_searches = min(max(int(self.max_total_searches), self.max_queries_per_section), 30)
+        try:
+            ceiling = int(os.environ.get("ZENSERS_MAX_TOTAL_SEARCHES", "30"))
+        except (TypeError, ValueError):
+            ceiling = 30
+        ceiling = max(ceiling, self.max_queries_per_section)
+        self.max_total_searches = min(max(int(self.max_total_searches), self.max_queries_per_section), ceiling)
 
 
 @dataclass

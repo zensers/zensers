@@ -144,8 +144,10 @@
         /* ============================================
            目录页 - 德勤风格
            ============================================ */
-        .toc-page {
-            padding: 60px 40px;
+        div.toc-page {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 60px 48px;
             page-break-after: always;
         }
 
@@ -161,12 +163,14 @@
 
         .toc-list {
             list-style: none;
+            line-height: 1.6;
         }
 
         .toc-item-level1 {
             display: flex;
             align-items: baseline;
-            padding: 12px 0;
+            padding: 8px 0;
+            line-height: 1.6;
             border-bottom: 1px solid #ddd;
             font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
             font-size: 12pt;
@@ -174,54 +178,116 @@
             color: #003366;
         }
 
-        .toc-item-level1 .toc-title {
+        .toc-item-level1 .toc-num {
             flex-shrink: 0;
+            min-width: 3em;
+            color: #C9A227;
+        }
+
+        .toc-item-level1 .toc-title {
+            flex-shrink: 1;
         }
 
         .toc-item-level1 .toc-dots {
             flex: 1;
             border-bottom: 1px dotted #999;
-            margin: 0 8px;
-            min-width: 20px;
+            margin: 0 10px;
+            min-width: 24px;
         }
 
         .toc-item-level1 .toc-page {
             flex-shrink: 0;
             font-weight: 700;
             color: #003366;
+            text-align: right;
+            min-width: 2em;
         }
 
         .toc-item-level2 {
             display: flex;
             align-items: baseline;
-            padding: 6px 0 6px 36px;
+            padding: 5px 0 5px 40px;
+            line-height: 1.6;
             font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
             font-size: 10.5pt;
             color: #555;
             border-bottom: 1px dotted #eee;
         }
 
-        .toc-item-level2 .toc-title {
+        .toc-item-level2 .toc-num {
             flex-shrink: 0;
+            min-width: 3.5em;
+            color: #0076A8;
+        }
+
+        .toc-item-level2 .toc-title {
+            flex-shrink: 1;
         }
 
         .toc-item-level2 .toc-dots {
             flex: 1;
             border-bottom: 1px dotted #ccc;
-            margin: 0 8px;
-            min-width: 20px;
+            margin: 0 10px;
+            min-width: 24px;
         }
 
         .toc-item-level2 .toc-page {
             flex-shrink: 0;
             color: #555;
+            text-align: right;
+            min-width: 2em;
         }
 
         /* ============================================
            正文页面 - 德勤风格
            ============================================ */
         .document {
-            padding: 40px 0;
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 40px 48px;
+        }
+
+        /* --- 图表 --- */
+        figure.chart-block,
+        figure.chart-container {
+            margin: 28px auto;
+            padding: 20px 24px;
+            max-width: 760px;
+            background: #FAFBFC;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            page-break-inside: avoid;
+            text-align: center;
+        }
+
+        figure.chart-block img,
+        figure.chart-container img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto 12px;
+        }
+
+        figure.chart-block figcaption,
+        figure.chart-container figcaption,
+        figcaption.figure-caption {
+            font-size: 9pt;
+            line-height: 1.7;
+            color: #4a5568;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        /* --- 正文美化 --- */
+        .section-content {
+            max-width: 760px;
+            margin: 0 auto;
+        }
+
+        .section-content p {
+            line-height: 1.9;
+            letter-spacing: 0.02em;
+            margin-bottom: 14px;
         }
 
         /* --- 章节标题 --- */
@@ -521,8 +587,10 @@
         /* ============================================
            封底免责声明
            ============================================ */
-        .disclaimer-page {
-            padding: 60px 40px;
+        div.disclaimer-page {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 60px 48px;
             page-break-before: always;
             border-top: 3px solid #003366;
         }

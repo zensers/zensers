@@ -525,7 +525,9 @@ class ChartPlannerAgent:
             f"3. 只使用与\"{topic}\"主题相关的数据\n"
             f"4. 每张图表的标题必须传达具体的分析洞察\n"
             f"5. 量纲不一致的数据必须用data_strategy归一化\n"
-            f"6. 图表的insertion_anchor应选择正文中实际存在的关键短语"
+            f"6. 图表的insertion_anchor应选择正文中实际存在的关键短语\n"
+            f"7. **先输出 JSON，后写说明**：首先输出完整 JSON（```json ... ```），"
+            f"推理过程写在 JSON 之后。输出预算有限时优先保证 JSON 完整。"
         )
 
         result = await call_llm(
@@ -592,6 +594,43 @@ class ChartPlannerAgent:
         cleaned = re.sub(r',\s*([}\]])', r'\1', cleaned)
         return cleaned
 
+    @staticmethod
+    def _repair_truncated_json(json_str: str) -> Optional[Any]:
+        """Progressively close open scopes of a truncated planner reply."""
+        decoder = json.JSONDecoder()
+        for end in range(len(json_str), 0, -1):
+            prefix = json_str[:end].rstrip()
+            if len(prefix) < len(json_str) - 512:
+                break
+            closers: List[str] = []
+            in_string = False
+            escaped = False
+            stack: List[str] = []
+            for ch in prefix:
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                elif ch == '"':
+                    in_string = True
+                elif ch in "{[":
+                    stack.append(ch)
+                elif ch in "}]":
+                    if stack and ((ch == "}" and stack[-1] == "{") or (ch == "]" and stack[-1] == "[")):
+                        stack.pop()
+            if in_string:
+                closers.append('"')
+            for opener in reversed(stack):
+                closers.append("}" if opener == "{" else "]")
+            try:
+                return json.loads(prefix + "".join(closers))
+            except (json.JSONDecodeError, ValueError):
+                continue
+        return None
+
     async def _parse_and_resolve(
         self, llm_content: str, topic: str
     ) -> List[ChartPlan]:
@@ -602,6 +641,7 @@ class ChartPlannerAgent:
 
         json_str = self._clean_json_string(json_str)
 
+        parsed = None
         try:
             parsed = json.loads(json_str)
         except json.JSONDecodeError:
@@ -611,23 +651,18 @@ class ChartPlannerAgent:
                 try:
                     parsed = json.loads(json_str[brace_start : brace_end + 1])
                 except json.JSONDecodeError:
-                    logger.warning(
-                        "ChartPlanner: failed to parse LLM JSON response "
-                        "chars=%d likely_truncated=%s tail=%r",
-                        len(json_str),
-                        not json_str.rstrip().endswith(("}", "]", "```")),
-                        json_str[-120:],
-                    )
-                    return []
+                    parsed = self._repair_truncated_json(json_str[brace_start:])
             else:
-                logger.warning(
-                    "ChartPlanner: failed to parse LLM JSON response "
-                    "chars=%d likely_truncated=%s tail=%r",
-                    len(json_str),
-                    not json_str.rstrip().endswith(("}", "]", "```")),
-                    json_str[-120:],
-                )
-                return []
+                parsed = self._repair_truncated_json(json_str)
+        if parsed is None:
+            logger.warning(
+                "ChartPlanner: failed to parse LLM JSON response "
+                "chars=%d likely_truncated=%s tail=%r",
+                len(json_str),
+                not json_str.rstrip().endswith(("}", "]", "```")),
+                json_str[-120:],
+            )
+            return []
 
         if not isinstance(parsed, dict):
             return []
@@ -898,14 +933,17 @@ class ChartPlannerAgent:
             if self.search_gateway is not None:
                 from src.core.search import SearchRequest
 
-                gateway_response = await self.search_gateway.search(
-                    SearchRequest(
-                        query=query,
-                        objective="chart_data",
-                        region="cn-cn",
-                        max_results=5,
+                gateway_response = await asyncio.wait_for(
+                    self.search_gateway.search(
+                        SearchRequest(
+                            query=query,
+                            objective="chart_data",
+                            region="cn-cn",
+                            max_results=5,
+                        ),
+                        scope="report_generation",
                     ),
-                    scope="report_generation",
+                    timeout=120,
                 )
                 search_result = {
                     "success": bool(gateway_response.success),
@@ -925,11 +963,17 @@ class ChartPlannerAgent:
             else:
                 from src.skills.search_skill import MultiSearchSkill
 
-                search_result = await MultiSearchSkill().execute(
-                    query=query,
-                    max_results=5,
-                    context={"topic": topic, "purpose": "chart_data"},
+                search_result = await asyncio.wait_for(
+                    MultiSearchSkill().execute(
+                        query=query,
+                        max_results=5,
+                        context={"topic": topic, "purpose": "chart_data"},
+                    ),
+                    timeout=120,
                 )
+        except (asyncio.TimeoutError, TimeoutError):
+            logger.warning("ChartPlanner: search timed out for '%s'; skipping fetch", query)
+            return None
         except Exception as exc:
             logger.warning("ChartPlanner: search provider failed for '%s': %s", query, exc)
             return None

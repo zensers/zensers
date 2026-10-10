@@ -681,11 +681,22 @@ class ReportOrchestrator:
                     logger.warning("Defense rewrite action failed: %s", repair_error)
                     failed_actions.append(action)
                     continue
-                if isinstance(patched, ChapterWriteOutput):
+                if (
+                    isinstance(patched, ChapterWriteOutput)
+                    and str(getattr(patched, "status", "ready") or "ready").lower() == "ready"
+                    and str(patched.content or "").strip()
+                ):
                     current_chapters[chapter_index] = patched
                     applied_rewrites.append(action)
                     successful_actions.append(action)
                 else:
+                    # patch_data already returns the original chapter on a
+                    # failed parse; this guard keeps the audit trail honest
+                    # for non-ChapterWriteOutput results.
+                    logger.warning(
+                        "Defense rewrite produced no usable content for %s; keeping original chapter",
+                        action.get("chapter_id", ""),
+                    )
                     failed_actions.append(action)
             applied_safety_repairs = self._apply_defense_content_safety_repairs(
                 current_chapters, audit,
@@ -1003,7 +1014,15 @@ class ReportOrchestrator:
         if self._chart_planner is None or self._chart_generator is None:
             return report
 
-        from src.services.chart_generator import ChartSpec
+        from src.services.chart_generator import ChartSidecar, ChartSpec
+
+        sidecar = None
+        if self._checkpoint_dir is not None:
+            try:
+                sidecar = ChartSidecar(str(Path(self._checkpoint_dir) / "charts.json"))
+            except Exception:
+                logger.warning("Chart sidecar unavailable; continuing without audit records")
+                sidecar = None
 
         for section in report.get("sections", []):
             if not isinstance(section, dict):
@@ -1044,7 +1063,7 @@ class ReportOrchestrator:
                             section.get("title", ""), rendered.error,
                         )
                         continue
-                    charts.append({
+                    chart_ref = {
                         "path": rendered.image_path,
                         "caption": plan.caption or plan.title,
                         "title": plan.title,
@@ -1053,7 +1072,18 @@ class ReportOrchestrator:
                         "insertion_anchor": plan.insertion_anchor,
                         "anchor_type": plan.anchor_type,
                         "unit": plan.unit,
-                    })
+                    }
+                    if sidecar is not None:
+                        try:
+                            ref = sidecar.append(
+                                section=str(section.get("id") or section.get("title", "")),
+                                spec=spec,
+                                path=rendered.image_path,
+                            )
+                            chart_ref["chart_id"] = ref["chart_id"]
+                        except Exception:
+                            logger.warning("Chart sidecar append failed; continuing with light reference")
+                    charts.append(chart_ref)
                 except Exception as exc:
                     logger.warning(
                         "Chart rendering raised for section '%s': %s",

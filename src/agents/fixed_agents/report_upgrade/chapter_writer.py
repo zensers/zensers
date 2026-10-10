@@ -21,6 +21,26 @@ DATAPOINT_FIELDS = {
 
 logger = logging.getLogger(__name__)
 
+# Chapter prose targets compete with the JSON envelope for the same output
+# budget.  The legacy 8192-token cap truncates long chapters mid-JSON and the
+# parse failure discards the whole chapter.  Raise per-deployment via
+# ZENSERS_CHAPTER_MAX_TOKENS while keeping repo behavior unchanged.
+_CHAPTER_MAX_TOKENS_ENV = "ZENSERS_CHAPTER_MAX_TOKENS"
+
+
+def _chapter_max_tokens() -> int:
+    try:
+        value = int(os.environ.get(_CHAPTER_MAX_TOKENS_ENV, "8192"))
+    except (TypeError, ValueError):
+        return 8192
+    return max(4096, min(32768, value))
+
+
+# A JSON-looking chapter reply that still needs at least this much prose to
+# be trustworthy salvage (below it, prefer the explicit failed status so
+# audits do not mistake scraps for research).
+_SALVAGE_MIN_CHARS = 800
+
 
 class ChapterWriter:
 
@@ -105,6 +125,19 @@ class ChapterWriter:
             "sub_section_id": chapter.sub_section_id,
         }
         patched = self._parse_output(raw_output, chapter_spec)
+        if (
+            str(getattr(patched, "status", "ready") or "ready").lower() != "ready"
+            or not str(patched.content or "").strip()
+        ):
+            # A failed patch is a repair attempt, not a chapter replacement.
+            # Concretely: the defense repair loop must not swap a good chapter
+            # for an empty parse-failed patch and let final assembly render the
+            # '未生成可验证内容' placeholder.  Keep the original chapter intact.
+            logger.warning(
+                "ChapterWriter.patch_data dropped failed/empty patch for chapter %s; keeping original content",
+                chapter.chapter_id,
+            )
+            return chapter
         patched.data_points_used = self._merge_patched_data_points(
             chapter.data_points_used, patched.data_points_used,
             chapter_id=chapter.chapter_id,
@@ -192,7 +225,7 @@ class ChapterWriter:
                 chunks = []
                 try:
                     async for chunk in call_llm_stream(
-                        prompt=prompt, max_tokens=8192, temperature=0.7,
+                        prompt=prompt, max_tokens=_chapter_max_tokens(), temperature=0.7,
                     ):
                         if chunk:
                             chunks.append(str(chunk))
@@ -226,7 +259,7 @@ class ChapterWriter:
         # task-scoped raw-data file.  Tool use is enabled only when the report
         # has an explicit, validated file location.
         if not raw_data_location or not Path(raw_data_location).is_file():
-            result = await call_llm(prompt=prompt, max_tokens=8192, temperature=0.7)
+            result = await call_llm(prompt=prompt, max_tokens=_chapter_max_tokens(), temperature=0.7)
             if not result.get("success"):
                 raise RuntimeError(f"LLM call failed: {result}")
             return result["content"]
@@ -266,13 +299,13 @@ class ChapterWriter:
             prompt=prompt,
             tools=tools,
             tool_handler=_read_raw_json,
-            max_tokens=8192,
+            max_tokens=_chapter_max_tokens(),
             temperature=0.7,
         )
         # Fall back to the legacy call when an OpenAI-compatible endpoint does
         # not support tool calls; the report remains backward compatible.
         if result.get("error") == "llm_tool_call_failed":
-            result = await call_llm(prompt=prompt, max_tokens=8192, temperature=0.7)
+            result = await call_llm(prompt=prompt, max_tokens=_chapter_max_tokens(), temperature=0.7)
         if not result.get("success"):
             raise RuntimeError(f"LLM call failed: {result}")
         return result["content"]
@@ -318,8 +351,13 @@ class ChapterWriter:
                 brace_match = re.search(r'\{.*\}', raw, re.DOTALL)
                 if brace_match:
                     json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', brace_match.group(0))
+                elif raw.lstrip().startswith("{"):
+                    # Truncated JSON has no closing brace, so brace matching
+                    # above fails while the prose is still intact.  Hand the
+                    # whole reply to the prefix-repair loader.
+                    json_str = re.sub(r'[\x00-\x1f\x7f-\x9f]', ' ', raw.lstrip())
             if json_str:
-                data = json.loads(json_str)
+                data = self._load_chapter_json(json_str)
                 if not isinstance(data, dict):
                     raise ValueError("章节输出必须是 JSON 对象")
                 content = self._sanitize_report_content(data.get("content"))
@@ -352,6 +390,13 @@ class ChapterWriter:
         except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             logger.warning(f"Failed to parse structured output: {e}")
 
+        # A reply without a JSON envelope (or one that cannot be repaired)
+        # still often contains the finished chapter as Markdown.  Salvage it
+        # before falling back to the failed placeholder.
+        salvaged = self._salvage_chapter_prose(raw, chapter_spec)
+        if salvaged is not None:
+            return salvaged
+
         # A malformed model response is a quality/diagnostic failure, not
         # report content.  Returning the raw response here used to leak JSON
         # fragments, tool traces, and model instructions into HTML.  Keep the
@@ -370,6 +415,125 @@ class ChapterWriter:
             status="failed",
             error=parse_issue,
         )
+
+    @staticmethod
+    def _load_chapter_json(json_str: str) -> Any:
+        """Progressively repair truncated/envelope-broken chapter JSON.
+
+        Long chapters are routinely cut off mid-JSON by the output budget;
+        without recovery the whole chapter is lost even when the prose is
+        complete.  Every candidate must still decode to a JSON object with a
+        non-empty ``content`` field to be accepted by the caller.
+        """
+        try:
+            return json.loads(json_str)
+        except (json.JSONDecodeError, ValueError):
+            pass
+        repaired = re.sub(r",\s*([}\]])", r"\1", json_str)
+        if repaired != json_str:
+            try:
+                return json.loads(repaired)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        # Truncation repair: keep only the decodable prefix, then close the
+        # open string/object/array scopes in reverse order.
+        decoder = json.JSONDecoder()
+        for end in range(len(json_str), 0, -1):
+            prefix = json_str[:end].rstrip()
+            if len(prefix) < len(json_str) - 256:
+                break
+            closers: List[str] = []
+            in_string = False
+            escaped = False
+            stack: List[str] = []
+            for ch in prefix:
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif ch == "\\":
+                        escaped = True
+                    elif ch == '"':
+                        in_string = False
+                elif ch == '"':
+                    in_string = True
+                elif ch in "{[":
+                    stack.append(ch)
+                elif ch in "}]":
+                    if stack and ((ch == "}" and stack[-1] == "{") or (ch == "]" and stack[-1] == "[")):
+                        stack.pop()
+            if in_string:
+                closers.append('"')
+            for opener in reversed(stack):
+                closers.append("}" if opener == "{" else "]")
+            candidate = prefix + "".join(closers)
+            try:
+                return json.loads(candidate)
+            except (json.JSONDecodeError, ValueError):
+                continue
+        raise ValueError("章节输出缺少可解析的 JSON 对象")
+
+    def _salvage_chapter_prose(self, raw: str, chapter_spec: Dict) -> Any:
+        """Rescue prose from a reply that is not valid chapter JSON.
+
+        The model sometimes answers with bare Markdown (a fenced
+        ```markdown block or plain headings) instead of the requested JSON
+        envelope.  When the prose is long enough to be a real chapter, keep
+        it — flagged in self_check_issues — instead of failing the chapter.
+        Returns None when nothing trustworthy can be salvaged.
+        """
+        text = str(raw or "")
+        fenced = re.search(r"```(?:markdown|md)?\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+        envelope_only = re.match(r'\s*\{\s*"(?:content|title)"\s*:\s*"', text)
+        candidates = [fenced.group(1)] if fenced else []
+        candidates.append(re.sub(r"```json\s*.*?\s*```", "", text, flags=re.DOTALL))
+        if envelope_only:
+            # A truncated reply may open a JSON envelope without ever closing
+            # it; from that point on every chunk is chapter prose.
+            stripped = text[envelope_only.end():]
+            stripped = stripped.replace("\\n", "\n").replace('\\"', '"')
+            candidates.append(stripped.rstrip('"').rstrip())
+        for candidate in candidates:
+            candidate = re.sub(r"^\s*(?:json|markdown|md)\s*", "", candidate)
+            # A candidate that is still envelope-shaped must take the JSON
+            # path, never the prose path.  Without this check a ```json
+            # reply whose decode failed leaks the whole envelope (including
+            # escaped-\\n planning text) into the report body.
+            if candidate.lstrip().startswith("{"):
+                try:
+                    data = self._load_chapter_json(candidate)
+                except (json.JSONDecodeError, ValueError, KeyError, TypeError):
+                    continue
+                if isinstance(data, dict) and str(
+                    self._sanitize_report_content(data.get("content")) or ""
+                ).strip():
+                    manifest_title = str(chapter_spec.get("section_name", "") or "").strip()
+                    content = self._sanitize_report_content(data.get("content"))
+                    return ChapterWriteOutput(
+                        chapter_id=chapter_spec.get("section_id", ""),
+                        title=manifest_title,
+                        content=content,
+                        sub_section_id=str(chapter_spec.get("sub_section_id", "") or ""),
+                        self_check_passed=False,
+                        self_check_issues=["章节输出经容错 JSON 解析恢复"],
+                    )
+                continue
+            if re.search(r'"content"\s*:\s*"', candidate):
+                continue
+            content = self._sanitize_report_content(candidate)
+            if len(content) < _SALVAGE_MIN_CHARS:
+                continue
+            if not re.search(r"^#{1,4}\s+\S", content, re.MULTILINE):
+                continue
+            manifest_title = str(chapter_spec.get("section_name", "") or "").strip()
+            return ChapterWriteOutput(
+                chapter_id=chapter_spec.get("section_id", ""),
+                title=manifest_title,
+                content=content,
+                sub_section_id=str(chapter_spec.get("sub_section_id", "") or ""),
+                self_check_passed=False,
+                self_check_issues=["章节输出未使用 JSON 信封，已抢救 Markdown 正文"],
+            )
+        return None
 
     @staticmethod
     def _sanitize_report_content(content: Any) -> str:

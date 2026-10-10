@@ -572,6 +572,15 @@ class HTMLToWordConverter:
                 elif current_div_class == "toc":
                     # Add page break after TOC
                     doc.add_page_break()
+                elif current_div_class == "toc-page":
+                    # Template uses toc-page for the TOC container
+                    doc.add_page_break()
+                elif current_div_class == "disclaimer-page":
+                    # End-matter: break before and after for a clean tail page
+                    try:
+                        doc.add_page_break()
+                    except Exception:
+                        pass
                 current_div_class = ""
                 continue
             
@@ -613,7 +622,7 @@ class HTMLToWordConverter:
                         cover_title_added = True
                         paragraph_count += 1
                     # TOC title special handling
-                    elif current_div_class == "toc" and level == 2:
+                    elif current_div_class in ("toc", "toc-page") and level == 2:
                         # TOC title: centered, large, letter spacing
                         toc_title = doc.add_paragraph()
                         toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -715,13 +724,18 @@ class HTMLToWordConverter:
             elif elem_type == "list_item":
                 text = element.get("text", "")
                 list_type = element.get("list_type", "ul")
-                
+                li_class = element.get("class", "")
+
                 if text:
-                    if list_type == 'ol':
+                    if current_div_class in ("toc", "toc-page") or "toc-item" in li_class:
+                        self._add_toc_item(doc, text, li_class)
+                        paragraph_count += 1
+                    elif list_type == 'ol':
                         para = doc.add_paragraph(text, style='List Number')
+                        paragraph_count += 1
                     else:
                         para = doc.add_paragraph(text, style='List Bullet')
-                    paragraph_count += 1
+                        paragraph_count += 1
             
             elif elem_type == "table":
                 # Support both combined data and separate headers+rows formats
@@ -825,6 +839,22 @@ class HTMLToWordConverter:
                         paragraph_count += 1
                     except Exception as e:
                         logger.warning(f"Failed to add image {img_path}: {e}")
+
+            # Figure caption: centered gray caption below chart image
+            elif elem_type == "figure_caption":
+                text = element.get("text", "")
+                if text:
+                    from docx.shared import Pt as _Pt
+                    cap_para = doc.add_paragraph()
+                    cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    cap_run = cap_para.add_run(text)
+                    cap_run.font.size = _Pt(8)
+                    cap_run.font.name = "Microsoft YaHei"
+                    cap_run._element.rPr.rFonts.set(qn('w:eastAsia'), "Microsoft YaHei")
+                    rgb = self._parse_color_to_rgb("#666666")
+                    if rgb:
+                        cap_run.font.color.rgb = RGBColor(*rgb)
+                    paragraph_count += 1
         
         # 添加页眉页脚
         if len(doc.sections) > 0:
@@ -994,6 +1024,52 @@ class HTMLToWordConverter:
             if remaining:
                 paragraph.add_run(remaining)
         
+    def _add_toc_item(self, doc, text: str, li_class: str = "") -> None:
+        """Add a TOC entry with dot leader + right-aligned page number.
+
+        Expected text shape from render script: ``01标题...3`` or
+        ``01.1子标题...3`` (number + title + page concatenated by parser).
+        Level-2 items indent 1cm and use smaller gray type.
+        """
+        import re
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_TAB_ALIGNMENT, WD_TAB_LEADER
+        from docx.shared import Pt, RGBColor
+        from docx.oxml.ns import qn
+
+        level2 = "level2" in li_class
+        m = re.match(r"^(\d+(?:\.\d+)?)\s*(.*)$", text.strip(), re.S)
+        num, rest = (m.group(1), m.group(2)) if m else ("", text.strip())
+        mp = re.search(r"(\d+)\s*$", rest)
+        page = mp.group(1) if mp else ""
+        title = rest[: mp.start()].strip() if mp else rest
+
+        para = doc.add_paragraph()
+        pf = para.paragraph_format
+        pf.space_before = Pt(2)
+        pf.space_after = Pt(2)
+        pf.line_spacing = 1.15
+        if level2:
+            para.paragraph_format.left_indent = Pt(28)
+        pf.tab_stops.clear_all() if hasattr(pf.tab_stops, "clear_all") else None
+        try:
+            pf.tab_stops.add_tab_stop(Pt(430), WD_TAB_ALIGNMENT.RIGHT, WD_TAB_LEADER.DOTS)
+        except Exception:
+            pass
+        is_l1 = not level2
+        run = para.add_run(f"{num}  {title}" if num else title)
+        run.font.size = Pt(12 if is_l1 else 10.5)
+        run.font.bold = is_l1
+        run.font.name = "Microsoft YaHei"
+        run._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+        run.font.color.rgb = RGBColor(0x00, 0x33, 0x66) if is_l1 else RGBColor(0x55, 0x55, 0x55)
+        if page:
+            trun = para.add_run(f"\t{page}")
+            trun.font.size = Pt(12 if is_l1 else 10.5)
+            trun.font.bold = is_l1
+            trun.font.name = "Microsoft YaHei"
+            trun._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
+            trun.font.color.rgb = RGBColor(0x00, 0x33, 0x66) if is_l1 else RGBColor(0x55, 0x55, 0x55)
+
     def _parse_color_to_rgb(self, color_str: str):
         """
         Convert color string to RGB tuple

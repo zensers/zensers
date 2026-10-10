@@ -382,6 +382,7 @@ class ContentOrchestrator:
                                     "anchor_type": c.get("anchor_type", "section_end"),
                                     "title": c.get("title", ""),
                                     "chart_type": c.get("chart_type", "bar"),
+                                    "chart_id": c.get("chart_id", ""),
                                 })
                             elif output_format in ("pdf", "docx"):
                                 resolved.append({
@@ -391,6 +392,7 @@ class ContentOrchestrator:
                                     "anchor_type": c.get("anchor_type", "section_end"),
                                     "title": c.get("title", ""),
                                     "chart_type": c.get("chart_type", "bar"),
+                                    "chart_id": c.get("chart_id", ""),
                                 })
                             elif output_dir:
                                 charts_dir = Path(output_dir) / "charts"
@@ -407,6 +409,7 @@ class ContentOrchestrator:
                                     "anchor_type": c.get("anchor_type", "section_end"),
                                     "title": c.get("title", ""),
                                     "chart_type": c.get("chart_type", "bar"),
+                                    "chart_id": c.get("chart_id", ""),
                                 })
                             else:
                                 with open(resolved_path, "rb") as f:
@@ -420,6 +423,7 @@ class ContentOrchestrator:
                                     "anchor_type": c.get("anchor_type", "section_end"),
                                     "title": c.get("title", ""),
                                     "chart_type": c.get("chart_type", "bar"),
+                                    "chart_id": c.get("chart_id", ""),
                                 })
                         except Exception:
                             logger.exception("Chart processing failed")

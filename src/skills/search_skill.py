@@ -21,6 +21,34 @@ from src.core.search_quality_filter import SearchQualityFilter, SourceCredibilit
 
 logger = logging.getLogger(__name__)
 
+# Windows-specific guard: concurrent per-request SSL context creation inside
+# the httpx client constructor can deadlock against crypto store operations
+# running in executor threads (py-spy froze the run inside
+# ssl.create_default_context while Baidu/DDGS threads held TLS handshakes).
+# Build ONE context from the certifi CA bundle and reuse it process-wide.
+_SHARED_SSL_CONTEXT: Optional[Any] = None
+
+
+def _get_shared_ssl_context() -> Any:
+    global _SHARED_SSL_CONTEXT
+    if _SHARED_SSL_CONTEXT is None:
+        import ssl
+        try:
+            import certifi
+            _SHARED_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+        except Exception:
+            _SHARED_SSL_CONTEXT = ssl.create_default_context()
+    return _SHARED_SSL_CONTEXT
+
+
+def _search_thread_timeout() -> float:
+    """Hard ceiling for executor-thread searches (requests cannot be
+    cancelled once submitted, so the awaiting side must time out)."""
+    try:
+        return max(5.0, float(os.environ.get("ZENSERS_SEARCH_THREAD_TIMEOUT", "45")))
+    except (TypeError, ValueError):
+        return 45.0
+
 
 SEARCH_ENGINES = {
     "baidu": {
@@ -496,17 +524,17 @@ class MultiSearchSkill(Skill):
                 MultiSearchSkill._DDGS_CONCURRENCY.release()
 
         try:
-            raw_results = await asyncio.to_thread(sync_search, self._proxy)
+            raw_results = await asyncio.wait_for(asyncio.to_thread(sync_search, self._proxy), timeout=_search_thread_timeout())
         except Exception as proxy_error:
             if self._proxy:
                 logger.warning("DDGS proxy request failed; retrying direct: %s", proxy_error)
-                raw_results = await asyncio.to_thread(sync_search, "")
+                raw_results = await asyncio.wait_for(asyncio.to_thread(sync_search, ""), timeout=_search_thread_timeout())
             else:
                 # Public DDGS backends occasionally time out under burst
                 # traffic. One bounded retry improves availability without
                 # multiplying the search fan-out or changing query scope.
                 logger.warning("DDGS direct request failed; retrying once: %s", proxy_error)
-                raw_results = await asyncio.to_thread(sync_search, "")
+                raw_results = await asyncio.wait_for(asyncio.to_thread(sync_search, ""), timeout=_search_thread_timeout())
         results = []
         for r in raw_results:
             results.append({
@@ -527,7 +555,7 @@ class MultiSearchSkill(Skill):
                 proxies = {"http": self._proxy, "https": self._proxy}
             return searcher.search(query, pn=1, proxies=proxies)
 
-        raw = await asyncio.to_thread(sync_search)
+        raw = await asyncio.wait_for(asyncio.to_thread(sync_search), timeout=_search_thread_timeout())
         if isinstance(raw, dict):
             # baidu-serp-api uses HTTP-like ``200`` for success while older
             # releases/examples used ``0``.  Treat only explicit non-success
@@ -579,7 +607,7 @@ class MultiSearchSkill(Skill):
         ]
 
         try:
-            client_kwargs = {"timeout": self.timeout, "follow_redirects": True}
+            client_kwargs = {"timeout": self.timeout, "follow_redirects": True, "verify": _get_shared_ssl_context()}
             if self._proxy:
                 client_kwargs["proxy"] = self._proxy
             try:

@@ -45,6 +45,8 @@ class HTMLElementParser(HTMLParser):
         "h4": "heading", "h5": "heading", "h6": "heading",
         "p": "paragraph",
         "li": "list_item",
+        "figcaption": "figure_caption",
+        "figure": "figure",
     }
 
     def __init__(self):
@@ -67,6 +69,11 @@ class HTMLElementParser(HTMLParser):
     def handle_starttag(self, tag: str, attrs: List[Tuple[str, Optional[str]]]):
         """Handle start tag."""
         attr_dict = dict(attrs)
+
+        if tag in ('span', 'font', 'small'):
+            # Inline wrapper: track but don't create element boundary
+            self._push_tag(tag, attr_dict)
+            return
         
         if tag == 'table':
             self._in_table = True
@@ -96,7 +103,7 @@ class HTMLElementParser(HTMLParser):
                 self._heading_counters[l] = 0
             self._start_element(tag, attr_dict)
             
-        elif tag in ['div', 'section']:
+        elif tag in ['div', 'section', 'figure']:
             # Emit structural start marker
             cls = attr_dict.get("class", "")
             elem_type = f"{tag}_start"
@@ -116,6 +123,9 @@ class HTMLElementParser(HTMLParser):
                 self._start_element(tag, attr_dict)
             
         elif tag == 'li':
+            self._start_element(tag, attr_dict)
+
+        elif tag == 'figcaption':
             self._start_element(tag, attr_dict)
             
         elif tag in ['thead', 'tbody']:
@@ -152,13 +162,13 @@ class HTMLElementParser(HTMLParser):
     def handle_endtag(self, tag: str):
         """Handle end tag."""
         if tag in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                    'p', 'blockquote',
+                    'p', 'blockquote', 'figcaption',
                     'li', 'ul', 'ol', 'code', 'pre']:
             if tag == 'pre':
                 self._in_preformatted = False
             self._end_element(tag)
             
-        elif tag in ['div', 'section']:
+        elif tag in ['div', 'section', 'figure']:
             # Emit structural end marker
             self._pop_tag(tag)
             elem_type = f"{tag}_end"
@@ -167,6 +177,10 @@ class HTMLElementParser(HTMLParser):
         elif tag in ['strong', 'b', 'em', 'i', 'a']:
             self._pop_tag(tag)
             
+        elif tag in ['span', 'font', 'small']:
+            # Inline wrapper close: text already merged into parent text node
+            self._pop_tag(tag)
+
         elif tag in ['table', 'thead', 'tbody']:
             self._handle_table_end(tag)
             
@@ -195,7 +209,7 @@ class HTMLElementParser(HTMLParser):
         if self._in_table:
             self._current_cell += data
             return
-        
+
         # Get current element context
         if self.elements and self.elements[-1].get("type") == "text":
             self.elements[-1]["content"] += data
@@ -254,10 +268,10 @@ class HTMLElementParser(HTMLParser):
         if not self._pop_tag(tag):
             return
         
-        # Collect any accumulated text
+        # Collect any accumulated text (span text lands as sibling text nodes)
         text = ""
-        if self.elements and self.elements[-1].get("type") == "text":
-            text = self.elements.pop()["content"]
+        while self.elements and self.elements[-1].get("type") == "text":
+            text = self.elements.pop()["content"] + text
         
         # Map raw tag name to semantic type
         semantic_type = self.TAG_TYPE_MAP.get(tag, tag)
@@ -271,6 +285,8 @@ class HTMLElementParser(HTMLParser):
             element["level"] = int(tag[1])
             element["text"] = text.strip()
         elif tag == 'p':
+            element["text"] = text.strip()
+        elif tag == 'figcaption':
             element["text"] = text.strip()
         elif tag == 'li':
             element["text"] = text.strip()

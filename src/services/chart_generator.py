@@ -55,6 +55,74 @@ class ChartType(Enum):
     QUADRANT = "quadrant"
 
 
+def _json_safe_chart_data(data: Any, max_points: int = 60) -> Any:
+    """Return a JSON-safe copy of chart data, capped for sidecar size."""
+    import json as _json
+
+    if isinstance(data, dict):
+        return {str(k): _json_safe_chart_data(v, max_points) for k, v in data.items()}
+    if isinstance(data, (list, tuple)):
+        capped = list(data[:max_points]) if len(data) > max_points else list(data)
+        return [_json_safe_chart_data(v, max_points) for v in capped]
+    if isinstance(data, float):
+        if math.isnan(data) or math.isinf(data):
+            raise ValueError("chart sidecar data must be finite (got NaN/inf)")
+        return data
+    _json.dumps(data, ensure_ascii=False, allow_nan=False)
+    return data
+
+
+class ChartSidecar:
+    """File-backed sidecar store for auditable chart records.
+
+    Main ``research_result.json`` keeps only light references
+    (path/title/anchor); full ``ChartSpec`` records live here so review
+    reads one small file and can re-render via ``from_record``.
+    """
+
+    def __init__(self, path: str):
+        self.path = Path(path)
+        self._records: Dict[str, Dict[str, Any]] = {}
+        if self.path.is_file():
+            import json as _json
+
+            raw = _json.loads(self.path.read_text(encoding="utf-8"))
+            for item in raw.get("charts", []):
+                chart_id = str(item.get("chart_id", ""))
+                if chart_id:
+                    self._records[chart_id] = item
+
+    def append(self, section: str, spec: "ChartSpec", path: str) -> Dict[str, str]:
+        """Persist a spec record; returns the light reference for main JSON."""
+        chart_id = f"{section}_{len(self._records) + 1}_{uuid.uuid4().hex[:8]}"
+        self._records[chart_id] = {
+            "chart_id": chart_id,
+            "section": section,
+            **spec.to_record(),
+            "path": path,
+        }
+        self.save()
+        return {"chart_id": chart_id, "path": path, "title": spec.title}
+
+    def get(self, chart_id: str) -> Optional["ChartSpec"]:
+        """Load a spec back for re-render or audit."""
+        item = self._records.get(chart_id)
+        if not item:
+            return None
+        from_record = ChartSpec.from_record
+        return from_record(item)
+
+    def save(self) -> None:
+        """Write all records to disk."""
+        import json as _json
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(
+            _json.dumps({"charts": list(self._records.values())}, ensure_ascii=False, indent=1),
+            encoding="utf-8",
+        )
+
+
 @dataclass
 class ChartConfig:
     """Chart configuration"""
@@ -112,6 +180,52 @@ class ChartSpec:
             subtitle=" · ".join(subtitle_parts + context_parts),
             unit=self.unit,
             data_ref=self.data_ref,
+        )
+
+    def to_record(self, max_points: int = 60) -> Dict[str, Any]:
+        """Serialize the audited contract to a JSON-safe sidecar record."""
+        data = _json_safe_chart_data(self.data, max_points=max_points)
+        return {
+            "chart_type": self.chart_type.value,
+            "title": self.title,
+            "data": data,
+            "question": self.question,
+            "takeaway": self.takeaway,
+            "subtitle": self.subtitle,
+            "unit": self.unit,
+            "denominator": self.denominator,
+            "data_grain": self.data_grain,
+            "time_range": self.time_range,
+            "source": self.source,
+            "data_ref": self.data_ref,
+            "xlabel": self.xlabel,
+            "ylabel": self.ylabel,
+            "caption": self.caption,
+        }
+
+    @classmethod
+    def from_record(cls, record: Dict[str, Any]) -> "ChartSpec":
+        """Rebuild the audited contract from a sidecar record."""
+        try:
+            chart_type = ChartType(record.get("chart_type", "bar"))
+        except ValueError:
+            chart_type = ChartType.BAR
+        return cls(
+            chart_type=chart_type,
+            title=str(record.get("title", "")),
+            data=dict(record.get("data", {})),
+            question=str(record.get("question", "")),
+            takeaway=str(record.get("takeaway", "")),
+            subtitle=str(record.get("subtitle", "")),
+            unit=str(record.get("unit", "")),
+            denominator=str(record.get("denominator", "")),
+            data_grain=str(record.get("data_grain", "")),
+            time_range=str(record.get("time_range", "")),
+            source=str(record.get("source", "Public data compilation")),
+            data_ref=str(record.get("data_ref", "")),
+            xlabel=str(record.get("xlabel", "")),
+            ylabel=str(record.get("ylabel", "")),
+            caption=str(record.get("caption", "")),
         )
 
 
@@ -467,12 +581,14 @@ class ChartGenerator:
 
     def _set_title(self, ax: plt.Axes, config: ChartConfig, pad: int = 12) -> None:
         """Apply a consistent title and optional evidence subtitle."""
-        ax.set_title(config.title, fontsize=12, fontweight='bold', pad=pad, color=self._char)
         subtitle_parts = [part for part in (config.subtitle, config.unit) if part]
+        if subtitle_parts:
+            pad = max(pad, 28)
+        ax.set_title(config.title, fontsize=12, fontweight='bold', pad=pad, color=self._char)
         if subtitle_parts:
             ax.text(
                 0.0,
-                1.01,
+                1.02,
                 " · ".join(subtitle_parts),
                 transform=ax.transAxes,
                 ha="left",
@@ -489,8 +605,13 @@ class ChartGenerator:
                 text_parts.append(config.caption)
             if config.source:
                 text_parts.append(f"来源：{config.source}")
-            fig.text(0.5, 0.01, " | ".join(text_parts),
-                    ha='center', fontsize=7, color='#888888', style='italic')
+            try:
+                fig.subplots_adjust(bottom=max(fig.subplotpars.bottom, 0.20))
+            except Exception:
+                pass
+            fig.text(0.5, 0.02, " | ".join(text_parts),
+                    ha='center', fontsize=7, color='#888888', style='italic',
+                    wrap=True)
     
     def _save_figure(self, fig: plt.Figure, name: str, config: ChartConfig = None) -> str:
         """Save figure with unique filename"""
@@ -502,7 +623,7 @@ class ChartGenerator:
             f"{name}_{self._generator_id}_{self._chart_counter}.png"
         )
         dpi = config.dpi if config else 150
-        fig.savefig(image_path, dpi=dpi, bbox_inches='tight',
+        fig.savefig(image_path, dpi=dpi, bbox_inches='tight', pad_inches=0.25,
                    facecolor='white', edgecolor='none')
         plt.close(fig)
         self._validate_rendered_image(image_path)
@@ -1009,4 +1130,4 @@ class ChartGenerator:
 
 
 # Export
-__all__ = ["ChartGenerator", "ChartConfig", "ChartSpec", "ChartType", "ChartResult"]
+__all__ = ["ChartGenerator", "ChartConfig", "ChartSpec", "ChartSidecar", "ChartType", "ChartResult"]

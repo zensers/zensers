@@ -105,6 +105,10 @@ from typing import Any, Dict, List, Optional, Union, Callable, Tuple, TYPE_CHECK
 
 logger = logging.getLogger(__name__)
 
+# Persistent chart output directory. Charts must never land in a temp dir or
+# they are lost before the DOCX/HTML render step embeds them.
+_CHART_OUTPUT_DIR = Path(__file__).resolve().parents[3] / "data" / "html_reports" / "charts"
+
 
 def _canonical_runtime_section_id(section_id: Any) -> str:
     """Normalize legacy routing IDs to the runtime section identity.
@@ -1706,7 +1710,7 @@ class ResearchOrchestrator:
                     search_skill=_search_skill,
                     web_scraper_skill=_web_scraper_skill,
                     chart_planner=ChartPlannerAgent(search_gateway=_task_gateway),
-                    chart_generator=ChartGenerator(),
+                    chart_generator=ChartGenerator(output_dir=str(_CHART_OUTPUT_DIR)),
                     checkpoint_dir=output_dir_path,
                 )
 
@@ -3230,7 +3234,7 @@ class ResearchOrchestrator:
                     search_skill=search_skill,
                     web_scraper_skill=web_scraper_skill,
                     chart_planner=ChartPlannerAgent(search_gateway=task_gateway),
-                    chart_generator=ChartGenerator(),
+                    chart_generator=ChartGenerator(output_dir=str(_CHART_OUTPUT_DIR)),
                     checkpoint_dir=output_dir_path,
                 )
 
