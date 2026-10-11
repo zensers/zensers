@@ -64,7 +64,7 @@ Analyze from **at least 4 dimensions**. Each dimension: key findings + conclusio
 - List conclusions from each dimension
 - Check: do they converge or conflict?
 - If conflict: which evidence is stronger and why
-- If converge: "多维度交叉验证一致，置信度提升"
+- If converge: "多维度交叉验证一致，结论可靠性提升"
 
 ### Step 5: Competing Hypotheses
 At least 2 hypotheses. Each: confirm test + refute test from data.
@@ -100,7 +100,7 @@ Each `needs_research` → one data task.
 - **量化可量化的**: 有数据的部分做精确计算
 - **定性推理不可量化的**: 没数据的部分做方向性推理
 - **综合论证**: 将量化和定性结合，得出供需缺口的方向和幅度
-- **标注不确定性**: 每个推算步骤标注置信度
+- **表达不确定性**: 用自然语言说明推算的前提与可靠程度（如「在开工率维持 85% 的前提下」），不得使用「置信度」「factual」等标注字样
 
 注意：产能≠实际供给量。实际供给受开工率、出栏节奏、进口、库存释放等多因素影响。
 
@@ -108,9 +108,9 @@ Each `needs_research` → one data task.
 
 ## OUTPUT FORMAT
 
-### 核心结论（置信度：高/中/低）
+### 核心结论
 ### 数据处置（accepted/rejected/needs_research/conditional）
-### 多维度分析（每个维度：结论 + 数据支撑 + 置信度）
+### 多维度分析（每个维度：结论 + 数据支撑）
 ### 竞争假设验证
 ### 主因/次因 + 替代解释
 ### 趋势与场景
@@ -119,10 +119,13 @@ Each `needs_research` → one data task.
 ### 关键数据对比表
 | 指标 | 数值 | 时期 | 范围 | 性质 | 来源 |
 
+### 输出红线（必须遵守）
+正文、标题与表格中严禁出现任何内部证据标注字样：置信度、factual、inferential、speculative、认知层级、epistemic_level 等。这些仅用于内部推理，不得进入任何输出文本。不确定性一律用自然语言表达。
+
 ---
 
 ## RULES
-- Lead with claim + epistemic status, then mechanism, then numbers
+- Lead with claim + mechanism, then numbers; express epistemic status in natural language (e.g. 大概率/存在不确定性), never with internal tags
 - Cite institution + period + 口径
 - 300 words of powerful argument > 3000 words of vague discussion
 - Do NOT use 行业常识 as evidence

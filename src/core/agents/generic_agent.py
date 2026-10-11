@@ -5652,7 +5652,7 @@ Output ONE type name only: fact_driven / inference_driven / forward_looking / as
                                 f" 证伪条件: {claim.get('falsification','未指定')})"
                             )
                         parts.append("\n**推理要求**:")
-                        parts.append("  - 引用前瞻性判断时必须标注「前瞻性判断，置信度XX，证伪条件：XX」")
+                        parts.append("  - 引用前瞻性判断时用自然语言表达其推测性质与前提（如「预计…，前提是…」），严禁输出「置信度」「证伪条件」等标注字样或括号标签")
                         parts.append("  - 若你掌握的数据可以证伪某前瞻性判断，必须明确指出")
                         parts.append("  - 可基于前瞻性判断推导情景分析（乐观/中性/悲观），但需说明各情景的概率依据")
                     else:
@@ -5704,8 +5704,9 @@ Output ONE type name only: fact_driven / inference_driven / forward_looking / as
             parts.append("\n### 分析输出规范")
             _ect = _cog_strategy["L3"]["evidence_chain_template"]
             parts.append(f"  - 每个关键结论附带：{_ect}")
+            parts.append("  - 输出红线：正文与表格中严禁出现置信度、factual、inferential、speculative、认知层级等内部标注字样——证据等级仅用于内部推理，不确定性一律用自然语言表达")
             if not _is_fact_driven:
-                parts.append("  - 标注每步的认知层级（事实/推断/前瞻）")
+                parts.append("  - 推理时内部区分事实/推断/前瞻层级，正文中用自然语言体现确定性差异，不得出现层级标注字样")
                 parts.append("  - 若存在反对证据，列出并解释为何仍得出该结论")
             # Insight discovery section (type-adaptive)
             _insight_inst = _cog_strategy["L3"].get("insight_instruction")
