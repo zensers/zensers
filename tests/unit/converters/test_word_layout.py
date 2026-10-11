@@ -431,5 +431,45 @@ def test_toc_style_indents(converted):
         assert ind is not None and ind.get(qn('w:leftChars')) == chars, (sid, ind)
 
 
+# ========== 内置尾页（关于 ZENSERS + 免责声明） ==========
+# 缺陷：流水线产出的 HTML 无 disclaimer-page 区块，Word 报告缺尾页
+# 要求：转换器内置尾页，HTML 未提供 disclaimer 区块时自动追加；已含则不重复
+
+
+def test_ending_page_appended_when_missing():
+    """HTML 无 disclaimer 区块 → 自动追加内置尾页（普通段落样式，不进 TOC）"""
+    html = '<html><body><h1>T</h1><p>正文</p></body></html>'
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    texts = [p.text for p in d.paragraphs]
+    assert any('关于 ZENSERS' in t for t in texts)
+    assert any('免责声明' in t for t in texts)
+    assert any('不构成任何投资建议' in t for t in texts)
+    for p in d.paragraphs:
+        if '关于 ZENSERS' in p.text:
+            assert not p.style.name.startswith('Heading')
+            break
+    # 尾页前有分页：文档 page break 计数至少 1
+    brs = d.element.body.findall('.//' + qn('w:br'))
+    page_brs = [b for b in brs if b.get(qn('w:type')) == 'page']
+    assert len(page_brs) >= 1
+
+
+def test_ending_page_not_duplicated_when_html_has_disclaimer():
+    """HTML 已含 disclaimer-page 区块 → 不重复追加，自定义免责内容保留"""
+    html = ('<html><body><h1>T</h1>'
+            '<div class="disclaimer-page"><p>自定义免责内容</p></div>'
+            '</body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    texts = [p.text for p in d.paragraphs]
+    assert not any('关于 ZENSERS' in t for t in texts)
+    assert any('自定义免责内容' in t for t in texts)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

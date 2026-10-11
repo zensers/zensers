@@ -610,15 +610,19 @@ class HTMLToWordConverter:
         sub_stack = []  # 当前章子层编号栈，元素 [tag_depth, number, 直接子标题计数]
         sub_first = 0  # 当前章第一子层已编号个数
         chart_number = 0  # 图表连续编号
-        
+        had_disclaimer = False  # HTML 是否已提供 disclaimer 尾页区块
+
         for elem_idx, element in enumerate(elements):
             elem_type = element.get("type", "")
             next_elem_type = elements[elem_idx + 1].get("type", "") if elem_idx + 1 < len(elements) else ""
-            
+
             # Handle div markers: identify cover/TOC areas
             if elem_type == "div_start":
                 div_class = element.get("class", "")
                 div_stack.append(div_class)
+                # HTML 已提供 disclaimer 区块 → 不再追加内置尾页
+                if "disclaimer" in div_class:
+                    had_disclaimer = True
                 # When cover starts, inject brand head (logo + wordmark + top whitespace)
                 if div_class == "cover-page":
                     # 品牌头：Logo（存在则嵌入）+ 品牌字标
@@ -1101,6 +1105,10 @@ class HTMLToWordConverter:
                         cap_run.font.color.rgb = RGBColor(*rgb)
                     paragraph_count += 1
         
+        # HTML 未提供 disclaimer 区块时追加内置尾页（项目说明 + 免责声明）
+        if not had_disclaimer:
+            self._append_ending_page(doc)
+
         # 添加页眉页脚
         if len(doc.sections) > 0:
             section = doc.sections[0]
@@ -1372,6 +1380,79 @@ class HTMLToWordConverter:
             trun.font.name = "Microsoft YaHei"
             trun._element.rPr.rFonts.set(qn("w:eastAsia"), "Microsoft YaHei")
             trun.font.color.rgb = RGBColor(0x00, 0x33, 0x66) if is_l1 else RGBColor(0x55, 0x55, 0x55)
+
+    def _append_ending_page(self, doc) -> None:
+        """尾页：ZENSERS 项目说明 + 免责声明（普通段落样式，不进 TOC）。
+
+        全部使用 Normal 普通段落（绝不用 Heading 样式），
+        避免污染 TOC \\o "1-4" 目录域。
+        """
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+        from docx.shared import Pt, RGBColor
+        from docx.oxml.ns import qn
+
+        from .word_styles import (
+            FONT_BODY_CN,
+            FONT_HEADING_CN,
+            FONT_WESTERN,
+            GRAY_TEXT,
+            NAVY,
+        )
+
+        doc.add_page_break()
+
+        def _title(text: str, size: float):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = p.add_run(text)
+            r.font.size = Pt(size)
+            r.font.bold = True
+            r.font.name = FONT_WESTERN
+            r._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_HEADING_CN)
+            r.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
+            p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+            p.paragraph_format.space_before = Pt(18)
+            p.paragraph_format.space_after = Pt(8)
+            return p
+
+        def _body(text: str, indent: bool = False):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            r = p.add_run(text)
+            r.font.size = Pt(10.5)
+            r.font.name = FONT_WESTERN
+            r._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
+            # word_styles 无正文色令牌，正文深灰用字面量
+            r.font.color.rgb = RGBColor(*self._parse_color_to_rgb('#333333'))
+            pf = p.paragraph_format
+            pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+            pf.space_after = Pt(6)
+            if indent:
+                pf.left_indent = Pt(21)
+            return p
+
+        _title("关于 ZENSERS", 16)
+        _body("ZENSERS 是一套自动化行业深度研究报告生成系统：基于多智能体协作架构，"
+              "通过真实联网检索、证据链校验、数据图表生成与多轮质量审查，"
+              "输出符合专业研究规范的研究报告。")
+        _body("项目地址：github.com/zensers/zensers")
+        _title("免责声明", 14)
+        _body("1. 本报告由 ZENSERS 系统基于公开信息自动生成，内容仅供研究参考，"
+              "不构成任何投资建议或决策依据。", indent=True)
+        _body("2. 报告数据来自公开渠道整理，系统已尽力核验但不保证其准确性、"
+              "完整性与时效性，引用数据请以原始出处为准。", indent=True)
+        _body("3. 任何机构或个人依据本报告全部或部分内容作出决策的，"
+              "其后果由决策者自行承担。", indent=True)
+        _body("4. 本报告版权归 zensers Research 所有，未经许可不得用于商业转售或再分发。", indent=True)
+
+        # 页脚署名行
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        r = p.add_run("© 2026 zensers Research · github.com/zensers/zensers")
+        r.font.size = Pt(8)
+        r.font.name = FONT_WESTERN
+        r.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
 
     def _parse_color_to_rgb(self, color_str: str):
         """

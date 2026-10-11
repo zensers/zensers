@@ -232,7 +232,10 @@ class TestHTMLToWordConverterParagraphs:
         assert result.success is True
         document = Document(output_path)
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
-        assert paragraphs == ["追加的投资判断：这是只应出现一次的内容。"]
+        # 内置尾页（"关于 ZENSERS" 起）会自动追加；正文部分仍须恰好一段
+        ending_idx = next(i for i, t in enumerate(paragraphs) if '关于 ZENSERS' in t)
+        content_paras = [t for t in paragraphs[:ending_idx] if t.strip()]
+        assert content_paras == ["追加的投资判断：这是只应出现一次的内容。"]
 
     def test_multiple_plain_and_formatted_paragraphs_preserve_cardinality(self, converter, temp_dir):
         """修订反馈中的标题、正文和说明各自只能生成一个 Word 段落"""
@@ -252,7 +255,10 @@ class TestHTMLToWordConverterParagraphs:
 
         assert result.success is True
         paragraphs = [paragraph.text for paragraph in Document(output_path).paragraphs]
-        assert paragraphs == [
+        # 内置尾页（"关于 ZENSERS" 起）会自动追加；正文部分顺序与个数不变
+        ending_idx = next(i for i, t in enumerate(paragraphs) if '关于 ZENSERS' in t)
+        content_paras = [t for t in paragraphs[:ending_idx] if t.strip()]
+        assert content_paras == [
             "追加的投资判断：",
             "这是新增的投资判断。",
             "---",
