@@ -431,34 +431,72 @@ def test_toc_style_indents(converted):
         assert ind is not None and ind.get(qn('w:leftChars')) == chars, (sid, ind)
 
 
-# ========== 内置尾页（关于 ZENSERS + 免责声明） ==========
-# 缺陷：流水线产出的 HTML 无 disclaimer-page 区块，Word 报告缺尾页
-# 要求：转换器内置尾页，HTML 未提供 disclaimer 区块时自动追加；已含则不重复
+# ========== 内置封底（back cover 营销版式） ==========
+# 缺陷：旧尾页（"关于 ZENSERS" + 4 条免责细则）内容单薄、字体大、全部堆在页首
+# 要求：封底版式——内容沉底（顶部大留白）、全部居中、字号上限 13pt（主标语）、
+#       免责压缩为底部一行法律小字；普通段落样式，不进 TOC
 
 
-def test_ending_page_appended_when_missing():
-    """HTML 无 disclaimer 区块 → 自动追加内置尾页（普通段落样式，不进 TOC）"""
+def test_ending_page_backcover_layout():
+    """HTML 无 disclaimer 区块 → 追加封底（bottom-anchored 营销版式，不进 TOC）"""
     html = '<html><body><h1>T</h1><p>正文</p></body></html>'
     out = os.path.join(tempfile.mkdtemp(), 't.docx')
     result = HTMLToWordConverter().convert(html, out)
     assert result.success
     d = Document(out)
-    texts = [p.text for p in d.paragraphs]
-    assert any('关于 ZENSERS' in t for t in texts)
-    assert any('免责声明' in t for t in texts)
-    assert any('不构成任何投资建议' in t for t in texts)
-    for p in d.paragraphs:
-        if '关于 ZENSERS' in p.text:
-            assert not p.style.name.startswith('Heading')
-            break
-    # 尾页前有分页：文档 page break 计数至少 1
+    paras = d.paragraphs
+
+    def first_idx(pred):
+        for i, p in enumerate(paras):
+            if pred(p):
+                return i
+        return -1
+
+    # 1) 自上而下顺序：字标 < 主标语 < 定位语 < 核心能力 < CTA < 法律行
+    idx_mark = first_idx(lambda p: p.text.strip() == 'ZENSERS RESEARCH')
+    idx_slogan = first_idx(lambda p: '自动化行业研究引擎' in p.text)
+    idx_position = first_idx(lambda p: '让每一次行业洞察' in p.text)
+    idx_caps = first_idx(lambda p: p.text.strip() == '核心能力')
+    idx_cta = first_idx(lambda p: 'github.com/zensers/zensers' in p.text)
+    idx_legal = first_idx(lambda p: '不构成投资建议' in p.text)
+    assert 0 <= idx_mark < idx_slogan < idx_position < idx_caps < idx_cta < idx_legal, \
+        (idx_mark, idx_slogan, idx_position, idx_caps, idx_cta, idx_legal)
+
+    # 2) 顶部大留白空段（内容沉底）：space_before >= 380pt，位于字标之前
+    spacers = [i for i, p in enumerate(paras[:idx_mark])
+               if not p.text.strip()
+               and p.paragraph_format.space_before is not None
+               and p.paragraph_format.space_before.pt >= 380]
+    assert spacers, '缺少封底顶部大留白空段（space_before >= 380pt）'
+
+    # 3) 字号上限：封底所有 run 字号 <= 13pt
+    for p in paras[spacers[0]:]:
+        for r in p.runs:
+            if r.font.size is not None:
+                assert r.font.size.pt <= 13.0, (p.text, r.font.size.pt)
+
+    # 4) 无 Heading 样式（不进 TOC）；可见段落全部居中；行距非 EXACTLY
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    for p in paras[spacers[0]:]:
+        assert not p.style.name.startswith('Heading'), p.text
+        if p.text.strip():
+            assert p.alignment == WD_ALIGN_PARAGRAPH.CENTER, p.text
+        assert p.paragraph_format.line_spacing_rule != WD_LINE_SPACING.EXACTLY, p.text
+
+    # 5) 封底特征文案：主标语、能力小标题、CTA、法律要件
+    assert any('自动化行业研究引擎' in p.text for p in paras)
+    assert any('核心能力' in p.text for p in paras)
+    assert any('github.com/zensers/zensers' in p.text for p in paras)
+    assert any('不构成投资建议' in p.text for p in paras)
+
+    # 封底前有分页：文档 page break 计数至少 1
     brs = d.element.body.findall('.//' + qn('w:br'))
     page_brs = [b for b in brs if b.get(qn('w:type')) == 'page']
     assert len(page_brs) >= 1
 
 
 def test_ending_page_not_duplicated_when_html_has_disclaimer():
-    """HTML 已含 disclaimer-page 区块 → 不重复追加，自定义免责内容保留"""
+    """HTML 已含 disclaimer-page 区块 → 不重复追加封底，自定义免责内容保留"""
     html = ('<html><body><h1>T</h1>'
             '<div class="disclaimer-page"><p>自定义免责内容</p></div>'
             '</body></html>')
@@ -467,7 +505,7 @@ def test_ending_page_not_duplicated_when_html_has_disclaimer():
     assert result.success
     d = Document(out)
     texts = [p.text for p in d.paragraphs]
-    assert not any('关于 ZENSERS' in t for t in texts)
+    assert not any('自动化行业研究引擎' in t for t in texts)
     assert any('自定义免责内容' in t for t in texts)
 
 

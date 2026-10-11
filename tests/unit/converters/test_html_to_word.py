@@ -232,8 +232,10 @@ class TestHTMLToWordConverterParagraphs:
         assert result.success is True
         document = Document(output_path)
         paragraphs = [paragraph.text for paragraph in document.paragraphs]
-        # 内置尾页（"关于 ZENSERS" 起）会自动追加；正文部分仍须恰好一段
-        ending_idx = next(i for i, t in enumerate(paragraphs) if '关于 ZENSERS' in t)
+        # 内置封底会自动追加（以封底特征文案为界）；正文部分仍须恰好一段
+        markers = ('ZENSERS RESEARCH', '————', '自动化行业研究引擎', '核心能力')
+        ending_idx = next(i for i, t in enumerate(paragraphs)
+                          if any(m in t for m in markers))
         content_paras = [t for t in paragraphs[:ending_idx] if t.strip()]
         assert content_paras == ["追加的投资判断：这是只应出现一次的内容。"]
 
@@ -255,8 +257,10 @@ class TestHTMLToWordConverterParagraphs:
 
         assert result.success is True
         paragraphs = [paragraph.text for paragraph in Document(output_path).paragraphs]
-        # 内置尾页（"关于 ZENSERS" 起）会自动追加；正文部分顺序与个数不变
-        ending_idx = next(i for i, t in enumerate(paragraphs) if '关于 ZENSERS' in t)
+        # 内置封底会自动追加（以封底特征文案为界）；正文部分顺序与个数不变
+        markers = ('ZENSERS RESEARCH', '————', '自动化行业研究引擎', '核心能力')
+        ending_idx = next(i for i, t in enumerate(paragraphs)
+                          if any(m in t for m in markers))
         content_paras = [t for t in paragraphs[:ending_idx] if t.strip()]
         assert content_paras == [
             "追加的投资判断：",

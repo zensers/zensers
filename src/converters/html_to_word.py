@@ -1400,10 +1400,16 @@ class HTMLToWordConverter:
             trun.font.color.rgb = RGBColor(0x00, 0x33, 0x66) if is_l1 else RGBColor(0x55, 0x55, 0x55)
 
     def _append_ending_page(self, doc) -> None:
-        """尾页：ZENSERS 项目说明 + 免责声明（普通段落样式，不进 TOC）。
+        """封底（back cover）：内容沉底的营销版式（普通段落，不进 TOC）。
 
-        全部使用 Normal 普通段落（绝不用 Heading 样式），
-        避免污染 TOC \\o "1-4" 目录域。
+        顶部大留白把内容块压到页底；全部使用 Normal 普通段落
+        （绝不用 Heading 样式），避免污染 TOC \\o "1-4" 目录域。
+        免责压缩为底部一行法律小字（法律要件已覆盖，原 4 条细则删除）。
+
+        高度预算（A4 可用 ≈698pt = 841.9 − 2×72 边距）：
+        留白段 ~414 + 金线 ~15 + 字标 ~17 + 主标语 ~21 + 定位语 ~27
+        + 核心能力 ~23 + 能力×5 ~74 + CTA ~27 + 法律行 ~20 ≈ 638pt，
+        余量 ≈60pt（≥50pt）。
         """
         from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
         from docx.shared import Pt, RGBColor
@@ -1413,64 +1419,77 @@ class HTMLToWordConverter:
             FONT_BODY_CN,
             FONT_HEADING_CN,
             FONT_WESTERN,
+            GOLD,
             GRAY_TEXT,
             NAVY,
         )
 
-        doc.add_page_break()
+        # ---- 文案常量（集中管理，便于日后修改）----
+        WORDMARK = "ZENSERS RESEARCH"
+        SLOGAN = "ZENSERS · 自动化行业研究引擎"
+        POSITIONING = "让每一次行业洞察，都有真实证据与专业排版"
+        CAPS_TITLE = "核心能力"
+        CAPABILITIES = (
+            "多智能体协作——研究、数据、图表、审查角色化流水线",
+            "真实证据链——结论全部可溯源至公开检索结果",
+            "专业排版——券商级 Word 版式与投行风数据图表",
+            "质量闭环——自动审查-修订-定稿，多轮质量把关",
+            "批量生产——案例流水线一键产出整组行业研究报告",
+        )
+        CTA_TEXT = "GitHub · github.com/zensers/zensers"
+        LEGAL_LINE = ("本报告由 ZENSERS 自动生成，仅供研究参考，"
+                      "不构成投资建议 · © 2026 zensers Research")
 
-        def _title(text: str, size: float):
+        # ---- 版式常量 ----
+        TOP_WHITESPACE_PT = 400  # 顶部大留白：内容块沉底（页底锚定）
+
+        navy = RGBColor(*self._parse_color_to_rgb(NAVY))
+        gray = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+        gold = RGBColor(*self._parse_color_to_rgb(GOLD))
+        dark = RGBColor(*self._parse_color_to_rgb('#333333'))
+
+        def _centered(text: str, size: float, color, *, bold: bool = False,
+                      cn_font: str = FONT_HEADING_CN,
+                      before: float = 0, after: float = 0):
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
             r = p.add_run(text)
             r.font.size = Pt(size)
-            r.font.bold = True
+            r.font.bold = bold
             r.font.name = FONT_WESTERN
-            r._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_HEADING_CN)
-            r.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
-            p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
-            p.paragraph_format.space_before = Pt(18)
-            p.paragraph_format.space_after = Pt(8)
-            return p
-
-        def _body(text: str, indent: bool = False):
-            p = doc.add_paragraph()
-            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-            r = p.add_run(text)
-            r.font.size = Pt(10.5)
-            r.font.name = FONT_WESTERN
-            r._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
-            # word_styles 无正文色令牌，正文深灰用字面量
-            r.font.color.rgb = RGBColor(*self._parse_color_to_rgb('#333333'))
+            r._element.rPr.rFonts.set(qn('w:eastAsia'), cn_font)
+            r.font.color.rgb = color
             pf = p.paragraph_format
             pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
-            pf.space_after = Pt(6)
-            if indent:
-                pf.left_indent = Pt(21)
+            pf.space_before = Pt(before)
+            pf.space_after = Pt(after)
             return p
 
-        _title("关于 ZENSERS", 16)
-        _body("ZENSERS 是一套自动化行业深度研究报告生成系统：基于多智能体协作架构，"
-              "通过真实联网检索、证据链校验、数据图表生成与多轮质量审查，"
-              "输出符合专业研究规范的研究报告。")
-        _body("项目地址：github.com/zensers/zensers")
-        _title("免责声明", 14)
-        _body("1. 本报告由 ZENSERS 系统基于公开信息自动生成，内容仅供研究参考，"
-              "不构成任何投资建议或决策依据。", indent=True)
-        _body("2. 报告数据来自公开渠道整理，系统已尽力核验但不保证其准确性、"
-              "完整性与时效性，引用数据请以原始出处为准。", indent=True)
-        _body("3. 任何机构或个人依据本报告全部或部分内容作出决策的，"
-              "其后果由决策者自行承担。", indent=True)
-        _body("4. 本报告版权归 zensers Research 所有，未经许可不得用于商业转售或再分发。", indent=True)
+        doc.add_page_break()
 
-        # 页脚署名行
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        r = p.add_run("© 2026 zensers Research · github.com/zensers/zensers")
-        r.font.size = Pt(8)
-        r.font.name = FONT_WESTERN
-        r.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
-        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        # 顶部大留白空段（内容沉底）
+        spacer = doc.add_paragraph()
+        pf = spacer.paragraph_format
+        pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+        pf.space_before = Pt(TOP_WHITESPACE_PT)
+        pf.space_after = Pt(0)
+
+        # 短金线（弱化处理）
+        _centered("————", 8, gold, after=4)
+        # 字标
+        _centered(WORDMARK, 10, navy, bold=True, after=4)
+        # 主标语
+        _centered(SLOGAN, 13, navy, bold=True, after=4)
+        # 定位语
+        _centered(POSITIONING, 9.5, gray, cn_font=FONT_BODY_CN, after=14)
+        # 核心能力
+        _centered(CAPS_TITLE, 10, navy, bold=True, before=4, after=6)
+        for cap in CAPABILITIES:
+            _centered(f"· {cap}", 9, dark, cn_font=FONT_BODY_CN, after=3)
+        # CTA
+        _centered(CTA_TEXT, 10, navy, bold=True, before=14)
+        # 法律行（免责压缩为底部一行小字）
+        _centered(LEGAL_LINE, 7.5, gray, cn_font=FONT_BODY_CN, before=10)
 
     def _parse_color_to_rgb(self, color_str: str):
         """
