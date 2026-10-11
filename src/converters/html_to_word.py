@@ -38,6 +38,14 @@ logger = logging.getLogger(__name__)
 # Constants
 MAX_HTML_SIZE = 50 * 1024 * 1024  # 50MB - Maximum HTML content size
 
+# Repository root (src/converters/html_to_word.py → repo root)
+ROOT = Path(__file__).resolve().parent.parent.parent
+
+
+def _logo_path() -> Path:
+    """Return the brand logo path at repository root."""
+    return ROOT / "Logo.png"
+
 
 @dataclass
 class ConversionResult:
@@ -523,7 +531,7 @@ class HTMLToWordConverter:
             ConversionResult
         """
         from docx import Document
-        from docx.shared import Pt, RGBColor, Cm
+        from docx.shared import Pt, RGBColor, Cm, Inches
         from docx.oxml import OxmlElement
         from docx.oxml.ns import qn
         from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
@@ -592,7 +600,9 @@ class HTMLToWordConverter:
         paragraph_count = 0
         current_section_info = {}  # Current section info
         in_cover_area = True  # Whether in cover/TOC area (before first section)
-        current_div_class = ""  # Current div class (cover-page/toc etc.)
+        # div 栈：嵌套 div（cover 内 meta-separator、toc 内 toc-item 等）
+        # 不再互相覆盖上下文；元素为 class 字符串
+        div_stack: list = []
         cover_title_added = False  # Whether cover title has been added
         last_h1_text = ""  # 上一个 H1 去编号文本（重复标题去重）
         h1c = 0  # H1 章计数器（中文数字编号）
@@ -606,32 +616,69 @@ class HTMLToWordConverter:
             
             # Handle div markers: identify cover/TOC areas
             if elem_type == "div_start":
-                current_div_class = element.get("class", "")
-                # When cover starts, add top whitespace (centered slightly above)
-                if current_div_class == "cover-page":
-                    # 3 empty paragraphs ≈ 75px, make title at top 1/3 of page (centered slightly above)
-                    for _ in range(3):
+                div_class = element.get("class", "")
+                div_stack.append(div_class)
+                # When cover starts, inject brand head (logo + wordmark + top whitespace)
+                if div_class == "cover-page":
+                    # 品牌头：Logo（存在则嵌入）+ 品牌字标
+                    logo_path = _logo_path()
+                    if logo_path.is_file():
+                        try:
+                            doc.add_picture(str(logo_path), height=Inches(0.9))
+                        except Exception as pic_err:
+                            logger.warning(f"Failed to embed cover logo: {pic_err}")
+                        else:
+                            logo_para = doc.paragraphs[-1]
+                            logo_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            # 图片段落行距必须单倍（固定行距会把图片裁成细条）
+                            logo_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                            logo_para.paragraph_format.line_spacing = 1.0
+                    brand = doc.add_paragraph()
+                    brand.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = brand.add_run("ZENSERS RESEARCH")
+                    run.font.size = Pt(12)
+                    run.font.bold = True
+                    run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
+                    brand.paragraph_format.space_before = Pt(4)
+                    # 中部留白（6 个空段让标题落在页面中上部）
+                    for _ in range(6):
                         doc.add_paragraph("")
                 continue
             elif elem_type == "div_end":
-                # div end: add page break
-                if current_div_class == "cover-page":
+                # div end: pop stack（空栈防御）→ 仅当弹出的容器是最外层时翻页
+                popped = div_stack.pop() if div_stack else ""
+                if popped == "cover-page" and "cover-page" not in div_stack:
+                    # 品牌尾：金色分隔线 + 报告类型行 + 空行 + 署名行
+                    brand_divider = doc.add_paragraph()
+                    set_paragraph_bottom_border(brand_divider, sz=18, color=GOLD)
+                    brand_line = doc.add_paragraph()
+                    brand_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = brand_line.add_run("行业深度研究报告 · INDUSTRY RESEARCH REPORT")
+                    run.font.size = Pt(11)
+                    run.font.color.rgb = RGBColor(*self._parse_color_to_rgb("#2C4A5A"))
+                    doc.add_paragraph("")
+                    brand_foot = doc.add_paragraph()
+                    brand_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    run = brand_foot.add_run("zensers Research · github.com/sunchaokun/zensers")
+                    run.font.size = Pt(9)
+                    run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
                     # Add page break after cover
                     doc.add_page_break()
-                elif current_div_class == "toc":
+                elif (popped in ("toc", "toc-page")
+                      and not any(c in ("toc", "toc-page") for c in div_stack)):
                     # Add page break after TOC
                     doc.add_page_break()
-                elif current_div_class == "toc-page":
-                    # Template uses toc-page for the TOC container
-                    doc.add_page_break()
-                elif current_div_class == "disclaimer-page":
+                elif popped == "disclaimer-page" and "disclaimer-page" not in div_stack:
                     # End-matter: break before and after for a clean tail page
                     try:
                         doc.add_page_break()
                     except Exception:
                         pass
-                current_div_class = ""
                 continue
+
+            # div 栈上下文：cover/toc 判断兼容任意层级的嵌套子 div
+            in_cover = "cover-page" in div_stack
+            in_toc = any(c in ("toc", "toc-page") for c in div_stack)
             
             # Handle section markers: add page break before entering body area
             if elem_type == "section_start":
@@ -654,7 +701,7 @@ class HTMLToWordConverter:
                 
                 if text:
                     # Cover title special handling
-                    if current_div_class == "cover-page" and level == 1 and not cover_title_added:
+                    if in_cover and level == 1 and not cover_title_added:
                         # Cover main title: large, centered, dark color
                         title_para = doc.add_paragraph()
                         title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -671,7 +718,7 @@ class HTMLToWordConverter:
                         cover_title_added = True
                         paragraph_count += 1
                     # TOC title special handling
-                    elif current_div_class in ("toc", "toc-page") and level == 2:
+                    elif in_toc and level == 2:
                         # TOC title: centered, large, letter spacing
                         toc_title = doc.add_paragraph()
                         toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -685,7 +732,7 @@ class HTMLToWordConverter:
                         doc.add_paragraph("")
                         # 插入真 TOC 域（打开文档时由 updateFields 自动刷新页码）
                         toc_field_para = doc.add_paragraph()
-                        add_field_run(toc_field_para, 'TOC \\o "1-3" \\h \\z \\u')
+                        add_field_run(toc_field_para, 'TOC \\o "1-4" \\h \\z \\u')
                         paragraph_count += 2
                     else:
                         # Normal heading：研究写作模板的内部结构标题
@@ -739,7 +786,7 @@ class HTMLToWordConverter:
                     para = doc.add_paragraph()
                     
                     # Cover area special handling
-                    if current_div_class == "cover-page":
+                    if in_cover:
                         para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         
                         # Badge style (RESEARCH REPORT)
@@ -792,7 +839,7 @@ class HTMLToWordConverter:
                             self._add_formatted_run(para, text, element.get("formats", []))
                     
                     # TOC area special handling
-                    elif current_div_class in ("toc", "toc-page"):
+                    elif in_toc:
                         # All paragraphs in TOC are TOC items (template rendering ensures this)
                         run = para.add_run(text)
                         run.font.size = Pt(12)
@@ -819,7 +866,7 @@ class HTMLToWordConverter:
                 li_class = element.get("class", "")
 
                 if text:
-                    if current_div_class in ("toc", "toc-page"):
+                    if in_toc:
                         # 目录区已插入真 TOC 域，跳过手写目录条目
                         pass
                     elif "toc-item" in li_class:

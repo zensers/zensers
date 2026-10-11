@@ -381,5 +381,37 @@ def test_chart_number_paragraph_single_spacing():
     assert hit, '未找到图表题注段落'
 
 
+# ========== 用户验收缺陷回归（第三轮） ==========
+# 缺陷1：div 嵌套覆盖 current_div_class → cover/toc 分页与样式分支全部失效（改 div 栈）
+# 缺陷2：封面缺品牌元素（Logo + ZENSERS RESEARCH 字标 + 品牌尾分隔线/署名）
+# 缺陷3：TOC 域漏掉 Heading 4 小节（1-3 → 1-4）
+
+
+def test_cover_and_toc_page_breaks_with_nested_divs():
+    html = ('<html><body>'
+            '<div class="cover-page"><h1>测试报告标题</h1>'
+            '<div class="meta-separator"></div><p class="meta">2026-10-11</p></div>'
+            '<div class="toc"><h2>目 录</h2>'
+            '<div class="toc-item"><a href="#s0">章一</a></div>'
+            '<div class="toc-item"><a href="#s1">章二</a></div></div>'
+            '<h1>一、正文章</h1><p>正文</p></body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    # 分页数：cover 尾 1 + toc 尾 1 = 至少 2
+    brs = d.element.body.findall('.//' + qn('w:br'))
+    page_brs = [b for b in brs if b.get(qn('w:type')) == 'page']
+    assert len(page_brs) >= 2
+    # toc-item 文本不重复输出（真 TOC 域已生成）
+    texts = [p.text for p in d.paragraphs]
+    assert not any(t.strip() == '章一' for t in texts)
+    # 品牌元素
+    assert any('ZENSERS RESEARCH' in p.text for p in d.paragraphs)
+    assert any('行业深度研究报告' in p.text for p in d.paragraphs)
+    # TOC 级别 1-4
+    assert 'TOC \\o "1-4"' in d.element.xml
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
