@@ -54,6 +54,42 @@ def test_empty_and_none_safe():
     assert S('判断(inferential,置信度:低)') == '判断'
 
 
+def test_strip_square_bracket_and_mixed_paren():
+    # 方括号形态（真实样本）
+    assert S('梳理。[置信度：中等——结构判断逻辑充分，证据充分]后续') == '梳理。后续'
+    assert S('突出。[inferential]') == '突出。'
+    assert S('突出。[factual]') == '突出。'
+    # 标注混在来源括号内 → 剥标注、保留来源
+    assert S('140家（据拓端统计，factual）') == '140家（据拓端统计）'
+    assert S('（factual，机构报告）口径') == '（机构报告）口径'
+    # 来源口径本身仍保留
+    assert S('140家（据拓端统计）') == '140家（据拓端统计）'
+
+
+def test_render_covers_data_points_and_top_fields():
+    agent = DocumentGenerationAgent(agent_id='t')
+    rr = {'sections': [{'title': 't', 'content': '（factual）', 'key_conclusions': ['结论（inferential）'],
+                        'data_points': [{'metric': '出货量（factual）', 'epistemic_level': 'factual'}]}],
+          'exec_summary': '摘要（inferential）', 'conclusion': '结论（置信度：中）',
+          'claims': [{'text': '声明（inferential）'}]}
+    out = agent._strip_annotations_for_render(rr)
+    dp = out['sections'][0]['data_points'][0]
+    assert dp['epistemic_level'] == '' and dp['metric'] == '出货量'
+    assert out['sections'][0]['key_conclusions'] == ['结论']
+    assert out['exec_summary'] == '摘要' and out['conclusion'] == '结论'
+    assert out['claims'][0]['text'] == '声明'
+
+
+def test_render_keeps_section_key_findings_and_top_findings():
+    """既有 key_findings 净化（section 级 + 顶层）不回退"""
+    agent = DocumentGenerationAgent(agent_id='t')
+    rr = {'sections': [{'key_findings': ['发现（factual）']}],
+          'key_findings': ['顶层发现（inferential）']}
+    out = agent._strip_annotations_for_render(rr)
+    assert out['sections'][0]['key_findings'] == ['发现']
+    assert out['key_findings'] == ['顶层发现']
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

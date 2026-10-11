@@ -2293,20 +2293,35 @@ class DocumentGenerationAgent(FixedAgent):
 
     @staticmethod
     def _strip_epistemic_annotations(text: str) -> str:
-        """剥离内部证据标注（置信度/factual/inferential），供渲染期净化正文与标题。"""
+        """剥离内部证据标注（置信度/factual/inferential），供渲染期净化正文与标题。
+
+        覆盖方括号形态（[置信度：…]/[inferential]）、复合括号（（来源，factual）→（来源））、
+        全角/半角括号的独立与组合标注；合法来源口径标注（（拓端口径））不误删。
+        """
         if not text:
             return text
         patterns = [
-            re.compile(r'[（(]\s*(?:inferential|factual|inference)\s*[，,]\s*置信度\s*[：:]\s*[高中低][高中低]*\s*[）)]'),
-            re.compile(r'[（(]\s*置信度\s*[：:]\s*[高中低][高中低]*(?:\s*[、，,]\s*[高中低][高中低]*)*\s*[）)]'),
-            re.compile(r'[（(]\s*(?:factual|inferential|inference)\s*[）)]', re.IGNORECASE),
+            # [置信度：中等——结构判断逻辑充分，…] 整体剥离
+            (re.compile(r'\[置信度\s*[：:][^\[\]]{0,80}\]'), ''),
+            # [inferential] / [factual] 整体剥离
+            (re.compile(r'\[\s*(?:factual|inferential|inference)\s*\]', re.IGNORECASE), ''),
+            # （据拓端统计，factual）→（据拓端统计）：剥标注、保留来源前缀
+            (re.compile(r'([（(][^（）()]{0,40})[，,]\s*(?:factual|inferential|inference)\s*(?=[）)])'), r'\1'),
+            # （factual，据拓端统计）→（据拓端统计）：剥标注、保留来源后缀
+            (re.compile(r'([（(])\s*(?:factual|inferential|inference)\s*[，,](?=[^（）()]{0,40}[）)])'), r'\1'),
+            # 组合形式（inferential，置信度：中）
+            (re.compile(r'[（(]\s*(?:inferential|factual|inference)\s*[，,]\s*置信度\s*[：:]\s*[高中低][高中低]*\s*[）)]'), ''),
+            # （置信度：中）/（置信度：中高）/（置信度：中、高）
+            (re.compile(r'[（(]\s*置信度\s*[：:]\s*[高中低][高中低]*(?:\s*[、，,]\s*[高中低][高中低]*)*\s*[）)]'), ''),
+            # （factual）/（inferential）
+            (re.compile(r'[（(]\s*(?:factual|inferential|inference)\s*[）)]', re.IGNORECASE), ''),
         ]
         result = str(text)
         changed = True
         while changed:
             changed = False
-            for p in patterns:
-                new = p.sub('', result)
+            for p, repl in patterns:
+                new = p.sub(repl, result)
                 if new != result:
                     result, changed = new, True
         return result
@@ -2314,8 +2329,9 @@ class DocumentGenerationAgent(FixedAgent):
     def _strip_annotations_for_render(self, research_result):
         """渲染期净化 research_result 中的内部证据标注（仅内存对象，不影响落盘审计原件）。
 
-        对每个 section 的 title/content 及 key_findings 逐项剥离
-        （factual）/（inferential）/（置信度：中）等内部标注。
+        覆盖 section 的 title/content、key_findings/key_conclusions、
+        data_points（含 epistemic_level 表格列置空与字符串字段剥离），
+        以及顶层 key_findings/exec_summary/conclusion/claims[].text。
         """
         if not isinstance(research_result, dict):
             return research_result
@@ -2334,12 +2350,35 @@ class DocumentGenerationAgent(FixedAgent):
                         self._strip_epistemic_annotations(f) if isinstance(f, str) else f
                         for f in findings
                     ]
+                conclusions = section.get("key_conclusions")
+                if isinstance(conclusions, list):
+                    section["key_conclusions"] = [
+                        self._strip_epistemic_annotations(x) if isinstance(x, str) else x
+                        for x in conclusions
+                    ]
+                for dp in section.get("data_points") or []:
+                    if not isinstance(dp, dict):
+                        continue
+                    # 表格列不再渲染 factual（机构报告）等内部证据等级
+                    if "epistemic_level" in dp:
+                        dp["epistemic_level"] = ""
+                    for k, v in dp.items():
+                        if isinstance(v, str):
+                            dp[k] = self._strip_epistemic_annotations(v)
         top_findings = research_result.get("key_findings")
         if isinstance(top_findings, list):
             research_result["key_findings"] = [
                 self._strip_epistemic_annotations(f) if isinstance(f, str) else f
                 for f in top_findings
             ]
+        for fld in ("exec_summary", "conclusion"):
+            if isinstance(research_result.get(fld), str):
+                research_result[fld] = self._strip_epistemic_annotations(research_result[fld])
+        claims = research_result.get("claims")
+        if isinstance(claims, list):
+            for c in claims:
+                if isinstance(c, dict) and isinstance(c.get("text"), str):
+                    c["text"] = self._strip_epistemic_annotations(c["text"])
         return research_result
 
     @staticmethod
