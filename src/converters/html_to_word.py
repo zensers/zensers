@@ -532,6 +532,7 @@ class HTMLToWordConverter:
             NAVY,
             GOLD,
             COVER_META_FILL,
+            cn_num,
             TABLE_HEADER_FILL,
             TABLE_ZEBRA_FILL,
             STRUCTURAL_HEADINGS,
@@ -569,7 +570,7 @@ class HTMLToWordConverter:
         word_section.left_margin = Cm(MARGIN_LEFT_RIGHT_CM)
         word_section.right_margin = Cm(MARGIN_LEFT_RIGHT_CM)
 
-        # Normal 样式：中文宋体 + 西文 Times New Roman 10.5pt，行距固定 22pt，段后 0
+        # Normal 样式：中文宋体 + 西文 Times New Roman 10.5pt，单倍行距，段后 0
         style = doc.styles['Normal']
         font = style.font
         font.name = FONT_WESTERN
@@ -581,12 +582,12 @@ class HTMLToWordConverter:
             rgb = self._parse_color_to_rgb(body_color)
             if rgb:
                 font.color.rgb = RGBColor(*rgb)
-        # Set paragraph spacing: 固定行距 22pt（券商研报正文规范）
+        # Set paragraph spacing: Normal 保持单倍行距。固定 22pt 行距下沉到正文
+        # 段落显式设置（全局 EXACTLY 会裁切封面 28pt 标题/目录 18pt 标题等大字号段落）
         pf = style.paragraph_format
         pf.space_before = Pt(0)
         pf.space_after = Pt(0)
-        pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        pf.line_spacing = Pt(22)
+        pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
 
         paragraph_count = 0
         current_section_info = {}  # Current section info
@@ -594,6 +595,7 @@ class HTMLToWordConverter:
         current_div_class = ""  # Current div class (cover-page/toc etc.)
         cover_title_added = False  # Whether cover title has been added
         last_h1_text = ""  # 上一个 H1 去编号文本（重复标题去重）
+        h1c = h2c = h3c = 0  # 标题自动编号计数器（H1 中文数字 / H2、H3 点分）
         chart_number = 0  # 图表连续编号
         
         for elem_idx, element in enumerate(elements):
@@ -696,6 +698,27 @@ class HTMLToWordConverter:
                         else:
                             if level == 1:
                                 last_h1_text = stripped_text
+                            # 自动编号（先去重判断再编号，去重命中的 H2 不消耗 h2c；
+                            # 编号基于剥离旧编号后的文本，真 TOC 域自动带出编号）：
+                            # H1 "一、二、…" / H2 "1.1" / H3 "1.1.1"，level>=4 不编号；
+                            # 首个 H1 之前的前置区标题（h1c==0）不编号
+                            if level == 1:
+                                h1c += 1
+                                h2c = h3c = 0
+                                text = f"{cn_num(h1c)}、{stripped_text}"
+                            elif level == 2 and h1c > 0:
+                                h2c += 1
+                                h3c = 0
+                                text = f"{h1c}.{h2c} {stripped_text}"
+                            elif level == 3 and h1c > 0:
+                                h3c += 1
+                                if h2c == 0:
+                                    # 本章尚无 H2：降级为两段编号 "1.1"，
+                                    # 并占用 H2 编号槽位（后续 H2 从 1.2 继续）
+                                    text = f"{h1c}.{h3c} {stripped_text}"
+                                    h2c = h3c
+                                else:
+                                    text = f"{h1c}.{h2c}.{h3c} {stripped_text}"
                             safe_level = max(1, min(level, 9))
                             heading = doc.add_heading(text, level=safe_level)
                             self._apply_heading_style(heading, safe_level, styles, css_class)
@@ -771,11 +794,15 @@ class HTMLToWordConverter:
                         # TOC item bottom dashed border effect (simulated with dots)
                         # python-docx doesn't support dashed borders, skip for now
                     
-                    # Other areas: 正文段落（两端对齐 + 首行缩进 2 字符）
+                    # Other areas: 正文段落（两端对齐 + 首行缩进 2 字符 + 固定 22pt 行距）
                     else:
                         self._add_formatted_run(para, text, element.get("formats", []))
                         para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
                         set_first_line_indent_chars(para)
+                        # 券商研报正文固定行距 22pt（EXACTLY），只在正文段落显式下沉设置
+                        body_pf = para.paragraph_format
+                        body_pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+                        body_pf.line_spacing = Pt(22)
 
                     paragraph_count += 1
 
@@ -794,9 +821,12 @@ class HTMLToWordConverter:
                         paragraph_count += 1
                     elif list_type == 'ol':
                         para = doc.add_paragraph(text, style='List Number')
+                        # 列表段落显式单倍行距，防止继承残留的固定行距
+                        para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
                         paragraph_count += 1
                     else:
                         para = doc.add_paragraph(text, style='List Bullet')
+                        para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
                         paragraph_count += 1
             
             elif elem_type == "table":
@@ -963,6 +993,9 @@ class HTMLToWordConverter:
                         chart_title = element.get("title") or element.get("alt") or ""
                         num_para = doc.add_paragraph()
                         num_para.paragraph_format.keep_with_next = True
+                        # 题注段落显式单倍行距（不设大纲级别，保持不进 TOC）
+                        num_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        num_para.paragraph_format.line_spacing = 1.0
                         num_run = num_para.add_run(
                             f"图表 {chart_number}：{chart_title}" if chart_title else f"图表 {chart_number}"
                         )

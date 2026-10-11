@@ -11,6 +11,8 @@ Word 排版重构验收测试
 5. 三线表（无 Table Grid、tblBorders、跨页重复表头 tblHeader）
 6. 正文段首行缩进 w:firstLineChars="200"
 7. 重复标题去重（H2 与前一 H1 去编号同文 → 跳过）
+8. Normal 单倍行距 + 正文段显式固定 22pt 行距（行距下沉，防大字号裁切）
+9. 标题自动编号（H1"一、"、H2"1.1"、H3"1.1.1"）
 """
 
 import os
@@ -145,9 +147,9 @@ class TestHeadingTypography:
         assert bottom.get(qn("w:color")) == "1A2744"
 
     def test_duplicate_h2_after_h1_skipped(self, converted):
-        """<h1>01 产业链全景</h1><h2>产业链全景</h2> 只产出 1 个正文 heading"""
+        """<h1>01 产业链全景</h1><h2>产业链全景</h2> 只产出 1 个正文 heading（H1 重编号）"""
         headings = [p.text for p in converted.paragraphs if p.style.name.startswith("Heading")]
-        assert headings == ["01 产业链全景"]
+        assert headings == ["一、产业链全景"]
 
     def test_cover_title_not_styled_as_heading(self, converted):
         """封面主标题不占用 Heading 样式，也不更新去重状态"""
@@ -166,7 +168,7 @@ class TestBodyParagraph:
         assert ind.get(qn("w:firstLineChars")) == "200"
         assert ind.get(qn("w:firstLine")) == "420"
 
-    def test_normal_style_simsun_exact_22pt(self, converted):
+    def test_normal_style_simsun_font(self, converted):
         normal = converted.styles["Normal"]
         assert normal.font.size.pt == 10.5
         assert normal.font.name == "Times New Roman"
@@ -247,8 +249,8 @@ def test_structural_headings_skipped():
     assert result.success
     d = Document(out)
     heads = [p.text.strip() for p in d.paragraphs if p.style.name.startswith('Heading')]
-    assert '论证与分析' not in heads and '核心结论' not in heads
-    assert '合法小节' in heads
+    assert not any('论证与分析' in h or '核心结论' in h for h in heads)
+    assert any('合法小节' in h for h in heads)
     assert any('正文内容A' in p.text for p in d.paragraphs)  # 内容保留
 
 
@@ -301,6 +303,72 @@ def test_table_autofit_and_zebra():
 
     for row in t.rows:
         assert row._tr.trPr is not None and row._tr.trPr.find(qn('w:cantSplit')) is not None
+
+
+# ========== 用户验收缺陷回归（第二轮） ==========
+# 缺陷A：封面 28pt 标题/目录 18pt 标题被 Normal 固定行距（EXACTLY 22pt）裁切
+#        → Normal 回归单倍，固定 22pt 只在正文段落显式设置（行距下沉）
+# 缺陷B：正文标题无编号 → H1"一、"、H2"1.1"、H3"1.1.1" 自动编号（真 TOC 域自动带出）
+# 缺陷C："图表 N"题注段落行距加固为显式单倍（保持无大纲级别，不进 TOC）
+
+
+def test_body_exact_spacing_but_normal_single(converted):
+    """Normal 恢复单倍行距；固定 22pt（exact 440 twips）只在正文段落显式设置"""
+    # Normal 单倍（不再全局 EXACTLY，封面 28pt 标题/目录标题不再被裁切）
+    assert converted.styles['Normal'].paragraph_format.line_spacing_rule != WD_LINE_SPACING.EXACTLY
+    # 找一个正文段（非标题非列表非空）断言显式 exact 440 twips
+    hit = False
+    for p in converted.paragraphs:
+        if p.style.name == 'Normal' and p.text.strip() and not p._element.findall('.//' + qn('w:drawing')):
+            p_pr = p._element.find(qn('w:pPr'))
+            sp = p_pr.find(qn('w:spacing')) if p_pr is not None else None
+            if sp is not None and sp.get(qn('w:lineRule')) == 'exact':
+                assert sp.get(qn('w:line')) == '440'
+                hit = True
+                break
+    assert hit, '未找到显式 exact 22pt 行距的正文段落'
+
+
+def test_heading_auto_numbering():
+    """标题自动编号：前置区 H2 不编号；H3 无 H2 时两段编号；结构性标题不消耗编号"""
+    html = ('<html><body>'
+            '<h2>前置说明</h2>'
+            '<h1>行业概览</h1>'
+            '<h3>直接小节</h3>'
+            '<h2>市场规模</h2>'
+            '<h3>细分口径</h3>'
+            '<h3>论证与分析</h3>'
+            '<h1>竞争格局</h1>'
+            '</body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    seq = [p.text.strip() for p in d.paragraphs if p.style.name.startswith('Heading')]
+    assert seq == ['前置说明', '一、行业概览', '1.1 直接小节', '1.2 市场规模',
+                   '1.2.1 细分口径', '二、竞争格局'], seq
+
+
+def test_chart_number_paragraph_single_spacing():
+    """'图表 N' 题注段落显式单倍行距，且不设大纲级别（不进 TOC）"""
+    tmp = tempfile.mkdtemp()
+    img = os.path.join(tmp, 'ok.png')
+    Image.new('RGB', (400, 300), 'white').save(img)
+    html = f'<html><body><h1>T</h1><img src="{img}"/><p>tail</p></body></html>'
+    out = os.path.join(tmp, 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    hit = False
+    for p in d.paragraphs:
+        if p.text.strip().startswith('图表 '):
+            p_pr = p._p.pPr
+            sp = p_pr.find(qn('w:spacing')) if p_pr is not None else None
+            assert sp is not None, '图表题注段落缺少显式行距'
+            assert sp.get(qn('w:lineRule')) == 'auto'
+            assert p_pr.find(qn('w:outlineLvl')) is None
+            hit = True
+    assert hit, '未找到图表题注段落'
 
 
 if __name__ == "__main__":

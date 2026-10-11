@@ -63,6 +63,22 @@ def strip_heading_number(text: str) -> str:
     return _HEADING_NUMBER_PATTERN.sub("", text or "", count=1).strip()
 
 
+# ========== 标题自动编号 ==========
+_CN_NUM = "一二三四五六七八九十"
+
+
+def cn_num(n: int) -> str:
+    """阿拉伯数 → 中文数字（H1 章序号用）：1→"一"、10→"十"、11→"十一"。
+
+    仅处理 1..19 的中文数字习惯写法，≥20 回退阿拉伯数字；n 需 >= 1。
+    """
+    if n <= 10:
+        return _CN_NUM[n - 1]
+    if n < 20:
+        return "十" + (_CN_NUM[n - 11] if n > 10 else "")
+    return str(n)
+
+
 def _make_border_element(tag: str, val: str, sz: int, color: str) -> "OxmlElement":
     """构造单个边框元素（w:top/w:bottom/w:left/...）。"""
     el = OxmlElement(f"w:{tag}")
