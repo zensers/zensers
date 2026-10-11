@@ -50,14 +50,15 @@ async def collect_issues_async(research_result: Dict[str, Any], case: CaseConfig
                            "severity": "high", "detail": "L3证据缺URL"})
 
     # 3) 主题漂移（领域词密度：每千字命中 <1.0 记 issue）
-    for s in research_result.get("sections", []):
-        content = s.get("content", "")
-        hits = sum(content.count(k) for k in case.domain_keywords)
-        density = hits / max(1, len(content) / 1000)
-        if density < 1.0:
-            issues.append({"code": "topic_drift", "section": s.get("title", ""),
-                           "severity": "medium",
-                           "detail": f"领域词密度 {density:.2f}"})
+    if case.domain_keywords:
+        for s in research_result.get("sections", []):
+            content = s.get("content", "")
+            hits = sum(content.count(k) for k in case.domain_keywords)
+            density = hits / max(1, len(content) / 1000)
+            if density < 1.0:
+                issues.append({"code": "topic_drift", "section": s.get("title", ""),
+                               "severity": "medium",
+                               "detail": f"领域词密度 {density:.2f}"})
 
     # 4) 图表
     for s in research_result.get("sections", []):
@@ -69,10 +70,10 @@ async def collect_issues_async(research_result: Dict[str, Any], case: CaseConfig
             if not c.get("caption"):
                 issues.append({"code": "chart_no_caption", "section": s.get("title", ""),
                                "severity": "low", "detail": c.get("title", "")})
-            png = Path(str(c.get("path", "")))
-            if str(c.get("path", "")) and not png.is_file():
+            png_path = str(c.get("path") or "")
+            if png_path and not Path(png_path).is_file():
                 issues.append({"code": "chart_missing", "section": s.get("title", ""),
-                               "severity": "high", "detail": str(png)})
+                               "severity": "high", "detail": png_path})
 
     # 5) docx 抽验（draft 存在时）
     draft = case_dir / "report_draft.docx"

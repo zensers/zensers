@@ -48,3 +48,35 @@ def test_report_saved(tmp_path):
     saved = Path(tmp_path / "review_report.json")
     data = json.loads(saved.read_text(encoding="utf-8"))
     assert data["round"] == 1 and "issues" in data
+
+
+def test_metadata_issues(tmp_path):
+    rr = _rr()
+    rr["formal_complete"] = False
+    rr["quality_gate_status"] = "blocked"
+    rr["defense_audit"] = {"issues": [{"code": "missing_source_url", "section": "s1"}]}
+    report = collect_issues(rr, CASE, tmp_path)
+    codes = [i["code"] for i in report["issues"]]
+    assert {"formal_incomplete", "quality_gate", "missing_source_url"} <= set(codes)
+    assert report["pass"] is False   # missing_source_url 为 high
+
+
+def test_chart_no_caption(tmp_path):
+    charts = [{"title": "t", "path": str(tmp_path / "x.png"), "source": "ok"}]
+    (tmp_path / "x.png").write_bytes(b"png")
+    report = collect_issues(_rr(charts), CASE, tmp_path)
+    assert any(i["code"] == "chart_no_caption" for i in report["issues"])
+    assert report["pass"] is True     # 仅 low 不 fail
+
+
+def test_none_path_no_false_positive(tmp_path):
+    charts = [{"title": "t", "path": None, "source": "ok", "caption": "n"}]
+    report = collect_issues(_rr(charts), CASE, tmp_path)
+    assert not any(i["code"] == "chart_missing" for i in report["issues"])
+
+
+def test_empty_keywords_skip_drift(tmp_path):
+    case = CaseConfig(case_id="c2", topic="中国量子计算产业深度研究报告",
+                      domain_keywords=[])
+    report = collect_issues(_rr(content="无关键词内容" * 300), case, tmp_path)
+    assert not any(i["code"] == "topic_drift" for i in report["issues"])
