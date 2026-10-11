@@ -49,10 +49,10 @@ async def apply_fixes(issues: List[Dict[str, Any]], research_result: Dict[str, A
         code = issue.get("code")
         if code == "chart_leak":
             for s in sections:
-                s["charts"] = [c for c in (s.get("charts") or [])
-                               if str(c.get("source", "")).strip().lower()
-                               not in _LEAK_SOURCES]
-            rerun |= {"charts", "render"}
+                for c in (s.get("charts") or []):
+                    if str(c.get("source", "")).strip().lower() in _LEAK_SOURCES:
+                        c["source"] = "公开资料整理"
+            rerun |= {"render"}
         elif code == "chart_missing":
             for s in sections:
                 s["charts"] = [c for c in (s.get("charts") or [])

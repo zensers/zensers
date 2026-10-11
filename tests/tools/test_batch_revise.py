@@ -8,16 +8,17 @@ OK_CHART = {"title": "t2", "path": "y.png", "source": "GGII"}
 
 
 @pytest.mark.asyncio
-async def test_chart_leak_dropped():
+async def test_chart_leak_fixes_metadata():
     rr = {"sections": [{"title": "s", "content": "c" * 100,
-                        "charts": [LEAK_CHART, OK_CHART]}]}
+                        "charts": [dict(LEAK_CHART), OK_CHART]}]}
     async def no_llm(prompt, **kw):
         raise AssertionError("chart_leak 不应触发 LLM")
     rerun = await apply_fixes(
         [{"code": "chart_leak", "section": "s", "severity": "high", "detail": ""}],
         rr, llm_fn=no_llm)
-    assert rr["sections"][0]["charts"] == [OK_CHART]
-    assert rerun == {"charts", "render"}
+    assert rr["sections"][0]["charts"][0]["source"] == "公开资料整理"
+    assert rr["sections"][0]["charts"][1] == OK_CHART   # 合法图不动
+    assert rerun == {"render"}
 
 
 @pytest.mark.asyncio
