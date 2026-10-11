@@ -2293,28 +2293,40 @@ class DocumentGenerationAgent(FixedAgent):
 
     @staticmethod
     def _strip_epistemic_annotations(text: str) -> str:
-        """剥离内部证据标注（置信度/factual/inferential），供渲染期净化正文与标题。
+        """剥离内部证据标注（factual/inferential/inference/speculative/置信度）。
 
-        覆盖方括号形态（[置信度：…]/[inferential]）、复合括号（（来源，factual）→（来源））、
-        全角/半角括号的独立与组合标注；合法来源口径标注（（拓端口径））不误删。
+        最终版净化器，覆盖：
+        - 方括号整体：[tag] / [tag，置信度：中高] / [置信度：中等——prose]
+        - 圆括号标签开头：（tag）/（tag，...）/（tag：...）→ 整括号删除
+        - 圆括号置信度开头：（置信度：高，关键假设：...）→ 整括号删除
+        - 标签收尾复合括号：（据拓端统计，factual）→（据拓端统计）
+        - markdown 表格单元格裸标签：| factual（机构报告） | → | （机构报告） |
+          （仅当单元格起始且格内无小写英文才删，保护 "on-device inference" 等术语）
+        合法引用（[1]/[PDF]/[新战略咨询]）与来源口径标注不误删。
         """
         if not text:
             return text
+        tag = r'(?:factual|inferential|inference|speculative)'
+        # 表格裸标签仅限标注词：inference 在真实数据中只作英文术语出现
+        # （如"端侧 inference"），排除以免误删术语格
+        bare_tag = r'(?:factual|inferential|speculative)'
         patterns = [
-            # [置信度：中等——结构判断逻辑充分，…] 整体剥离
-            (re.compile(r'\[置信度\s*[：:][^\[\]]{0,80}\]'), ''),
-            # [inferential] / [factual] 整体剥离
-            (re.compile(r'\[\s*(?:factual|inferential|inference)\s*\]', re.IGNORECASE), ''),
-            # （据拓端统计，factual）→（据拓端统计）：剥标注、保留来源前缀
-            (re.compile(r'([（(][^（）()]{0,40})[，,]\s*(?:factual|inferential|inference)\s*(?=[）)])'), r'\1'),
-            # （factual，据拓端统计）→（据拓端统计）：剥标注、保留来源后缀
-            (re.compile(r'([（(])\s*(?:factual|inferential|inference)\s*[，,](?=[^（）()]{0,40}[）)])'), r'\1'),
-            # 组合形式（inferential，置信度：中）
-            (re.compile(r'[（(]\s*(?:inferential|factual|inference)\s*[，,]\s*置信度\s*[：:]\s*[高中低][高中低]*\s*[）)]'), ''),
-            # （置信度：中）/（置信度：中高）/（置信度：中、高）
-            (re.compile(r'[（(]\s*置信度\s*[：:]\s*[高中低][高中低]*(?:\s*[、，,]\s*[高中低][高中低]*)*\s*[）)]'), ''),
-            # （factual）/（inferential）
-            (re.compile(r'[（(]\s*(?:factual|inferential|inference)\s*[）)]', re.IGNORECASE), ''),
+            # 方括号整体：[tag] / [tag，置信度：中高] / [tag，置信度：中等偏低——prose]
+            (re.compile(r'\[\s*' + tag + r'\s*(?:[，,][^\[\]]{0,80})?\]'), ''),
+            # 方括号：[置信度：中等——结构判断逻辑充分，...]
+            (re.compile(r'\[\s*置信度\s*[：:][^\[\]]{0,80}\]'), ''),
+            # 圆括号以标签开头：（tag）/（tag，...）/（tag：...）→ 整括号删除
+            (re.compile(r'[（(]\s*' + tag + r'\s*(?:[：:][^（）()]{0,100}|[，,][^（）()]{0,100})?[）)]'), ''),
+            # 圆括号以置信度开头：（置信度：高，关键假设：电机国产化率达标）→ 整括号删除
+            (re.compile(r'[（(]\s*置信度\s*[：:][^（）()]{0,100}[）)]'), ''),
+            # 圆括号标签收尾：（据拓端统计，factual）→（据拓端统计）
+            # （逗号在捕获组外：删"，tag"，保留来源与原闭括号）
+            (re.compile(r'([（(][^（）()]{0,60}?)[，,]\s*' + tag + r'\s*([）)])'), r'\1\2'),
+            # markdown 表格裸标签（仅标注词）：
+            #   独占格 | inferential | → |  |（尾随空白保留在原位）
+            (re.compile(r'(?m)((?:^|\|)[ \t]*)' + bare_tag + r'(?=[ \t]*(?:\||$))'), r'\1'),
+            #   标签+来源括号 | factual（机构报告） | → | （机构报告） |
+            (re.compile(r'(?m)((?:^|\|)[ \t]*)' + bare_tag + r'(?=[ \t]*[（(])'), r'\1'),
         ]
         result = str(text)
         changed = True
