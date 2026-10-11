@@ -113,3 +113,13 @@ def test_load_research_rejects_non_list_sections(tmp_path):
     (tmp_path / "research_result.json").write_text(
         '{"sections": "x"}', encoding="utf-8")
     assert stages.load_research_result(tmp_path) == {}
+
+
+def test_absolutize_chart_srcs(tmp_path):
+    charts = tmp_path / "charts"
+    charts.mkdir()
+    html = '<html><body><img src="charts/a.png"/><img src="https://x/b.png"/><img src="charts/sub/c.png"/></body></html>'
+    out = stages._absolutize_chart_srcs(html, tmp_path)
+    assert f'src="{(tmp_path / "charts" / "a.png").as_posix()}"' in out
+    assert 'src="https://x/b.png"' in out            # 外链不动
+    assert f'src="{(tmp_path / "charts" / "sub" / "c.png").as_posix()}"' in out

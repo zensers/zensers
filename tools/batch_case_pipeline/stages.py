@@ -25,6 +25,13 @@ def _sanitize_filename(name: str, fallback: str) -> str:
     return cleaned or fallback
 
 
+def _absolutize_chart_srcs(html: str, case_dir: Path) -> str:
+    """DOCX 转换契约要求绝对图片路径（相对 src 按 CWD 解析会丢图）。"""
+    base = (case_dir / "charts").as_posix().rstrip("/")
+    return re.sub(r'(<img\b[^>]*\bsrc=")(?!https?://|data:|file:)charts/([^"]*)(")',
+                  rf'\1{base}/\2\3', html, flags=re.IGNORECASE)
+
+
 def load_research_result(case_dir: Path) -> Dict[str, Any]:
     """读取并校验 research_result.json；缺失/损坏/空 sections 返回 {}。"""
     path = case_dir / "research_result.json"
@@ -108,6 +115,10 @@ class DefaultCtx:
             raise RuntimeError(f"HTML 渲染失败: {html_res.get('error')}")
         html_path = Path(html_res["document_path"])
         html_path.replace(case_dir / "report.html")
+        report_html = case_dir / "report.html"
+        html_text = _absolutize_chart_srcs(
+            report_html.read_text(encoding="utf-8"), case_dir)
+        report_html.write_text(html_text, encoding="utf-8")
 
         req2 = DocumentGenerationRequest.from_dict({
             "action": "produce_document",
