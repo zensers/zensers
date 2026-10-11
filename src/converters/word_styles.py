@@ -174,6 +174,44 @@ def add_field_run(paragraph, instr: str, placeholder: str = ""):
     return runs
 
 
+def define_toc_styles(doc, indents=(0, 1, 2, 2)):
+    """显式定义 TOC1-4 段落样式缩进（leftChars 字符单位），覆盖 Word 内置默认。
+
+    TOC 域更新后 Word 会套用内置 TOC1-4 样式（默认约 2 字符/层缩进），
+    此处预定义样式使二级与一级缩进差控制在 1-2 字符。
+
+    indents[i] = TOC(i+1) 的左缩进字符数。
+    """
+    styles_el = doc.styles.element
+    existing = {st.get(qn('w:styleId')) for st in styles_el.findall(qn('w:style'))}
+    for i, chars in enumerate(indents, start=1):
+        sid = f"TOC{i}"
+        if sid in existing:
+            st = next(s for s in styles_el.findall(qn('w:style'))
+                      if s.get(qn('w:styleId')) == sid)
+        else:
+            st = OxmlElement('w:style')
+            st.set(qn('w:type'), 'paragraph')
+            st.set(qn('w:styleId'), sid)
+            name = OxmlElement('w:name')
+            name.set(qn('w:val'), f'toc {i}')
+            st.append(name)
+            based = OxmlElement('w:basedOn')
+            based.set(qn('w:val'), 'Normal')
+            st.append(based)
+            styles_el.append(st)
+        p_pr = st.find(qn('w:pPr'))
+        if p_pr is None:
+            p_pr = OxmlElement('w:pPr')
+            st.append(p_pr)
+        ind = p_pr.find(qn('w:ind'))
+        if ind is None:
+            ind = OxmlElement('w:ind')
+            p_pr.append(ind)
+        ind.set(qn('w:leftChars'), str(chars * 100))
+        ind.set(qn('w:left'), str(chars * 210))  # twips 兜底（10.5pt ≈ 210/字符）
+
+
 def set_update_fields_on_open(doc) -> None:
     """settings.xml 写入 w:updateFields val=true，Word/WPS 打开时自动刷新域。"""
     settings = doc.settings.element

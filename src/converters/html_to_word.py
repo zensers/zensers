@@ -555,6 +555,7 @@ class HTMLToWordConverter:
             CONTENT_WIDTH_CM,
             add_field_run,
             compute_image_width_cm,
+            define_toc_styles,
             mark_header_row_repeat,
             mark_row_cant_split,
             set_first_line_indent_chars,
@@ -1182,6 +1183,9 @@ class HTMLToWordConverter:
 
         # 打开文档时自动刷新域（TOC/PAGE/NUMPAGES 页码）
         set_update_fields_on_open(doc)
+
+        # 显式定义 TOC1-4 样式缩进，覆盖 Word 内置默认（约 2 字符/层）
+        define_toc_styles(doc)
 
         # Atomic save
         logger.info(f"[CONVERT] Saving document, total paragraphs: {paragraph_count}")

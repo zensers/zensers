@@ -413,5 +413,23 @@ def test_cover_and_toc_page_breaks_with_nested_divs():
     assert 'TOC \\o "1-4"' in d.element.xml
 
 
+# ========== 用户验收缺陷回归（第四轮） ==========
+# 缺陷：TOC 域更新后 Word 套用内置 TOC1-4 样式默认缩进（约 2 字符/层），
+#       显式定义样式缩进，二级与一级缩进差控制在 1-2 字符
+
+
+def test_toc_style_indents(converted):
+    """TOC1-4 段落样式显式定义缩进（leftChars 字符单位），覆盖 Word 内置默认"""
+    styles = {st.get(qn('w:styleId')): st
+              for st in converted.styles.element.findall(qn('w:style'))}
+    for sid, chars in (('TOC1', '0'), ('TOC2', '100'), ('TOC3', '200'), ('TOC4', '200')):
+        st = styles.get(sid)
+        assert st is not None, f'{sid} 未定义'
+        p_pr = st.find(qn('w:pPr'))
+        assert p_pr is not None, f'{sid} 缺少 pPr'
+        ind = p_pr.find(qn('w:ind'))
+        assert ind is not None and ind.get(qn('w:leftChars')) == chars, (sid, ind)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
