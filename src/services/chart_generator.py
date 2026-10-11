@@ -599,8 +599,11 @@ class ChartGenerator:
                     linewidth=0.8, zorder=0)
         ax.tick_params(direction='out', labelsize=theme.AXIS, colors=theme.TEXT)
 
-    def _set_title(self, fig: plt.Figure, config: ChartConfig) -> None:
-        """fig 级左对齐标题块：标题 + 副标题 + 金色短下划线，顶部预留头部空间。"""
+    def _set_title(self, fig: plt.Figure, config: ChartConfig) -> float:
+        """fig 级左对齐标题块：标题 + 副标题 + 金色短下划线，顶部预留头部空间。
+
+        返回下划线所在 fig 纵坐标，供图例等元素在其下方排布。
+        """
         title_y = 0.95
         fig.text(0.01, title_y, config.title, ha='left', va='top',
                  fontsize=theme.TITLE, fontweight='bold', color=theme.TEXT)
@@ -616,6 +619,7 @@ class ChartGenerator:
             linewidth=2, solid_capstyle='butt',
         ))
         fig.subplots_adjust(top=0.82)
+        return underline_y
 
     def _add_annotations(self, fig: plt.Figure, config: ChartConfig) -> None:
         """底部注释：左下“资料来源：…”，右下“单位：…”，caption 置于来源行上方。"""
@@ -840,15 +844,37 @@ class ChartGenerator:
         ymin, ymax = ax.get_ylim()
         vrange = (ymax - ymin) or 1.0
 
+        # 先建双轴并绘制折线，取其量程用于柱顶/折线点的邻近判断
+        ax2 = ax.twinx()
+        clean_line = [v if v is not None else np.nan for v in line_values]
+        ax2.plot(x, clean_line, 'o-', color=theme.ACCENT, linewidth=2.5,
+                markersize=7, label=line_label, zorder=4)
+        line_ymin, line_ymax = ax2.get_ylim()
+        line_range = (line_ymax - line_ymin) or 1.0
+
+        # 折线只标注首末两个有效点
+        valid_idx = [i for i, v in enumerate(line_values)
+                     if v is not None and not (isinstance(v, float) and np.isnan(v))]
+
+        # 折线首末点与柱顶在轴分数上过近时，柱标签下压避让
+        colliding = set()
+        for i in valid_idx:
+            if i < len(bar_values) and bar_values[i] is not None:
+                bar_frac = (float(bar_values[i]) - ymin) / vrange
+                line_frac = (float(line_values[i]) - line_ymin) / line_range
+                if abs(line_frac - bar_frac) < 0.08:
+                    colliding.add(i)
+
         bar_unit = data.get('bar_unit', '')
-        for bar, val in zip(bars, bar_values):
+        for i, (bar, val) in enumerate(zip(bars, bar_values)):
             label = self._format_value(val, bar_unit)
             if abs(bar.get_height()) >= vrange * 0.08:
-                # 柱内顶部白字（柱顶下方 0.02*range 处）
+                # 柱内顶部白字（柱顶下方 0.02*range 处，碰撞时加深避让）
+                depth = 0.06 if i in colliding else 0.02
                 if val >= 0:
-                    y_pos, va = bar.get_height() - vrange * 0.02, 'top'
+                    y_pos, va = bar.get_height() - vrange * depth, 'top'
                 else:
-                    y_pos, va = bar.get_height() + vrange * 0.02, 'bottom'
+                    y_pos, va = bar.get_height() + vrange * depth, 'bottom'
                 ax.text(bar.get_x() + bar.get_width()/2, y_pos, label,
                         ha='center', va=va, fontsize=theme.VALUE_LABEL, color='white')
             else:
@@ -860,20 +886,13 @@ class ChartGenerator:
                 ax.text(bar.get_x() + bar.get_width()/2, y_pos, label,
                         ha='center', va=va, fontsize=theme.VALUE_LABEL, color=theme.TEXT)
 
-        ax2 = ax.twinx()
-        clean_line = [v if v is not None else np.nan for v in line_values]
-        ax2.plot(x, clean_line, 'o-', color=theme.ACCENT, linewidth=2.5,
-                markersize=7, label=line_label, zorder=4)
-
         # 折线只标注首末两个有效点
-        valid_idx = [i for i, v in enumerate(line_values)
-                     if v is not None and not (isinstance(v, float) and np.isnan(v))]
         for i in valid_idx:
             if i == valid_idx[0] or i == valid_idx[-1]:
                 label = self._format_value(
                     line_values[i], '%' if data.get('line_unit') == '%' else '')
                 ax2.annotate(label, (x[i], line_values[i]), textcoords="offset points",
-                            xytext=(0, 10), ha='center',
+                            xytext=(0, 14), ha='center',
                             fontsize=theme.VALUE_LABEL, color=theme.ACCENT)
 
         ax2.set_ylabel(line_label, color=theme.ACCENT, fontsize=theme.AXIS)
@@ -884,15 +903,18 @@ class ChartGenerator:
         lines1, labels1 = ax.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         handles = lines1 + lines2
+        underline_y = self._set_title(fig, config)
         if handles:
-            ax.legend(handles, labels1 + labels2, fontsize=theme.AXIS, frameon=False,
-                      ncol=max(len(handles), 1), loc='upper left')
+            # 图例横排置于标题块下划线之下，避免与折线峰值/柱体碰撞
+            fig.legend(handles, labels1 + labels2, fontsize=theme.AXIS, frameon=False,
+                       ncol=max(len(handles), 1), loc='upper left',
+                       bbox_to_anchor=(0.01, underline_y - 0.012))
+            fig.subplots_adjust(top=0.76)
 
         ax.set_xticks(x)
         ax.set_xticklabels(years, fontsize=theme.AXIS)
         ax.set_ylabel(config.ylabel or bar_label, fontsize=theme.AXIS)
         self._style_axes(ax, grid_axis='y', keep_left=True)
-        self._set_title(fig, config)
 
         return self._save_figure(fig, f"barline_{hash(config.title) % 10000}", config)
     
@@ -1056,6 +1078,8 @@ class ChartGenerator:
         ax.set_ylim(0, max(max_val * 1.1, 100))
         # 标题块已在 fig 级，副标题不进入极坐标区；不再使用 tight_layout 覆盖布局
         self._set_title(fig, config)
+        # 极坐标整体下移，给顶部类目标签留出与标题块的间距
+        fig.subplots_adjust(top=0.74, bottom=0.14)
 
         return self._save_figure(fig, f"radar_{hash(config.title) % 10000}", config)
     
