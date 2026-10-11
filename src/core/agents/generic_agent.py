@@ -6654,7 +6654,7 @@ Output ONE type name only: fact_driven / inference_driven / forward_looking / as
                             xlabel=plan.xlabel,
                             ylabel=plan.ylabel,
                             caption=plan.caption,
-                            source=plan.subtitle or f"{topic}研究数据",
+                            source=getattr(plan, "source", "") or "公开资料整理",
                         )
                         render_result = chart_generator.generate(config)
                         if render_result.success and render_result.image_path:

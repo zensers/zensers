@@ -17,7 +17,7 @@ class TestSaveFigureDPI:
         import shutil
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
-    def test_default_dpi_is_150(self):
+    def test_default_dpi_is_200(self):
         config = ChartConfig(
             chart_type=ChartType.BAR,
             title="DPI Test",
@@ -55,7 +55,7 @@ class TestSaveFigureDPI:
             title="Test",
             data={"categories": ["A"], "values": [1]},
         )
-        assert config.dpi == 150
+        assert config.dpi == 200
 
     def test_pie_with_custom_dpi(self):
         config = ChartConfig(

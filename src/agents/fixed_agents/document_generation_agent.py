@@ -1403,7 +1403,7 @@ class DocumentGenerationAgent(FixedAgent):
                         xlabel=plan.xlabel,
                         ylabel=plan.ylabel,
                         caption=plan.caption,
-                        source=plan.subtitle or plan.data_source or topic,
+                        source=plan.source or "公开资料整理",
                         unit=plan.unit,
                     ))
                     if rendered.success and rendered.image_path:
@@ -1415,7 +1415,7 @@ class DocumentGenerationAgent(FixedAgent):
                             "caption": plan.caption,
                             "section_title": title,
                             "data_ref": plan.data_source,
-                            "source": plan.subtitle or plan.data_source or topic,
+                            "source": plan.source or "公开资料整理",
                             "unit": plan.unit,
                             "insertion_anchor": plan.insertion_anchor,
                             "anchor_type": plan.anchor_type or "section_end",

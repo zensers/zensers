@@ -39,7 +39,7 @@ class TestChartStyleConfig:
     def test_defaults(self):
         cfg = ChartStyleConfig()
         assert cfg.figsize == (5.0, 3.5)
-        assert cfg.dpi == 150
+        assert cfg.dpi == 200
         assert cfg.transparent_bg is False
 
     def test_pptx_overrides(self):
@@ -69,7 +69,8 @@ class TestDOCXStrategy:
     def test_chart_style_not_transparent(self):
         s = self.strategy.get_chart_style()
         assert s.transparent_bg is False
-        assert s.figsize == (5.0, 3.5)
+        assert s.figsize == (9.0, 5.2)
+        assert s.dpi == 200
 
     def test_quality_standard_has_paragraph_checks(self):
         q = self.strategy.get_quality_standard()

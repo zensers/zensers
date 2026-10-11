@@ -3,6 +3,8 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any
 from enum import Enum
 
+from src.services import chart_theme
+
 
 class OutputFormat(Enum):
     DOCX = "docx"
@@ -14,7 +16,7 @@ class OutputFormat(Enum):
 @dataclass
 class ChartStyleConfig:
     figsize: tuple = (5.0, 3.5)
-    dpi: int = 150
+    dpi: int = 200
     title_fontsize: int = 12
     label_fontsize: int = 10
     tick_fontsize: int = 9
@@ -96,14 +98,15 @@ class DOCXStrategy(FormatStrategy):
         )
 
     def get_chart_style(self) -> ChartStyleConfig:
+        # 消费 chart_theme 设计令牌，与全局图表标准（DPI=200）保持单一配置源
         return ChartStyleConfig(
-            figsize=(5.0, 3.5),
-            dpi=150,
-            title_fontsize=12,
-            label_fontsize=10,
-            tick_fontsize=9,
+            figsize=chart_theme.FIGSIZE_WIDE,
+            dpi=chart_theme.DPI,
+            title_fontsize=int(chart_theme.TITLE),
+            label_fontsize=int(chart_theme.AXIS),
+            tick_fontsize=int(chart_theme.AXIS),
             transparent_bg=False,
-            theme_name="default",
+            theme_name="report_chart_theme",
         )
 
     def get_quality_standard(self) -> QualityStandard:

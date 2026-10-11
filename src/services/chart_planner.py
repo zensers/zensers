@@ -57,6 +57,8 @@ class ChartPlan:
     anchor_type: str
     unit: str
     data_source: str = "content"
+    # 数据的真实机构来源（区别于 data_source 的出处类型 content/fetched）
+    source: str = ""
 
 
 _CHART_TYPE_MAP = {ct.value: ct for ct in ChartType}
@@ -142,7 +144,8 @@ _JSON_SCHEMA = """
         {{
             "chart_type": "bar",
             "title": "具体语义标题，传达分析洞察",
-            "subtitle": "数据来源说明",
+            "subtitle": "统计口径与单位说明（如'单季度值/累计值'）",
+            "source": "该图表数据的真实机构来源，如'高工机器人产业研究所（GGII）'，无确切来源则填'公开资料整理'",
             "data_strategy": "raw",
             "data_ref": [],
             "data": {{
@@ -209,7 +212,14 @@ _SYSTEM_PROMPT = f"""你是一个专业的数据可视化规划师，同时也�
 3. **宁缺毋滥**：每章节最多2张图表。不要为了画图而画图。
 4. **语义优先**：图表标题必须传达具体洞察，如"比亚迪股价跑输沪深300达25个百分点"，而非"股价对比"。
 5. **量纲一致**：同一图表中的数值必须量纲统一。不同量级的数据必须归一化(data_strategy)。
-6. **类型匹配**：根据数据特征选择图表类型，而非一律柱状图。
+6. **类型匹配**：根据数据特征选择图表类型，而非一律柱状图。选型优先级：趋势→line/bar_line；构成→donut(≤6类)/hbar；对比→bar；相关→scatter；多维权衡→radar/quadrant。reason 字段必须附一句话选型理由。
+7. **口径一致（硬约束）**：同一图表的数据点必须同期可比，季度值与累计值禁止同柱混排；确需对比时必须按口径分组呈现，并在 subtitle 中显式标注各期口径。
+
+## 字段职责分工
+
+- subtitle：只写统计口径与单位说明（如"单季度值/累计值"、"亿元"、"同比增速"），禁止写数据来源。
+- source：该图表数据的真实机构来源（如"高工机器人产业研究所（GGII）"、"中汽协"）；无确切来源则填"公开资料整理"。
+- caption：只放图注（口径备注、样本说明等补充解释），不承担来源与单位职责。
 
 ## 图表类型选择规则
 
@@ -1098,6 +1108,8 @@ class ChartPlannerAgent:
         if not data or self._has_empty_chart_data(data, chart_type):
             return None
 
+        source = str(chart_raw.get("source", "") or "").strip()
+
         return ChartPlan(
             chart_type=chart_type,
             title=str(chart_raw.get("title", ""))[:100],
@@ -1112,6 +1124,7 @@ class ChartPlannerAgent:
             anchor_type=str(chart_raw.get("anchor_type", "section_end")),
             unit=str(chart_raw.get("unit", ""))[:20],
             data_source="fetched" if has_empty_data else "content",
+            source=source or "公开资料整理",
         )
 
     def _has_empty_chart_data(self, data: Dict, chart_type: ChartType) -> bool:
@@ -1493,10 +1506,31 @@ class ChartPlannerAgent:
                 continue
             if not self._check_value_range(plan):
                 continue
+            self._warn_mixed_period(plan)
             validated.append(plan)
 
         validated.sort(key=lambda p: p.confidence, reverse=True)
         return validated[:max_per_section]
+
+    def _warn_mixed_period(self, plan: ChartPlan) -> None:
+        """软校验：类目同时出现季度与累计口径时记 warning（不阻断，供质量检查消费）。"""
+        data = plan.data
+        if not isinstance(data, dict):
+            return
+        categories = data.get("categories") or data.get("labels") or data.get("years") or []
+        texts = [str(c) for c in categories if isinstance(c, (str, int))]
+        if len(texts) < 2:
+            return
+        has_quarter = any(re.search(r"Q[1-4]|季度", t, re.IGNORECASE) for t in texts)
+        has_cumulative = any(
+            ("累计" in t) or re.search(r"\d{1,2}\s*[-–~]\s*\d{1,2}\s*月", t) for t in texts
+        )
+        if has_quarter and has_cumulative:
+            logger.warning(
+                "ChartPlanner: chart '%s' mixes quarterly and cumulative periods; "
+                "subtitle must label each period's grain",
+                plan.title,
+            )
 
     def _check_unit_consistency(self, plan: ChartPlan) -> bool:
         data = plan.data

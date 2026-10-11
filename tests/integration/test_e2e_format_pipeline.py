@@ -268,7 +268,7 @@ class TestE2EFormatStrategyIntegration:
     def test_docx_chart_dpi_matches_strategy(self):
         strategy = get_format_strategy("docx")
         style = strategy.get_chart_style()
-        assert style.dpi == 150, "DOCX strategy should specify 150 DPI"
+        assert style.dpi == 200, "DOCX strategy should specify 200 DPI"
         assert style.transparent_bg is False, "DOCX charts should not be transparent"
     
     def test_pdf_chart_dpi_matches_strategy(self):

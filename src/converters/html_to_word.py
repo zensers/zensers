@@ -523,37 +523,78 @@ class HTMLToWordConverter:
             ConversionResult
         """
         from docx import Document
-        from docx.shared import Pt, RGBColor
+        from docx.shared import Pt, RGBColor, Cm
         from docx.oxml.ns import qn
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-        
+        from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+
+        from .word_styles import (
+            NAVY,
+            GOLD,
+            COVER_META_FILL,
+            TABLE_HEADER_FILL,
+            FONT_BODY_CN,
+            FONT_HEADING_CN,
+            FONT_WESTERN,
+            GRAY_TEXT,
+            PAGE_HEIGHT_CM,
+            PAGE_WIDTH_CM,
+            MARGIN_TOP_BOTTOM_CM,
+            MARGIN_LEFT_RIGHT_CM,
+            CONTENT_WIDTH_CM,
+            add_field_run,
+            compute_image_width_cm,
+            mark_header_row_repeat,
+            set_first_line_indent_chars,
+            set_paragraph_bottom_border,
+            set_table_header_cell_border,
+            set_update_fields_on_open,
+            shade_cell_or_paragraph,
+            strip_heading_number,
+            style_three_line_table,
+            IMAGE_FALLBACK_WIDTH_CM,
+        )
+
         doc = Document()
-        
-        # Set default font to Microsoft YaHei (unified for Chinese and English)
+
+        # 页面：A4 + 研报边距（上下 2.54cm、左右 3.17cm）
+        word_section = doc.sections[0]
+        word_section.page_width = Cm(PAGE_WIDTH_CM)
+        word_section.page_height = Cm(PAGE_HEIGHT_CM)
+        word_section.top_margin = Cm(MARGIN_TOP_BOTTOM_CM)
+        word_section.bottom_margin = Cm(MARGIN_TOP_BOTTOM_CM)
+        word_section.left_margin = Cm(MARGIN_LEFT_RIGHT_CM)
+        word_section.right_margin = Cm(MARGIN_LEFT_RIGHT_CM)
+
+        # Normal 样式：中文宋体 + 西文 Times New Roman 10.5pt，行距固定 22pt，段后 0
         style = doc.styles['Normal']
         font = style.font
-        font.name = "Microsoft YaHei"
-        font.size = Pt(styles.get("body_size", 12))
-        style._element.rPr.rFonts.set(qn('w:eastAsia'), "Microsoft YaHei")
+        font.name = FONT_WESTERN
+        font.size = Pt(10.5)
+        style._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
         # Apply body color (from CSS body color)
         body_color = styles.get("body_color", None)
         if body_color:
             rgb = self._parse_color_to_rgb(body_color)
             if rgb:
                 font.color.rgb = RGBColor(*rgb)
-        # Set paragraph spacing
+        # Set paragraph spacing: 固定行距 22pt（券商研报正文规范）
         pf = style.paragraph_format
         pf.space_before = Pt(0)
-        pf.space_after = Pt(6)
-        
+        pf.space_after = Pt(0)
+        pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        pf.line_spacing = Pt(22)
+
         paragraph_count = 0
         current_section_info = {}  # Current section info
         in_cover_area = True  # Whether in cover/TOC area (before first section)
         current_div_class = ""  # Current div class (cover-page/toc etc.)
         cover_title_added = False  # Whether cover title has been added
+        last_h1_text = ""  # 上一个 H1 去编号文本（重复标题去重）
+        chart_number = 0  # 图表连续编号
         
-        for element in elements:
+        for elem_idx, element in enumerate(elements):
             elem_type = element.get("type", "")
+            next_elem_type = elements[elem_idx + 1].get("type", "") if elem_idx + 1 < len(elements) else ""
             
             # Handle div markers: identify cover/TOC areas
             if elem_type == "div_start":
@@ -628,21 +669,28 @@ class HTMLToWordConverter:
                         toc_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         toc_run = toc_title.add_run(text)
                         toc_run.font.size = Pt(18)
-                        toc_run.font.name = "Microsoft YaHei"
-                        toc_run._element.rPr.rFonts.set(qn('w:eastAsia'), "Microsoft YaHei")
+                        toc_run.font.name = FONT_WESTERN
+                        toc_run._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_HEADING_CN)
                         toc_run.font.bold = True
-                        rgb = self._parse_color_to_rgb(styles.get("title_color", "#1C2B36"))
-                        if rgb:
-                            toc_run.font.color.rgb = RGBColor(*rgb)
+                        toc_run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
                         # Add empty line after TOC title
                         doc.add_paragraph("")
-                        paragraph_count += 1
+                        # 插入真 TOC 域（打开文档时由 updateFields 自动刷新页码）
+                        toc_field_para = doc.add_paragraph()
+                        add_field_run(toc_field_para, 'TOC \\o "1-3" \\h \\z \\u')
+                        paragraph_count += 2
                     else:
-                        # Normal heading
-                        safe_level = max(1, min(level, 9))
-                        heading = doc.add_heading(text, level=safe_level)
-                        self._apply_heading_style(heading, safe_level, styles, css_class)
-                        paragraph_count += 1
+                        # Normal heading：重复标题去重（H2 与前一 H1 去编号后同文则跳过）
+                        stripped_text = strip_heading_number(text)
+                        if level == 2 and last_h1_text and stripped_text == last_h1_text:
+                            logger.info(f"[CONVERT] Skip duplicate heading after H1: {text}")
+                        else:
+                            if level == 1:
+                                last_h1_text = stripped_text
+                            safe_level = max(1, min(level, 9))
+                            heading = doc.add_heading(text, level=safe_level)
+                            self._apply_heading_style(heading, safe_level, styles, css_class)
+                            paragraph_count += 1
             
             elif elem_type == "paragraph":
                 text = element.get("text", "")
@@ -672,21 +720,20 @@ class HTMLToWordConverter:
                             rgb = self._parse_color_to_rgb("#2C4A5A")
                             if rgb:
                                 run.font.color.rgb = RGBColor(*rgb)
-                        # Divider style
+                        # Divider style: 空文本 + 段落底边框 2.25pt 金色实线
                         elif para_class == "cover-divider":
-                            run = para.add_run(text)
-                            run.font.size = Pt(14)
-                            run.font.color.rgb = RGBColor(0xC9, 0xA2, 0x27)
-                        # Metadata style (author, date)
+                            set_paragraph_bottom_border(para, sz=18, color=GOLD)
+                        # Metadata style (author, date): 浅灰底色块
                         elif para_class == "cover-meta" or para_class == "meta":
                             run = para.add_run(text)
                             run.font.size = Pt(11)
-                            run.font.name = "Microsoft YaHei"
-                            run._element.rPr.rFonts.set(qn('w:eastAsia'), "Microsoft YaHei")
+                            run.font.name = FONT_WESTERN
+                            run._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
                             # Metadata color (gray)
                             rgb = self._parse_color_to_rgb("#888888")
                             if rgb:
                                 run.font.color.rgb = RGBColor(*rgb)
+                            shade_cell_or_paragraph(para, COVER_META_FILL)
                         # Logo style
                         elif para_class == "cover-logo":
                             run = para.add_run(text)
@@ -715,19 +762,25 @@ class HTMLToWordConverter:
                         # TOC item bottom dashed border effect (simulated with dots)
                         # python-docx doesn't support dashed borders, skip for now
                     
-                    # Other areas
+                    # Other areas: 正文段落（两端对齐 + 首行缩进 2 字符）
                     else:
                         self._add_formatted_run(para, text, element.get("formats", []))
-                    
+                        para.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+                        set_first_line_indent_chars(para)
+
                     paragraph_count += 1
-            
+
             elif elem_type == "list_item":
                 text = element.get("text", "")
                 list_type = element.get("list_type", "ul")
                 li_class = element.get("class", "")
 
                 if text:
-                    if current_div_class in ("toc", "toc-page") or "toc-item" in li_class:
+                    if current_div_class in ("toc", "toc-page"):
+                        # 目录区已插入真 TOC 域，跳过手写目录条目
+                        pass
+                    elif "toc-item" in li_class:
+                        # 兼容：toc 目录区之外的手写目录条目（主流程不再触达）
                         self._add_toc_item(doc, text, li_class)
                         paragraph_count += 1
                     elif list_type == 'ol':
@@ -756,11 +809,10 @@ class HTMLToWordConverter:
                         cols = max(cols, row_cols)
                     
                     rows = len(data)
-                    
+
                     if rows > 0 and cols > 0:
                         table = doc.add_table(rows=rows, cols=cols)
-                        table.style = 'Table Grid'
-                        
+
                         try:
                             from docx.oxml.ns import qn
                             from docx.oxml import OxmlElement
@@ -768,10 +820,15 @@ class HTMLToWordConverter:
                             has_style_support = True
                         except ImportError:
                             has_style_support = False
-                        
+
+                        # 三线表：上下 1pt 藏青粗线，无竖线/内线（显式不使用 Table Grid）
+                        style_three_line_table(table)
+                        # 跨页重复表头
+                        mark_header_row_repeat(table.rows[0])
+
                         # Track absorbed cells to avoid overwriting merged content
                         absorbed = set()
-                        
+
                         for i, row_data in enumerate(data):
                             actual_j = 0  # Actual column position (skip absorbed)
                             for j, cell_data in enumerate(row_data):
@@ -780,15 +837,15 @@ class HTMLToWordConverter:
                                     actual_j += 1
                                 if actual_j >= cols:
                                     break
-                                
+
                                 cell = table.rows[i].cells[actual_j]
-                                
+
                                 if isinstance(cell_data, dict):
                                     cell_text = str(cell_data.get("text", ""))
                                     colspan = cell_data.get("colspan", 1)
                                     rowspan = cell_data.get("rowspan", 1)
                                     is_header = cell_data.get("tag") == "th"
-                                    
+
                                     # Merge cells
                                     if colspan > 1 or rowspan > 1:
                                         end_row = min(i + rowspan - 1, rows - 1)
@@ -804,24 +861,31 @@ class HTMLToWordConverter:
                                 else:
                                     cell_text = str(cell_data) if cell_data is not None else ""
                                     is_header = (i == 0)
-                                
+
                                 # Set text
                                 cell.text = cell_text
-                                
-                                # Header style (dark background + white text + bold)
-                                if is_header or i == 0:
-                                    if has_style_support:
-                                        for paragraph in cell.paragraphs:
-                                            for run in paragraph.runs:
-                                                run.font.bold = True
-                                                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
-                                                run.font.size = Pt(10)
-                                        shading = OxmlElement('w:shd')
-                                        shading.set(qn('w:fill'), '1C2B36')
-                                        cell._tc.get_or_add_tcPr().append(shading)
-                                
+
+                                # 单元格段落：紧凑行距 + space 2pt
+                                if has_style_support:
+                                    for paragraph in cell.paragraphs:
+                                        c_pf = paragraph.paragraph_format
+                                        c_pf.space_before = Pt(0)
+                                        c_pf.space_after = Pt(2)
+                                        c_pf.line_spacing = 1.0
+                                        for run in paragraph.runs:
+                                            run.font.size = Pt(9.5 if (is_header or i == 0) else 9)
+
+                                # Header style: 浅藏青底 + 藏青深字加粗 9.5pt（三线表表头）
+                                if (is_header or i == 0) and has_style_support:
+                                    for paragraph in cell.paragraphs:
+                                        for run in paragraph.runs:
+                                            run.font.bold = True
+                                            run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
+                                    shade_cell_or_paragraph(cell, TABLE_HEADER_FILL)
+                                    set_table_header_cell_border(cell)
+
                                 actual_j += 1
-                        
+
                         paragraph_count += 1
             
             # Image
@@ -829,14 +893,44 @@ class HTMLToWordConverter:
                 img_path = element.get("src", "")
                 if img_path and os.path.exists(img_path):
                     try:
-                        from docx.shared import Inches
-                        # A4 body width ≈ 15cm ≈ 5.9in, after margins about 5.5in available
-                        doc.add_picture(img_path, width=Inches(5.0))
-                        # Add empty line after image last paragraph
-                        last_para = doc.add_paragraph()
-                        last_run = last_para.add_run("")
-                        last_run.font.size = Pt(6)
-                        paragraph_count += 1
+                        from docx.shared import Cm as _Cm
+                        # 按像素宽与 200dpi 自适应宽度；饼/雷达等近方形图限宽 11cm
+                        px_w = px_h = 0
+                        try:
+                            from PIL import Image as PILImage
+                            with PILImage.open(img_path) as im:
+                                px_w, px_h = im.size
+                            width = _Cm(compute_image_width_cm(px_w, px_h))
+                        except Exception as pil_err:
+                            logger.warning(f"PIL read image size failed, fallback width: {pil_err}")
+                            width = _Cm(IMAGE_FALLBACK_WIDTH_CM)
+
+                        # 图表编号：图片上方"图表 N：{图题}"（黑体 9pt 藏青）
+                        chart_number += 1
+                        chart_title = element.get("title") or element.get("alt") or ""
+                        num_para = doc.add_paragraph()
+                        num_para.paragraph_format.keep_with_next = True
+                        num_run = num_para.add_run(
+                            f"图表 {chart_number}：{chart_title}" if chart_title else f"图表 {chart_number}"
+                        )
+                        num_run.font.size = Pt(9)
+                        num_run.font.bold = False
+                        num_run.font.name = FONT_WESTERN
+                        num_run._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_HEADING_CN)
+                        num_run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
+
+                        doc.add_picture(img_path, width=width)
+                        # 图片段落居中，并与下方注释绑定不分页
+                        last_para = doc.paragraphs[-1]
+                        last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        last_para.paragraph_format.keep_with_next = True
+                        # 占位空段仅在后随图注时保持绑定，避免图与图注分页断链
+                        spacer_para = doc.add_paragraph()
+                        spacer_run = spacer_para.add_run("")
+                        spacer_run.font.size = Pt(6)
+                        if next_elem_type == "figure_caption":
+                            spacer_para.paragraph_format.keep_with_next = True
+                        paragraph_count += 2
                     except Exception as e:
                         logger.warning(f"Failed to add image {img_path}: {e}")
 
@@ -848,9 +942,9 @@ class HTMLToWordConverter:
                     cap_para = doc.add_paragraph()
                     cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                     cap_run = cap_para.add_run(text)
-                    cap_run.font.size = _Pt(8)
-                    cap_run.font.name = "Microsoft YaHei"
-                    cap_run._element.rPr.rFonts.set(qn('w:eastAsia'), "Microsoft YaHei")
+                    cap_run.font.size = _Pt(8.5)
+                    cap_run.font.name = FONT_WESTERN
+                    cap_run._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
                     rgb = self._parse_color_to_rgb("#666666")
                     if rgb:
                         cap_run.font.color.rgb = RGBColor(*rgb)
@@ -859,7 +953,7 @@ class HTMLToWordConverter:
         # 添加页眉页脚
         if len(doc.sections) > 0:
             section = doc.sections[0]
-            
+
             # 从HTML中提取报告标题
             report_title = ""
             title_match = re.search(r'<title>(.*?)</title>', html, re.DOTALL)
@@ -871,37 +965,74 @@ class HTMLToWordConverter:
                     report_title = cover_title_match.group(1).strip()
             if not report_title:
                 report_title = "zensers Research Report"
-            
-            # 页眉
+
+            # 页眉：左 ZENSERS + 右报告标题（右对齐制表位），段落底边框 0.5pt 藏青
             header = section.header
             header.is_linked_to_previous = False
             header_para = header.paragraphs[0]
             header_para.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            
+            try:
+                from docx.enum.text import WD_TAB_ALIGNMENT
+                header_para.paragraph_format.tab_stops.add_tab_stop(
+                    Cm(CONTENT_WIDTH_CM), WD_TAB_ALIGNMENT.RIGHT
+                )
+            except Exception as tab_err:
+                logger.warning(f"Header tab stop setup failed: {tab_err}")
+
             # 左侧Logo
             run = header_para.add_run("ZENSERS")
             run.font.size = Pt(8)
             run.font.bold = True
-            run.font.color.rgb = RGBColor(0, 51, 102)
-            run.font.name = "Microsoft YaHei"
-            
+            run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
+            run.font.name = FONT_WESTERN
+
             # 右侧标题（动态获取）
-            run = header_para.add_run("    |    " + report_title)
+            run = header_para.add_run("\t" + report_title)
             run.font.size = Pt(8)
-            run.font.color.rgb = RGBColor(100, 100, 100)
-            run.font.name = "Microsoft YaHei"
-            
-            # 页脚
+            run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+            run.font.name = FONT_WESTERN
+
+            # 页眉段落底边框 0.5pt 藏青横线
+            set_paragraph_bottom_border(header_para, sz=4, color=NAVY)
+
+            # 页脚：第一行居中 "第 X 页 共 Y 页"（PAGE/NUMPAGES 域）
             footer = section.footer
             footer.is_linked_to_previous = False
             footer_para = footer.paragraphs[0]
             footer_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            
-            run = footer_para.add_run("© 2026 zensers Research. github.com/sunchaokun/zensers")
-            run.font.size = Pt(8)
-            run.font.color.rgb = RGBColor(100, 100, 100)
-            run.font.name = "Microsoft YaHei"
-        
+
+            footer_run_specs = []
+
+            def _footer_run(text: str):
+                r = footer_para.add_run(text)
+                r.font.size = Pt(8.5)
+                r.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+                r.font.name = FONT_WESTERN
+                return r
+
+            footer_run_specs.append(_footer_run("第 "))
+            footer_run_specs.extend(add_field_run(footer_para, "PAGE", placeholder="1"))
+            footer_run_specs.append(_footer_run(" 页 共 "))
+            footer_run_specs.extend(add_field_run(footer_para, "NUMPAGES", placeholder="1"))
+            footer_run_specs.append(_footer_run(" 页"))
+            for r in footer_run_specs:
+                r.font.size = Pt(8.5)
+                r.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+                r.font.name = FONT_WESTERN
+
+            # 第二行版权行（7pt 灰）
+            copyright_para = footer.add_paragraph()
+            copyright_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            copyright_run = copyright_para.add_run(
+                "© 2026 zensers Research. github.com/sunchaokun/zensers"
+            )
+            copyright_run.font.size = Pt(7)
+            copyright_run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+            copyright_run.font.name = FONT_WESTERN
+
+        # 打开文档时自动刷新域（TOC/PAGE/NUMPAGES 页码）
+        set_update_fields_on_open(doc)
+
         # Atomic save
         logger.info(f"[CONVERT] Saving document, total paragraphs: {paragraph_count}")
         self._atomic_save(doc, output_path)
@@ -927,44 +1058,62 @@ class HTMLToWordConverter:
     
     def _apply_heading_style(self, heading, level: int, styles: Dict[str, Any], css_class: str = "") -> None:
         """
-        Apply CSS styles to heading
-        
+        Apply research-report heading typography (overrides legacy CSS-based logic)
+
+        规范（设计文档 §6.2）：
+        - H1: 黑体 16pt 加粗 藏青，段前分页，段后 18pt，底部 1pt 藏青横线
+        - H2: 黑体 14pt 加粗 藏青，段前 12pt 段后 6pt
+        - H3: 黑体 12pt 藏青
+        - H4: 宋体 11pt 加粗 藏青
+        - 西文统一 Times New Roman
+
+        历史 CSS class（chapter-title/section-title/subsection-title/
+        sub-subsection-title）不再参与字号选择：本实现按级别统一覆盖其规格，
+        css_class 仅保留入参兼容。
+
         Args:
             heading: Heading object
             level: Heading level
-            styles: Style configuration
-            css_class: CSS class name (to distinguish cover title/chapter title/section title)
+            styles: Style configuration（保留参数兼容旧调用，字号/颜色以规范令牌为准）
+            css_class: CSS class name（保留参数兼容旧签名）
         """
         from docx.shared import Pt, RGBColor
         from docx.oxml.ns import qn
-        
-        # Decide which size to use based on CSS class name
-        if css_class == "chapter-title":
-            size_key = f"h{level}_size"
-        elif css_class == "section-title":
-            size_key = "h2_size"
-        elif css_class == "subsection-title":
-            size_key = "h3_size"
-        elif css_class == "sub-subsection-title":
-            size_key = "h4_size"
-        elif level == 1 and not css_class:
-            # Cover main title (<h1> without class) → use title_size (28pt)
-            size_key = "title_size"
-        else:
-            size_key = f"h{level}_size"
-        
-        size = styles.get(size_key, styles.get("title_size", 24))
-        color = styles.get("title_color", None)
-        font_name = "Microsoft YaHei"  # Unified use of Microsoft YaHei
-        
+
+        from .word_styles import (
+            FONT_BODY_CN,
+            FONT_HEADING_CN,
+            FONT_WESTERN,
+            NAVY,
+            set_paragraph_bottom_border,
+        )
+
+        heading_specs = {
+            1: {"size": 16, "font": FONT_HEADING_CN, "bold": True, "before": 0, "after": 18},
+            2: {"size": 14, "font": FONT_HEADING_CN, "bold": True, "before": 12, "after": 6},
+            3: {"size": 12, "font": FONT_HEADING_CN, "bold": False, "before": 6, "after": 3},
+            4: {"size": 11, "font": FONT_BODY_CN, "bold": True, "before": 6, "after": 3},
+        }
+        spec = heading_specs.get(level, {"size": 12, "font": FONT_BODY_CN, "bold": False, "before": 6, "after": 3})
+
+        # H1 段前分页 + 段后 18pt + 底部 1pt 藏青横线
+        if level == 1:
+            heading.paragraph_format.page_break_before = True
+        heading.paragraph_format.space_before = Pt(spec["before"])
+        heading.paragraph_format.space_after = Pt(spec["after"])
+        # 标题不继承 Normal 的固定 22pt 行距（避免大字号裁切）
+        heading.paragraph_format.line_spacing = 1.2
+
+        heading_style_rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
         for run in heading.runs:
-            run.font.size = Pt(size)
-            run.font.name = font_name
-            run._element.rPr.rFonts.set(qn('w:eastAsia'), font_name)
-            if color:
-                rgb = self._parse_color_to_rgb(color)
-                if rgb:
-                    run.font.color.rgb = RGBColor(*rgb)
+            run.font.size = Pt(spec["size"])
+            run.font.bold = spec["bold"]
+            run.font.name = FONT_WESTERN
+            run._element.rPr.rFonts.set(qn('w:eastAsia'), spec["font"])
+            run.font.color.rgb = heading_style_rgb
+
+        if level == 1:
+            set_paragraph_bottom_border(heading, sz=8, color=NAVY)
     
     def _add_formatted_run(self, paragraph, text: str, formats: List[str]) -> None:
         """
@@ -1085,15 +1234,17 @@ class HTMLToWordConverter:
         if not color_str:
             return None
         
-        # Hex color
+        # Hex color (兼容带 # 与不带 # 的令牌，如 "1A2744" / "#1A2744")
         if color_str.startswith('#'):
             hex_color = color_str[1:]
-            if len(hex_color) == 6:
-                return (
-                    int(hex_color[0:2], 16),
-                    int(hex_color[2:4], 16),
-                    int(hex_color[4:6], 16)
-                )
+        else:
+            hex_color = color_str
+        if len(hex_color) == 6:
+            return (
+                int(hex_color[0:2], 16),
+                int(hex_color[2:4], 16),
+                int(hex_color[4:6], 16)
+            )
         
         # RGB color
         match = re.match(r'rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)', color_str)

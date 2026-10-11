@@ -78,7 +78,7 @@ class TestEndToEndPlanRenderInsert(unittest.TestCase):
             xlabel=plan.xlabel,
             ylabel=plan.ylabel,
             caption=plan.caption,
-            source=plan.subtitle,
+            source=plan.source,
         )
         result = self.gen.generate(config)
         self.assertTrue(result.success)
