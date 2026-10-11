@@ -330,7 +330,7 @@ class MultiSearchSkill(Skill):
 
         for engine_id in engines_to_use[:2]:
             search_tasks[engine_id] = asyncio.create_task(
-                self._search_with_web_fetch(engine_id, query, max_results),
+                self._web_fetch_isolated(engine_id, query, max_results),
                 name=f"search_{engine_id}"
             )
 
@@ -572,6 +572,19 @@ class MultiSearchSkill(Skill):
                 "body": item.get("description", ""),
             })
         return results
+
+    async def _web_fetch_isolated(self, engine_id: str, query: str,
+                                  max_results: int):
+        """独立线程 + 独立事件循环中执行网页抓取。
+
+        Windows/anyio 下经代理的 TLS 握手可能把宿主事件循环死锁在 C 层
+        （实测主循环阻塞 35 分钟、全部超时机制失效，隧道 socket 甚至已
+        消失）。隔离到独立线程后，最坏情况只废掉该线程；宿主循环存活，
+        外层 asyncio.wait 超时正常触发并按引擎超时降级。
+        """
+        return await asyncio.to_thread(
+            lambda: asyncio.run(
+                self._search_with_web_fetch(engine_id, query, max_results)))
 
     async def _search_with_web_fetch(self, engine_id: str, query: str, max_results: int) -> List[Dict[str, Any]]:
         engine = SEARCH_ENGINES.get(engine_id)

@@ -154,6 +154,34 @@ def _init_llm() -> None:
     init_llm_infrastructure(settings.llm_profiles)
 
 
+def _start_watchdog(stall_seconds: int = 900) -> None:
+    """主循环心跳看门狗：事件循环卡死（如代理 TLS 握手在 C 层死锁）时
+    硬退出进程（exit 86），由外层重试逻辑断点续跑。"""
+    import os
+    import threading
+
+    heartbeat = {"t": time.monotonic()}
+
+    async def _beat() -> None:
+        while True:
+            heartbeat["t"] = time.monotonic()
+            await asyncio.sleep(15)
+
+    def _watch() -> None:
+        while True:
+            stalled = time.monotonic() - heartbeat["t"]
+            if stalled > stall_seconds:
+                logging.getLogger("batch_pipeline").error(
+                    "看门狗: 主循环 %d 秒无心跳（阈值 %d 秒），硬退出(86) "
+                    "触发断点续跑", int(stalled), stall_seconds)
+                os._exit(86)
+            time.sleep(30)
+
+    threading.Thread(target=_watch, name="pipeline-watchdog",
+                     daemon=True).start()
+    return _beat
+
+
 async def main_async(argv=None) -> int:
     parser = argparse.ArgumentParser(description="zensers 批量案例流水线")
     parser.add_argument("--config", default=None, help="案例池 YAML 路径")
@@ -164,6 +192,8 @@ async def main_async(argv=None) -> int:
     args = parser.parse_args(argv)
 
     setup_logging()
+    beat = _start_watchdog()
+    asyncio.get_running_loop().create_task(beat(), name="pipeline-heartbeat")
     try:
         cfg = load_config(args.config)
     except (FileNotFoundError, ValueError) as exc:
