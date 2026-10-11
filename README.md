@@ -1,7 +1,5 @@
 <div align="center">
 
-<img src="Logo.png" alt="Zensers" width="120" />
-
 # Zensers
 
 **AI 驱动的自动化行业研究平台**
