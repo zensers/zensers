@@ -12,7 +12,7 @@ Word 排版重构验收测试
 6. 正文段首行缩进 w:firstLineChars="200"
 7. 重复标题去重（H2 与前一 H1 去编号同文 → 跳过）
 8. Normal 单倍行距 + 正文段显式固定 22pt 行距（行距下沉，防大字号裁切）
-9. 标题自动编号（H1"一、"、H2"1.1"、H3"1.1.1"）
+9. 标题自动编号（H1"一、" + 子标题相对深度编号 1.1/1.1.1，不依赖 h 标签固定层级）
 """
 
 import os
@@ -308,7 +308,7 @@ def test_table_autofit_and_zebra():
 # ========== 用户验收缺陷回归（第二轮） ==========
 # 缺陷A：封面 28pt 标题/目录 18pt 标题被 Normal 固定行距（EXACTLY 22pt）裁切
 #        → Normal 回归单倍，固定 22pt 只在正文段落显式设置（行距下沉）
-# 缺陷B：正文标题无编号 → H1"一、"、H2"1.1"、H3"1.1.1" 自动编号（真 TOC 域自动带出）
+# 缺陷B：正文标题无编号 → H1"一、" + 子标题相对深度编号（1.1/1.1.1，真 TOC 域自动带出）
 # 缺陷C："图表 N"题注段落行距加固为显式单倍（保持无大纲级别，不进 TOC）
 
 
@@ -330,23 +330,33 @@ def test_body_exact_spacing_but_normal_single(converted):
 
 
 def test_heading_auto_numbering():
-    """标题自动编号：前置区 H2 不编号；H3 无 H2 时两段编号；结构性标题不消耗编号"""
+    """子标题相对深度编号：h4 第一层 → 1.1/1.2；h3 回浅级开新条目 1.3；
+    其下 h4 → 1.3.1/1.3.2；再回 h3 → 1.4；新章 h4 → 2.1；
+    前置区 H2 不编号；结构性标题跳过不消耗编号"""
     html = ('<html><body>'
             '<h2>前置说明</h2>'
             '<h1>行业概览</h1>'
-            '<h3>直接小节</h3>'
-            '<h2>市场规模</h2>'
-            '<h3>细分口径</h3>'
+            '<h4>定义与分类</h4>'
+            '<h4>范围界定</h4>'
+            '<h3>驱动因素</h3>'
+            '<h4>政策驱动</h4>'
+            '<h4>技术驱动</h4>'
+            '<h3>抑制因素</h3>'
             '<h3>论证与分析</h3>'
             '<h1>竞争格局</h1>'
+            '<h4>厂商梯队</h4>'
             '</body></html>')
     out = os.path.join(tempfile.mkdtemp(), 't.docx')
     result = HTMLToWordConverter().convert(html, out)
     assert result.success
     d = Document(out)
     seq = [p.text.strip() for p in d.paragraphs if p.style.name.startswith('Heading')]
-    assert seq == ['前置说明', '一、行业概览', '1.1 直接小节', '1.2 市场规模',
-                   '1.2.1 细分口径', '二、竞争格局'], seq
+    assert seq == ['前置说明', '一、行业概览',
+                   '1.1 定义与分类', '1.2 范围界定',      # h4 第一层
+                   '1.3 驱动因素',                        # h3 回浅级 → 新的第一层条目
+                   '1.3.1 政策驱动', '1.3.2 技术驱动',    # h4 深一层
+                   '1.4 抑制因素',
+                   '二、竞争格局', '2.1 厂商梯队'], seq
 
 
 def test_chart_number_paragraph_single_spacing():

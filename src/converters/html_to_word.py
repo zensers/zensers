@@ -595,7 +595,9 @@ class HTMLToWordConverter:
         current_div_class = ""  # Current div class (cover-page/toc etc.)
         cover_title_added = False  # Whether cover title has been added
         last_h1_text = ""  # 上一个 H1 去编号文本（重复标题去重）
-        h1c = h2c = h3c = 0  # 标题自动编号计数器（H1 中文数字 / H2、H3 点分）
+        h1c = 0  # H1 章计数器（中文数字编号）
+        sub_stack = []  # 当前章子层编号栈，元素 [tag_depth, number, 直接子标题计数]
+        sub_first = 0  # 当前章第一子层已编号个数
         chart_number = 0  # 图表连续编号
         
         for elem_idx, element in enumerate(elements):
@@ -698,27 +700,32 @@ class HTMLToWordConverter:
                         else:
                             if level == 1:
                                 last_h1_text = stripped_text
-                            # 自动编号（先去重判断再编号，去重命中的 H2 不消耗 h2c；
-                            # 编号基于剥离旧编号后的文本，真 TOC 域自动带出编号）：
-                            # H1 "一、二、…" / H2 "1.1" / H3 "1.1.1"，level>=4 不编号；
-                            # 首个 H1 之前的前置区标题（h1c==0）不编号
+                            # 自动编号（先去重判断再编号，跳过的标题不消耗编号；
+                            # 编号基于剥离旧编号后的文本，真 TOC 域自动带出编号）
+                            # H1 "一、二、…"；h2/h3/h4 按**相对深度**编号
+                            # （流水线产出的小节几乎全为 h4，不能按 h 标签固定层级编号）：
+                            # 章内维护子层栈，栈顶为当前父节点 [depth, number, 子计数]
                             if level == 1:
                                 h1c += 1
-                                h2c = h3c = 0
+                                sub_stack = []
+                                sub_first = 0
                                 text = f"{cn_num(h1c)}、{stripped_text}"
-                            elif level == 2 and h1c > 0:
-                                h2c += 1
-                                h3c = 0
-                                text = f"{h1c}.{h2c} {stripped_text}"
-                            elif level == 3 and h1c > 0:
-                                h3c += 1
-                                if h2c == 0:
-                                    # 本章尚无 H2：降级为两段编号 "1.1"，
-                                    # 并占用 H2 编号槽位（后续 H2 从 1.2 继续）
-                                    text = f"{h1c}.{h3c} {stripped_text}"
-                                    h2c = h3c
+                            elif level in (2, 3, 4) and h1c > 0:
+                                depth = level - 1  # tag_depth：h2=1 < h3=2 < h4=3
+                                while sub_stack and sub_stack[-1][0] >= depth:
+                                    sub_stack.pop()
+                                if sub_stack:
+                                    # 更深一级或同父续编：父号.子序（父计数器 +1）
+                                    parent = sub_stack[-1]
+                                    parent[2] += 1
+                                    number = f"{parent[1]}.{parent[2]}"
                                 else:
-                                    text = f"{h1c}.{h2c}.{h3c} {stripped_text}"
+                                    # 第一子层（含弹空后回到浅级开新条目）
+                                    sub_first += 1
+                                    number = f"{h1c}.{sub_first}"
+                                sub_stack.append([depth, number, 0])
+                                text = f"{number} {stripped_text}"
+                            # level>=5 及前置区（h1c==0）不编号
                             safe_level = max(1, min(level, 9))
                             heading = doc.add_heading(text, level=safe_level)
                             self._apply_heading_style(heading, safe_level, styles, css_class)
