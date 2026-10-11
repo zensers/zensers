@@ -611,11 +611,17 @@ class HTMLToWordConverter:
         sub_stack = []  # 当前章子层编号栈，元素 [tag_depth, number, 直接子标题计数]
         sub_first = 0  # 当前章第一子层已编号个数
         chart_number = 0  # 图表连续编号
+        ol_counter = 0  # 当前有序列表内编号（每个 <ol> 从 1 重置）
         had_disclaimer = False  # HTML 是否已提供 disclaimer 尾页区块
 
         for elem_idx, element in enumerate(elements):
             elem_type = element.get("type", "")
             next_elem_type = elements[elem_idx + 1].get("type", "") if elem_idx + 1 < len(elements) else ""
+
+            # <ol> 尾随标记元素（parser 在列表末尾发出）：有序列表结束 → 计数器归零
+            if elem_type == "ol":
+                ol_counter = 0
+                continue
 
             # Handle div markers: identify cover/TOC areas
             if elem_type == "div_start":
@@ -902,9 +908,19 @@ class HTMLToWordConverter:
                         self._add_toc_item(doc, text, li_class)
                         paragraph_count += 1
                     elif list_type == 'ol':
-                        para = doc.add_paragraph(text, style='List Number')
-                        # 列表段落显式单倍行距，防止继承残留的固定行距
-                        para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        # 手动编号（每个 <ol> 从 1 重置）：Word List Number 样式
+                        # 会全文共享单一编号序列，跨列表连续累加（第 N 个列表显示 51.）
+                        ol_counter += 1
+                        para = doc.add_paragraph()
+                        pf = para.paragraph_format
+                        pf.left_indent = Pt(24)
+                        pf.first_line_indent = Pt(-24)   # 悬挂缩进，换行对齐编号
+                        pf.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        pf.space_after = Pt(4)
+                        num_run = para.add_run(f"{ol_counter}. ")
+                        num_run.font.name = FONT_WESTERN
+                        num_run._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
+                        self._add_formatted_run(para, text, element.get("formats", []))
                         paragraph_count += 1
                     else:
                         para = doc.add_paragraph(text, style='List Bullet')

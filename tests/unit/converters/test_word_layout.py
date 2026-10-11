@@ -612,3 +612,23 @@ def test_cover_layout_order_and_bottom_meta():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_ordered_lists_restart_numbering_per_list():
+    """每个 <ol> 从 1 重置编号，不再全文累加（修复第 N 个列表显示 51. 的缺陷）。"""
+    html = ('<html><body><h1>一、章A</h1>'
+            '<ol><li>甲项</li><li>乙项</li><li>丙项</li></ol>'
+            '<h1>二、章B</h1>'
+            '<ol><li>风险一</li><li>风险二</li></ol>'
+            '</body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    r = HTMLToWordConverter().convert(html, out)
+    assert r.success
+    d = Document(out)
+    texts = [p.text.strip() for p in d.paragraphs if p.text.strip()]
+    assert any(x.startswith('1. 甲项') for x in texts)
+    assert any(x.startswith('3. 丙项') for x in texts)
+    assert any(x.startswith('1. 风险一') for x in texts), '第二个列表应重置为 1'
+    assert not any(x.startswith('4. 风险一') for x in texts)
+    # 不再依赖 List Number 样式（避免 Word 全文共享编号序列）
+    assert all(p.style.name != 'List Number' for p in d.paragraphs)
