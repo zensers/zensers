@@ -386,6 +386,9 @@ class DocumentGenerationAgent(FixedAgent):
                 # section argument before selecting data and a visual form.
                 research_result = await self._generate_charts_for_html(research_result)
                 research_result = self._normalize_report_titles_for_render(research_result)
+                # 渲染期剥离内部证据标注（（factual）/（inferential）/（置信度：中）），
+                # 落盘的 research_result 审计原件不动
+                research_result = self._strip_annotations_for_render(research_result)
 
                 from src.content.content_orchestrator import ContentOrchestrator
                 from src.core.preview_storage import PreviewStorage
@@ -2287,6 +2290,57 @@ class DocumentGenerationAgent(FixedAgent):
                     if "name" in section:
                         section["name"] = title
         return result
+
+    @staticmethod
+    def _strip_epistemic_annotations(text: str) -> str:
+        """剥离内部证据标注（置信度/factual/inferential），供渲染期净化正文与标题。"""
+        if not text:
+            return text
+        patterns = [
+            re.compile(r'[（(]\s*(?:inferential|factual|inference)\s*[，,]\s*置信度\s*[：:]\s*[高中低][高中低]*\s*[）)]'),
+            re.compile(r'[（(]\s*置信度\s*[：:]\s*[高中低][高中低]*(?:\s*[、，,]\s*[高中低][高中低]*)*\s*[）)]'),
+            re.compile(r'[（(]\s*(?:factual|inferential|inference)\s*[）)]', re.IGNORECASE),
+        ]
+        result = str(text)
+        changed = True
+        while changed:
+            changed = False
+            for p in patterns:
+                new = p.sub('', result)
+                if new != result:
+                    result, changed = new, True
+        return result
+
+    def _strip_annotations_for_render(self, research_result):
+        """渲染期净化 research_result 中的内部证据标注（仅内存对象，不影响落盘审计原件）。
+
+        对每个 section 的 title/content 及 key_findings 逐项剥离
+        （factual）/（inferential）/（置信度：中）等内部标注。
+        """
+        if not isinstance(research_result, dict):
+            return research_result
+        sections = research_result.get("sections")
+        if isinstance(sections, list):
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                if isinstance(section.get("title"), str):
+                    section["title"] = self._strip_epistemic_annotations(section["title"])
+                if isinstance(section.get("content"), str):
+                    section["content"] = self._strip_epistemic_annotations(section["content"])
+                findings = section.get("key_findings")
+                if isinstance(findings, list):
+                    section["key_findings"] = [
+                        self._strip_epistemic_annotations(f) if isinstance(f, str) else f
+                        for f in findings
+                    ]
+        top_findings = research_result.get("key_findings")
+        if isinstance(top_findings, list):
+            research_result["key_findings"] = [
+                self._strip_epistemic_annotations(f) if isinstance(f, str) else f
+                for f in top_findings
+            ]
+        return research_result
 
     @staticmethod
     def _repair_html_contract(
