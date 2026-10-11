@@ -27,6 +27,9 @@ from tools.batch_case_pipeline.state import STAGES, CaseState  # noqa: E402
 
 logger = logging.getLogger("batch_pipeline")
 
+# 可由 revise 在管线内真正修复的 high issue code；其余（如 missing_source_url）直接 needs_human
+_ACTIONABLE_HIGH = {"chart_leak", "chart_missing"}
+
 
 def setup_logging() -> Path:
     log_dir = ROOT / "logs"
@@ -57,11 +60,16 @@ async def _review_loop(ctx, cfg: BatchConfig, case: CaseConfig, case_dir: Path,
         if report["pass"]:
             break
         high = [i for i in report["issues"] if i.get("severity") == "high"]
+        actionable = [i for i in high if i.get("code") in _ACTIONABLE_HIGH]
         if not high or rounds >= cfg.max_review_rounds:
             break
+        if not actionable:
+            logger.info("[%s] high 问题不可管线内修复(%s)，转人工",
+                        case.case_id, {i["code"] for i in high})
+            break
         logger.info("[%s] 第%d轮审查未过(score=%d)，修订 %d 个 high 问题",
-                    case.case_id, rounds, report["score"], len(high))
-        rerun = await apply_fixes(high, research_result,
+                    case.case_id, rounds, report["score"], len(actionable))
+        rerun = await apply_fixes(actionable, research_result,
                                   domain_keywords=case.domain_keywords)
         (case_dir / "research_result.json").write_text(
             json.dumps(research_result, ensure_ascii=False, indent=1, default=str),

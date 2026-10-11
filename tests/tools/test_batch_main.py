@@ -68,25 +68,58 @@ async def test_resume_skips_research(tmp_path):
     assert st["stages"]["research"]["meta"].get("skipped") is True
 
 
+class LeakCtx(OkCtx):
+    def __init__(self):
+        self.render_calls = 0
+        self.chart_calls = 0
+
+    async def run_research(self, case, case_dir):
+        return {"title": case.topic, "sections": [
+            {"title": "市场规模", "content": "量子比特退相干研究" * 300,
+             "charts": [{"title": "t", "path": "x.png", "source": "content",
+                         "caption": "n"}]}]}
+
+    async def run_charts(self, case, case_dir, research_result):
+        self.chart_calls += 1
+        return research_result, {"charts": 1}
+
+    async def run_render(self, case, case_dir, research_result):
+        self.render_calls += 1
+        (case_dir / "report.html").write_text("<html/>", encoding="utf-8")
+        (case_dir / "report_draft.docx").write_bytes(b"PK" + b"0" * 1024)
+        return {"html": "x", "docx": "y"}
+
+
 @pytest.mark.asyncio
-async def test_render_only_rerun_on_missing_source_url(tmp_path):
-    """missing_source_url 为 high 且修复动作仅需重渲 render：
-    验证 _review_loop 的 render-only 重渲路径（charts 已完成时仍需重跑 render）。"""
-    class AuditCtx(OkCtx):
-        def __init__(self):
-            self.render_calls = 0
+async def test_chart_leak_triggers_charts_and_render_rerun(tmp_path):
+    ctx = LeakCtx()
+    summary = await bp.run_case(ctx, CFG, CASE, tmp_path)
+    assert ctx.render_calls >= 2
+    assert summary["status"] == "done"
+    rr = json.loads((tmp_path / "cases" / "bad" / "research_result.json")
+                    .read_text(encoding="utf-8"))
+    charts = rr["sections"][0]["charts"]
+    assert all(c.get("source") != "content" for c in charts)
 
-        async def run_research(self, case, case_dir):
-            result = await super().run_research(case, case_dir)
-            result["defense_audit"] = {
-                "issues": [{"code": "missing_source_url", "section": "市场规模"}]}
-            return result
 
-        async def run_render(self, case, case_dir, research_result):
-            self.render_calls += 1
-            return await super().run_render(case, case_dir, research_result)
+class UnfixableCtx(OkCtx):
+    def __init__(self):
+        self.render_calls = 0
 
-    ctx = AuditCtx()
+    async def run_research(self, case, case_dir):
+        rr = await super().run_research(case, case_dir)
+        rr["defense_audit"] = {"issues": [
+            {"code": "missing_source_url", "section": "s"}]}
+        return rr
+
+    async def run_render(self, case, case_dir, research_result):
+        self.render_calls += 1
+        return await super().run_render(case, case_dir, research_result)
+
+
+@pytest.mark.asyncio
+async def test_unfixable_high_goes_needs_human_without_rerun(tmp_path):
+    ctx = UnfixableCtx()
     summary = await bp.run_case(ctx, CFG, CASE, tmp_path)
     assert summary["status"] == "needs_human"
-    assert ctx.render_calls >= 2
+    assert ctx.render_calls == 1
