@@ -17,7 +17,7 @@ git --version
 ## 1. Clone the Repository
 
 ```bash
-git clone https://github.com/sunchaokun/zensers.git
+git clone https://github.com/zensers/zensers.git
 cd zensers
 ```
 

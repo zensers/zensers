@@ -179,7 +179,7 @@ Zensers 的约束层确保研究质量，而非盲目信任 LLM 输出：
 | 医疗AI政策环境与市场机遇 | 政策简报 | PDF | 12,000+ | 5 |
 | 动力电池技术路线对比研究 | 学术研究 | Word + PDF | 20,000+ | 9 |
 
-**[浏览完整案例画廊 →](https://sunchaokun.github.io/zensers/cases/)**
+**[浏览完整案例画廊 →](https://zensers.github.io/zensers/cases/)**
 
 ---
 
@@ -206,7 +206,7 @@ Zensers 的约束层确保研究质量，而非盲目信任 LLM 输出：
 
 ```bash
 # 克隆仓库
-git clone https://github.com/sunchaokun/zensers.git
+git clone https://github.com/zensers/zensers.git
 cd zensers
 
 # 安装后端依赖

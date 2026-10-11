@@ -30,7 +30,7 @@ def set_cell_border(cell, **kwargs):
     tcPr.append(tcBorders)
 
 
-def add_watermark(doc, text="github.com/sunchaokun/zensers"):
+def add_watermark(doc, text="github.com/zensers/zensers"):
     """添加水印"""
     for section in doc.sections:
         header = section.header
@@ -137,7 +137,7 @@ def create_template(output_path):
     # GitHub 标识
     github_para = doc.add_paragraph()
     github_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    github_run = github_para.add_run('⭐ GitHub: sunchaokun/zensers ⭐')
+    github_run = github_para.add_run('⭐ GitHub: zensers/zensers ⭐')
     github_run.font.size = Pt(12)
     github_run.font.bold = True
     github_run.font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
@@ -204,7 +204,7 @@ def create_template(output_path):
     footer_run1.font.color.rgb = RGBColor(0xcc, 0xcc, 0xcc)
     
     # GitHub URL
-    footer_run2 = footer_para.add_run('github.com/sunchaokun/zensers')
+    footer_run2 = footer_para.add_run('github.com/zensers/zensers')
     footer_run2.font.size = Pt(8)
     footer_run2.font.color.rgb = RGBColor(0x1a, 0x36, 0x5d)
     footer_run2.font.bold = True
@@ -397,7 +397,7 @@ def create_template(output_path):
     github_para = doc.add_paragraph()
     github_run = github_para.add_run('开源地址：')
     github_run.font.bold = True
-    github_para.add_run('https://github.com/sunchaokun/zensers')
+    github_para.add_run('https://github.com/zensers/zensers')
     
     doc.add_paragraph('')
     

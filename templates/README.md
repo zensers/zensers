@@ -37,12 +37,12 @@ ZENSERS   |   {报告标题}
 
 ### 页脚
 ```
-© 2026 zensers. 保留所有权利。   |   github.com/sunchaokun/zensers   |   第 X 页
+© 2026 zensers. 保留所有权利。   |   github.com/zensers/zensers   |   第 X 页
 ```
 
 ### 封面
 - Logo 位置：底部居中
-- GitHub 标识：`github.com/sunchaokun/zensers`
+- GitHub 标识：`github.com/zensers/zensers`
 - 主色调：德勤蓝 (#0076A8) + 深蓝 (#003366) + 金色 (#C9A227)
 - 设计风格：德勤（Deloitte）咨询公司风格
 

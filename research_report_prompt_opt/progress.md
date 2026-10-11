@@ -314,7 +314,7 @@
 ## 商业推广计划（2026-09-22）
 
 ### 目标
-通过高质量研究报告推广 zensers 开源项目（https://github.com/sunchaokun/zensers）
+通过高质量研究报告推广 zensers 开源项目（https://github.com/zensers/zensers）
 
 ### 完成的工作
 1. **模板设计**：创建了 zensers 行业研究报告 Word 模板

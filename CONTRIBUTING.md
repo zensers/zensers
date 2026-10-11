@@ -40,7 +40,7 @@ See PR process below.
 
 ```bash
 # Clone the repository
-git clone https://github.com/sunchaokun/zensers.git
+git clone https://github.com/zensers/zensers.git
 cd zensers
 
 # Create virtual environment
@@ -226,7 +226,7 @@ Any other relevant information.
 
 ## Questions? / 有问题？
 
-- Open a [GitHub Issue](https://github.com/sunchaokun/zensers/issues)
+- Open a [GitHub Issue](https://github.com/zensers/zensers/issues)
 - Check [Documentation](docs/)
 
 Thank you for contributing! / 感谢您的贡献！

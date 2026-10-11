@@ -331,7 +331,7 @@ class ProfessionalReportGenerator:
 
 如有任何疑问，请联系我们：
 
-- 网站: https://github.com/sunchaokun/zensers
+- 网站: https://github.com/zensers/zensers
 - 邮箱: contact@zensers.com
 
 © 2024 ZENSERS. All rights reserved.

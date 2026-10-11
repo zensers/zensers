@@ -12,7 +12,7 @@ import httpx
 # 配置
 # ================================================================
 
-GITHUB_OWNER = os.getenv("GITHUB_OWNER", "sunchaokun")
+GITHUB_OWNER = os.getenv("GITHUB_OWNER", "zensers")
 GITHUB_REPO = os.getenv("GITHUB_REPO", "zensers")
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 

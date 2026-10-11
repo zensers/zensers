@@ -1,6 +1,6 @@
 # Zensers GitHub v1.0.0 首次发布设计文档
 
-> 仓库地址：https://github.com/sunchaokun/zensers
+> 仓库地址：https://github.com/zensers/zensers
 > 策略：一次性完整发布（方案B），深度打磨后推送
 > 目标受众：全球开发者，双语文档（英文为主，关键部分中文对照）
 > 发布范围：Python 后端 + Next.js 前端（同一仓库）
@@ -606,7 +606,7 @@ git commit -m "feat: initial release v1.0.0
 - Persistent state with crash recovery"
 
 # 4. 添加远程仓库
-git remote add origin git@github.com:sunchaokun/zensers.git
+git remote add origin git@github.com:zensers/zensers.git
 
 # 5. 设置主分支
 git branch -M main
@@ -642,7 +642,7 @@ Zensers 是一个基于多Agent协作的开源自动化市场研究系统。
 ## 🚀 Quick Start / 快速开始
 
 ```bash
-git clone https://github.com/sunchaokun/zensers.git
+git clone https://github.com/zensers/zensers.git
 cd zensers
 pip install -r requirements.txt
 cp config/settings.example.yaml config/settings.yaml

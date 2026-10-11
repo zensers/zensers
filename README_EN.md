@@ -182,7 +182,7 @@ Built-in 6 specialized research frameworks, each with independent search strateg
 
 ```bash
 # Clone the repository
-git clone https://github.com/sunchaokun/zensers.git
+git clone https://github.com/zensers/zensers.git
 cd zensers
 
 # Install backend dependencies

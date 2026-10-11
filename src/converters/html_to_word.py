@@ -660,7 +660,7 @@ class HTMLToWordConverter:
                     doc.add_paragraph("")
                     brand_foot = doc.add_paragraph()
                     brand_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = brand_foot.add_run("zensers Research · github.com/sunchaokun/zensers")
+                    run = brand_foot.add_run("zensers Research · github.com/zensers/zensers")
                     run.font.size = Pt(9)
                     run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
                     # Add page break after cover
@@ -1175,7 +1175,7 @@ class HTMLToWordConverter:
             copyright_para = footer.add_paragraph()
             copyright_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
             copyright_run = copyright_para.add_run(
-                "© 2026 zensers Research. github.com/sunchaokun/zensers"
+                "© 2026 zensers Research. github.com/zensers/zensers"
             )
             copyright_run.font.size = Pt(7)
             copyright_run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
