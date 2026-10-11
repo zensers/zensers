@@ -618,10 +618,14 @@ class HTMLToWordConverter:
             elem_type = element.get("type", "")
             next_elem_type = elements[elem_idx + 1].get("type", "") if elem_idx + 1 < len(elements) else ""
 
-            # <ol> 尾随标记元素（parser 在列表末尾发出）：有序列表结束 → 计数器归零
-            if elem_type == "ol":
+            # 有序列表编号延续规则：连续 <ol>（中间无正文元素）编号连续累加；
+            # 遇到任何正文元素（段落/标题/表格/图片等）则重置（新上下文从 1 起）
+            if ol_counter and elem_type not in (
+                    "ol", "ul", "list_item", "div_start", "div_end",
+                    "section_start", "section_end"):
                 ol_counter = 0
-                continue
+
+            # <ol> 尾随标记元素（parser 在列表末尾发出）：不再重置（由上一规则管理）
 
             # Handle div markers: identify cover/TOC areas
             if elem_type == "div_start":
