@@ -778,16 +778,17 @@ class HTMLToWordConverter:
                                 last_h1_text = stripped_text
                             # 自动编号（先去重判断再编号，跳过的标题不消耗编号；
                             # 编号基于剥离旧编号后的文本，真 TOC 域自动带出编号）
-                            # H1 "一、二、…"；h2/h3/h4 按**相对深度**编号
+                            # H1 "一、二、…"；h2-h5 按**相对深度**编号
                             # （流水线产出的小节几乎全为 h4，不能按 h 标签固定层级编号）：
                             # 章内维护子层栈，栈顶为当前父节点 [depth, number, 子计数]
+                            word_level = max(1, min(level, 9))
                             if level == 1:
                                 h1c += 1
                                 sub_stack = []
                                 sub_first = 0
                                 text = f"{cn_num(h1c)}、{stripped_text}"
-                            elif level in (2, 3, 4) and h1c > 0:
-                                depth = level - 1  # tag_depth：h2=1 < h3=2 < h4=3
+                            elif level in (2, 3, 4, 5) and h1c > 0:
+                                depth = level - 1  # tag_depth：h2=1 < h3=2 < h4=3 < h5=4
                                 while sub_stack and sub_stack[-1][0] >= depth:
                                     sub_stack.pop()
                                 if sub_stack:
@@ -801,10 +802,14 @@ class HTMLToWordConverter:
                                     number = f"{h1c}.{sub_first}"
                                 sub_stack.append([depth, number, 0])
                                 text = f"{number} {stripped_text}"
-                            # level>=5 及前置区（h1c==0）不编号
-                            safe_level = max(1, min(level, 9))
-                            heading = doc.add_heading(text, level=safe_level)
-                            self._apply_heading_style(heading, safe_level, styles, css_class)
+                                # Word 层级与编号对齐：编号子标题层级 = 逻辑相对深度 + 1
+                                # （push 后栈长即深度：栈长 1 → 1.1 → Heading 2；
+                                #   栈长 2 → 1.1.1 → Heading 3；更深截断至 4），
+                                # 修复 h4 小节错用 Heading 4 导致层级与编号脱节
+                                word_level = min(len(sub_stack) + 1, 4)
+                            # level>=6 及前置区（h1c==0）不编号，保持 HTML 原层级
+                            heading = doc.add_heading(text, level=word_level)
+                            self._apply_heading_style(heading, word_level, styles, css_class)
                             paragraph_count += 1
             
             elif elem_type == "paragraph":

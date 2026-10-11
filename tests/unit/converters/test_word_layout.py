@@ -359,6 +359,44 @@ def test_heading_auto_numbering():
                    '二、竞争格局', '2.1 厂商梯队'], seq
 
 
+# ========== 用户验收缺陷回归（第六轮） ==========
+# 缺陷：逻辑二级标题错用 Heading 4（编号已按相对深度计算，层级仍用 HTML 原始
+#       标签 → h4 小节显示为 Heading 4，层级与编号脱节）
+# 修复：Word 层级 = 相对深度 + 1（1.1 → Heading 2；1.1.1 → Heading 3；更深截断至 4）
+
+
+def test_subheading_levels_normalized():
+    """编号子标题的 Word 层级按相对深度归一：h4 首层小节 → Heading 2；
+    其下 h5 嵌套子目 → Heading 3；正文 h2 回浅级 → Heading 2"""
+    html = ('<html><body><h1>章</h1><h4>小节A</h4><h5>子目B</h5>'
+            '<h2>关键发现</h2></body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    heads = {p.text.strip(): p.style.name for p in d.paragraphs
+             if p.style.name.startswith('Heading')}
+    assert heads.get('一、章') == 'Heading 1', heads
+    assert heads.get('1.1 小节A') == 'Heading 2', heads
+    assert heads.get('1.1.1 子目B') == 'Heading 3', heads
+    kf = [(t, s) for t, s in heads.items() if '关键发现' in t]
+    assert kf, heads
+    assert kf[0][1] == 'Heading 2', kf
+
+
+def test_prebody_heading_keeps_html_level():
+    """前置区标题（h1c==0，不编号）保持 HTML 原层级"""
+    html = ('<html><body><h3>摘要说明</h3><p>前置内容</p>'
+            '<h1>正文章</h1><p>正文</p></body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    heads = {p.text.strip(): p.style.name for p in d.paragraphs
+             if p.style.name.startswith('Heading')}
+    assert heads.get('摘要说明') == 'Heading 3', heads
+
+
 def test_chart_number_paragraph_single_spacing():
     """'图表 N' 题注段落显式单倍行距，且不设大纲级别（不进 TOC）"""
     tmp = tempfile.mkdtemp()
