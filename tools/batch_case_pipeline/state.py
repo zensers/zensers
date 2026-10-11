@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """每案例阶段状态机：state.json 落盘，支持断点续跑与 --from-stage 重置。"""
+import copy
 import json
 import logging
 from pathlib import Path
@@ -36,7 +37,7 @@ class CaseState:
 
     def mark_done(self, stage: str, meta: Optional[Dict[str, Any]] = None) -> None:
         self._check_stage(stage)
-        self.data["stages"][stage] = {"status": "done", "meta": meta or {}}
+        self.data["stages"][stage] = {"status": "done", "meta": copy.deepcopy(meta or {})}
 
     def mark_failed(self, stage: str, error: str) -> None:
         self._check_stage(stage)
@@ -50,7 +51,7 @@ class CaseState:
         return self.data["stages"].get(stage, {}).get("status") == "done"
 
     def meta(self, stage: str) -> Dict[str, Any]:
-        return self.data["stages"].get(stage, {}).get("meta", {})
+        return copy.deepcopy(self.data["stages"].get(stage, {}).get("meta", {}))
 
     def current_stage(self) -> Optional[str]:
         for s in STAGES:

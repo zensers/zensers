@@ -42,3 +42,21 @@ def test_next_stage_after_done_all(tmp_path):
     for s in STAGES:
         cs.mark_done(s, {})
     assert cs.current_stage() is None
+
+
+def test_meta_isolation(tmp_path):
+    cs = CaseState.load(tmp_path / "state.json", "c1")
+    meta = {"round": 1}
+    cs.mark_done("review", meta)
+    meta["round"] = 99          # 修改调用方 dict 不得污染内部状态
+    assert cs.meta("review") == {"round": 1}
+    got = cs.meta("review")
+    got["round"] = 42           # 修改返回值不得污染内部状态
+    assert cs.meta("review") == {"round": 1}
+
+
+def test_load_corrupted_file_resets(tmp_path):
+    p = tmp_path / "state.json"
+    p.write_text("{not valid json", encoding="utf-8")
+    cs = CaseState.load(p, "c1")
+    assert cs.current_stage() == "research" and cs.case_status == "pending"
