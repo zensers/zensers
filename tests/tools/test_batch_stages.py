@@ -96,3 +96,20 @@ def test_finalize_missing_draft_raises(tmp_path):
     state = CaseState(tmp_path / "state.json", "c1")
     with pytest.raises(RuntimeError, match="report_draft"):
         stages.run_finalize(CASE, tmp_path, state, 0, 0)
+
+
+def test_finalize_sanitizes_bad_title(tmp_path):
+    state = CaseState(tmp_path / "state.json", "c1")
+    (tmp_path / "research_result.json").write_text(
+        json.dumps({"title": '坏标题: *?"<>|/\\..', "sections": [{"title": "a"}]},
+                   ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "report_draft.docx").write_bytes(b"PK")
+    manifest = stages.run_finalize(CASE, tmp_path, state, 1.0, 1)
+    assert Path(manifest["docx"]).parent == tmp_path
+    assert Path(manifest["docx"]).is_file()
+
+
+def test_load_research_rejects_non_list_sections(tmp_path):
+    (tmp_path / "research_result.json").write_text(
+        '{"sections": "x"}', encoding="utf-8")
+    assert stages.load_research_result(tmp_path) == {}

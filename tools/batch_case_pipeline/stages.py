@@ -6,6 +6,7 @@ ctx 为依赖容器（DefaultCtx=真实接线；测试注入替身）。
 """
 import json
 import logging
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +16,13 @@ from .config import CaseConfig
 from .state import CaseState
 
 logger = logging.getLogger(__name__)
+
+
+def _sanitize_filename(name: str, fallback: str) -> str:
+    """移除 Windows 非法字符与路径分隔符，防止 OSError / 逃逸 case_dir。"""
+    cleaned = re.sub(r'[\\/:*?"<>|\r\n\t]', "", str(name)).strip().rstrip(".")
+    cleaned = cleaned[:80] or ""
+    return cleaned or fallback
 
 
 def load_research_result(case_dir: Path) -> Dict[str, Any]:
@@ -27,7 +35,7 @@ def load_research_result(case_dir: Path) -> Dict[str, Any]:
     except (json.JSONDecodeError, OSError):
         logger.warning("research_result.json 损坏: %s", path)
         return {}
-    return data if isinstance(data, dict) and data.get("sections") else {}
+    return data if isinstance(data, dict) and isinstance(data.get("sections"), list) else {}
 
 
 class DefaultCtx:
@@ -144,7 +152,8 @@ async def run_research(ctx, case: CaseConfig, case_dir: Path,
         return meta
     report = await ctx.run_research(case, case_dir)
     (case_dir / "research_result.json").write_text(
-        json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8")
+        json.dumps(report, ensure_ascii=False, indent=1, default=str),
+        encoding="utf-8")
     meta = {"sections": len(report["sections"]), "skipped": False}
     state.mark_done("research", meta)
     return meta
@@ -156,7 +165,7 @@ async def run_charts(ctx, case: CaseConfig, case_dir: Path, state: CaseState,
     research_result, meta = await ctx.run_charts(case, case_dir, research_result)
     (case_dir / "charts.json").write_text(
         json.dumps({"charts": _chart_records(research_result)},
-                   ensure_ascii=False, indent=1),
+                   ensure_ascii=False, indent=1, default=str),
         encoding="utf-8")
     state.mark_done("charts", meta)
     return meta
@@ -178,7 +187,7 @@ def run_finalize(case: CaseConfig, case_dir: Path, state: CaseState,
     if not draft.is_file():
         raise RuntimeError("定稿失败: report_draft.docx 不存在")
     title = load_research_result(case_dir).get("title") or case.topic
-    final = case_dir / f"{title}.docx"
+    final = case_dir / f"{_sanitize_filename(title, case.case_id)}.docx"
     shutil.copy2(draft, final)
     manifest = {
         "case_id": case.case_id,
