@@ -471,5 +471,68 @@ def test_ending_page_not_duplicated_when_html_has_disclaimer():
     assert any('自定义免责内容' in t for t in texts)
 
 
+# ========== 用户验收缺陷回归（第五轮） ==========
+# 优化1：TOC1-4 样式行距略微扩大（约 1.4 倍 + 段前后 2pt）
+# 优化2：封面布局重构——日期/署名沉底，副题与日期之间大留白空段
+
+
+def test_toc_line_spacing_enlarged(converted):
+    """TOC1 样式 pPr 含 spacing：line=340 lineRule=auto，段前后 40 twips（2pt）"""
+    st = next(s for s in converted.styles.element.findall(qn('w:style'))
+              if s.get(qn('w:styleId')) == 'TOC1')
+    sp = st.find(qn('w:pPr') + '/' + qn('w:spacing'))
+    assert sp is not None
+    assert sp.get(qn('w:line')) == '340'
+    assert sp.get(qn('w:lineRule')) == 'auto'
+    assert sp.get(qn('w:before')) == '40'
+    assert sp.get(qn('w:after')) == '40'
+
+
+def test_cover_layout_order_and_bottom_meta():
+    """封面自上而下：字标 < 标题 < 副题 < 日期 < 署名；副题与日期之间有
+    space_before >= 200pt 的大留白空段；日期取自 meta 且只出现一次；
+    封面段行距非 EXACTLY"""
+    html = ('<html><body><div class="cover-page"><h1>测试报告标题</h1>'
+            '<div class="meta-separator"></div><p class="meta">2026-10-11</p></div>'
+            '<div class="toc"><h2>目 录</h2></div>'
+            '<h1>一、正文章</h1><p>正文</p></body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    paras = d.paragraphs
+
+    def first_idx(pred):
+        for i, p in enumerate(paras):
+            if pred(p):
+                return i
+        return -1
+
+    idx_brand = first_idx(lambda p: p.text.strip() == 'ZENSERS RESEARCH')
+    idx_title = first_idx(lambda p: p.text.strip() == '测试报告标题')
+    idx_sub = first_idx(lambda p: '行业深度研究报告' in p.text)
+    idx_date = first_idx(lambda p: p.text.strip() == '2026-10-11')
+    idx_sign = first_idx(lambda p: 'zensers Research · github.com/zensers/zensers' in p.text)
+    assert 0 <= idx_brand < idx_title < idx_sub < idx_date < idx_sign, \
+        (idx_brand, idx_title, idx_sub, idx_date, idx_sign)
+
+    # 大留白空段（副题与日期之间，space_before >= 200pt）
+    spacers = [p for p in paras if not p.text.strip()
+               and p.paragraph_format.space_before is not None
+               and p.paragraph_format.space_before.pt >= 200]
+    assert spacers, '缺少 space_before >= 200pt 的大留白空段'
+    spacer_idx = paras.index(spacers[0])
+    assert idx_sub < spacer_idx < idx_date, (idx_sub, spacer_idx, idx_date)
+
+    # 日期文本来自 meta 且只出现一次（不再立即输出）
+    date_hits = [p.text for p in paras if '2026-10-11' in p.text]
+    assert len(date_hits) == 1, date_hits
+
+    # 封面段行距非 EXACTLY（防大字号/留白段裁切）
+    for p in paras[:idx_sign + 1]:
+        rule = p.paragraph_format.line_spacing_rule
+        assert rule != WD_LINE_SPACING.EXACTLY, (p.text, rule)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

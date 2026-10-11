@@ -211,6 +211,23 @@ def define_toc_styles(doc, indents=(0, 1, 2, 2)):
         ind.set(qn('w:leftChars'), str(chars * 100))
         ind.set(qn('w:left'), str(chars * 210))  # twips 兜底（10.5pt ≈ 210/字符）
 
+        # 行距略微扩大：约 1.4 倍行距（340/240）+ 段前后 2pt（40 twips）
+        spacing = p_pr.find(qn('w:spacing'))
+        if spacing is None:
+            spacing = OxmlElement('w:spacing')
+            # pPr 子元素序列：spacing 位于 ind 之前，须按 schema 顺序插入
+            p_pr.insert_element_before(
+                spacing,
+                'w:ind', 'w:contextualSpacing', 'w:mirrorIndents',
+                'w:suppressOverlap', 'w:jc', 'w:textDirection',
+                'w:textAlignment', 'w:textboxTightWrap', 'w:outlineLvl',
+                'w:divId', 'w:cnfStyle', 'w:rPr', 'w:sectPr', 'w:pPrChange',
+            )
+        spacing.set(qn('w:line'), '340')
+        spacing.set(qn('w:lineRule'), 'auto')
+        spacing.set(qn('w:before'), '40')
+        spacing.set(qn('w:after'), '40')
+
 
 def set_update_fields_on_open(doc) -> None:
     """settings.xml 写入 w:updateFields val=true，Word/WPS 打开时自动刷新域。"""

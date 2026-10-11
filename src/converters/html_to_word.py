@@ -26,6 +26,7 @@ import logging
 import os
 import re
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -539,7 +540,6 @@ class HTMLToWordConverter:
         from .word_styles import (
             NAVY,
             GOLD,
-            COVER_META_FILL,
             cn_num,
             TABLE_HEADER_FILL,
             TABLE_ZEBRA_FILL,
@@ -605,6 +605,7 @@ class HTMLToWordConverter:
         # 不再互相覆盖上下文；元素为 class 字符串
         div_stack: list = []
         cover_title_added = False  # Whether cover title has been added
+        cover_meta_texts: List[str] = []  # 封面元信息文本（沉底到封面底部统一输出）
         last_h1_text = ""  # 上一个 H1 去编号文本（重复标题去重）
         h1c = 0  # H1 章计数器（中文数字编号）
         sub_stack = []  # 当前章子层编号栈，元素 [tag_depth, number, 直接子标题计数]
@@ -645,28 +646,51 @@ class HTMLToWordConverter:
                     run.font.bold = True
                     run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(NAVY))
                     brand.paragraph_format.space_before = Pt(4)
-                    # 中部留白（6 个空段让标题落在页面中上部）
-                    for _ in range(6):
-                        doc.add_paragraph("")
+                    brand.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                    # 中部留白（1 个空段 space_before=140pt，让标题落在页面中上部）
+                    cover_gap = doc.add_paragraph("")
+                    cover_gap.paragraph_format.space_before = Pt(140)
+                    cover_gap.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                    cover_gap.paragraph_format.line_spacing = 1.0
                 continue
             elif elem_type == "div_end":
                 # div end: pop stack（空栈防御）→ 仅当弹出的容器是最外层时翻页
                 popped = div_stack.pop() if div_stack else ""
                 if popped == "cover-page" and "cover-page" not in div_stack:
-                    # 品牌尾：金色分隔线 + 报告类型行 + 空行 + 署名行
+                    # 品牌尾：金色分隔线 + 报告类型行 + 大留白 + 日期 + 小空段 + 署名行
+                    # （日期/署名沉到封面底部；全部居中、单倍行距）
+                    def _cover_line(txt: str, size: float, color_hex: str):
+                        p = doc.add_paragraph()
+                        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        r = p.add_run(txt)
+                        r.font.size = Pt(size)
+                        r.font.name = FONT_WESTERN
+                        r._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
+                        rgb = self._parse_color_to_rgb(color_hex)
+                        if rgb:
+                            r.font.color.rgb = RGBColor(*rgb)
+                        p.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        p.paragraph_format.line_spacing = 1.0
+                        return p
+
                     brand_divider = doc.add_paragraph()
+                    brand_divider.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
                     set_paragraph_bottom_border(brand_divider, sz=18, color=GOLD)
-                    brand_line = doc.add_paragraph()
-                    brand_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = brand_line.add_run("行业深度研究报告 · INDUSTRY RESEARCH REPORT")
-                    run.font.size = Pt(11)
-                    run.font.color.rgb = RGBColor(*self._parse_color_to_rgb("#2C4A5A"))
-                    doc.add_paragraph("")
-                    brand_foot = doc.add_paragraph()
-                    brand_foot.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    run = brand_foot.add_run("zensers Research · github.com/zensers/zensers")
-                    run.font.size = Pt(9)
-                    run.font.color.rgb = RGBColor(*self._parse_color_to_rgb(GRAY_TEXT))
+                    _cover_line("行业深度研究报告 · INDUSTRY RESEARCH REPORT", 11, "#2C4A5A")
+                    # 垂直大留白（1 个空段 space_before=260pt），把日期/署名压到页面底部
+                    cover_gap = doc.add_paragraph("")
+                    cover_gap.paragraph_format.space_before = Pt(260)
+                    cover_gap.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                    cover_gap.paragraph_format.line_spacing = 1.0
+                    date_text = (" · ".join(cover_meta_texts) if cover_meta_texts
+                                 else time.strftime('%Y-%m-%d'))
+                    _cover_line(date_text, 12, "#888888")
+                    cover_meta_texts = []
+                    small_gap = doc.add_paragraph()
+                    small_run = small_gap.add_run("")
+                    small_run.font.size = Pt(8)
+                    small_gap.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                    _cover_line("zensers Research · github.com/zensers/zensers", 9, GRAY_TEXT)
                     # Add page break after cover
                     doc.add_page_break()
                 elif (popped in ("toc", "toc-page")
@@ -814,17 +838,11 @@ class HTMLToWordConverter:
                         # Divider style: 空文本 + 段落底边框 2.25pt 金色实线
                         elif para_class == "cover-divider":
                             set_paragraph_bottom_border(para, sz=18, color=GOLD)
-                        # Metadata style (author, date): 浅灰底色块
+                        # Metadata style (author, date): 不再立即输出，
+                        # 文本捕获到 cover_meta_texts，由 cover div_end 沉底统一输出
                         elif para_class == "cover-meta" or para_class == "meta":
-                            run = para.add_run(text)
-                            run.font.size = Pt(11)
-                            run.font.name = FONT_WESTERN
-                            run._element.rPr.rFonts.set(qn('w:eastAsia'), FONT_BODY_CN)
-                            # Metadata color (gray)
-                            rgb = self._parse_color_to_rgb("#888888")
-                            if rgb:
-                                run.font.color.rgb = RGBColor(*rgb)
-                            shade_cell_or_paragraph(para, COVER_META_FILL)
+                            cover_meta_texts.append(text)
+                            para._p.getparent().remove(para._p)
                         # Logo style
                         elif para_class == "cover-logo":
                             run = para.add_run(text)
