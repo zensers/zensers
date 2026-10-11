@@ -8,6 +8,7 @@ import json
 import logging
 import re
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Tuple
@@ -198,8 +199,22 @@ def run_finalize(case: CaseConfig, case_dir: Path, state: CaseState,
     if not draft.is_file():
         raise RuntimeError("定稿失败: report_draft.docx 不存在")
     title = load_research_result(case_dir).get("title") or case.topic
-    final = case_dir / f"{_sanitize_filename(title, case.case_id)}.docx"
-    shutil.copy2(draft, final)
+    target = case_dir / f"{_sanitize_filename(title, case.case_id)}.docx"
+    final = target
+    try:
+        for attempt in range(2):
+            try:
+                shutil.copy2(draft, final)
+                break
+            except PermissionError:
+                if attempt == 1:
+                    raise
+                time.sleep(2)
+    except PermissionError:
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        final = case_dir / f"{target.stem}_{stamp}.docx"
+        shutil.copy2(draft, final)
+        logger.warning("目标被占用，降级定稿: %s", final.name)
     manifest = {
         "case_id": case.case_id,
         "topic": case.topic,

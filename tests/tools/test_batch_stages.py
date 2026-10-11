@@ -123,3 +123,28 @@ def test_absolutize_chart_srcs(tmp_path):
     assert f'src="{(tmp_path / "charts" / "a.png").as_posix()}"' in out
     assert 'src="https://x/b.png"' in out            # 外链不动
     assert f'src="{(tmp_path / "charts" / "sub" / "c.png").as_posix()}"' in out
+
+
+def test_finalize_fallback_on_locked_target(tmp_path, monkeypatch):
+    state = CaseState(tmp_path / "state.json", "c1")
+    (tmp_path / "research_result.json").write_text(
+        json.dumps({"title": "量子报告", "sections": [{"title": "a"}]}, ensure_ascii=False),
+        encoding="utf-8")
+    (tmp_path / "report_draft.docx").write_bytes(b"PK")
+
+    import shutil as _shutil
+    calls = {"n": 0}
+    real_copy2 = _shutil.copy2
+
+    def flaky_copy2(src, dst):
+        calls["n"] += 1
+        if calls["n"] <= 2:   # 前两次目标被占用
+            raise PermissionError(32, "另一个程序正在使用此文件。")
+        return real_copy2(src, "E:\\market_report_systerm\\temp\\copy_ok.docx")
+
+    monkeypatch.setattr(stages.shutil, "copy2", flaky_copy2)
+    monkeypatch.setattr(stages.time, "sleep", lambda s: None)
+    manifest = stages.run_finalize(CASE, tmp_path, state, 1.0, 1)
+    # 降级为带时间戳的回退文件名，且不再指向被锁的目标
+    assert Path(manifest["docx"]).name.startswith("量子报告_")
+    assert calls["n"] == 3
