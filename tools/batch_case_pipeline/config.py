@@ -63,7 +63,11 @@ def load_config(path: Optional[str] = None) -> BatchConfig:
         cases=[],
     )
     seen_ids = set()
-    for i, item in enumerate(raw.get("cases") or []):
+    cases_raw = raw.get("cases") or []
+    if not isinstance(cases_raw, list):
+        raise ValueError(
+            f"cases 必须是列表，实际为 {type(cases_raw).__name__}: {yaml_path}")
+    for i, item in enumerate(cases_raw):
         if not isinstance(item, dict):
             raise ValueError(f"cases[{i}] 必须是映射，实际为 {type(item).__name__}")
         case_id = str(item.get("case_id", "")).strip()

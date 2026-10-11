@@ -82,3 +82,10 @@ def test_duplicate_case_id(tmp_path):
         encoding="utf-8")
     with pytest.raises(ValueError, match="重复"):
         load_config(str(p))
+
+
+def test_cases_not_a_list(tmp_path):
+    p = tmp_path / "scalar_cases.yaml"
+    p.write_text("cases: 5\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="cases 必须是列表"):
+        load_config(str(p))
