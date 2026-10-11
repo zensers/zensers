@@ -349,7 +349,15 @@ class MultiSearchSkill(Skill):
         for task in pending:
             task.cancel()
         if pending:
-            await asyncio.gather(*pending, return_exceptions=True)
+            # 被取消的 to_thread/隔离线程任务可能永远无法完成（如线程死在
+            # C 层 TLS 握手），gather 必须有上限，超时则放弃泄漏线程继续
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*pending, return_exceptions=True),
+                    timeout=_search_thread_timeout())
+            except asyncio.TimeoutError:
+                logger.warning("Search cleanup abandoned (threads leaked): %s",
+                               [t.get_name() for t in pending])
 
         all_results = []
         engines_used = []
@@ -575,16 +583,33 @@ class MultiSearchSkill(Skill):
 
     async def _web_fetch_isolated(self, engine_id: str, query: str,
                                   max_results: int):
-        """独立线程 + 独立事件循环中执行网页抓取。
+        """独立 daemon 线程 + 独立事件循环中执行网页抓取。
 
-        Windows/anyio 下经代理的 TLS 握手可能把宿主事件循环死锁在 C 层
+        Windows/anyio 下经代理的 TLS 握手可能把事件循环死锁在 C 层
         （实测主循环阻塞 35 分钟、全部超时机制失效，隧道 socket 甚至已
-        消失）。隔离到独立线程后，最坏情况只废掉该线程；宿主循环存活，
-        外层 asyncio.wait 超时正常触发并按引擎超时降级。
+        消失）。隔离到独立 daemon 线程后：宿主循环存活、超时正常触发、
+        死线程不阻塞进程退出，最坏损失 = 该次搜索结果为空（调用方按
+        引擎超时降级）。
         """
-        return await asyncio.to_thread(
-            lambda: asyncio.run(
-                self._search_with_web_fetch(engine_id, query, max_results)))
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future = loop.create_future()
+
+        def _runner() -> None:
+            try:
+                result = asyncio.run(
+                    self._search_with_web_fetch(engine_id, query, max_results))
+            except BaseException as exc:
+                if not fut.done():
+                    loop.call_soon_threadsafe(
+                        fut.set_exception if not fut.cancelled()
+                        else fut.cancel, exc)
+            else:
+                if not fut.done():
+                    loop.call_soon_threadsafe(fut.set_result, result)
+
+        threading.Thread(target=_runner, daemon=True,
+                         name=f"webfetch-{engine_id}").start()
+        return await fut
 
     async def _search_with_web_fetch(self, engine_id: str, query: str, max_results: int) -> List[Dict[str, Any]]:
         engine = SEARCH_ENGINES.get(engine_id)
