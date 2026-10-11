@@ -32,7 +32,7 @@ async def _rewrite_section(content: str, issue: Dict[str, Any],
     if not response.get("success"):
         logger.warning("LLM 修订失败: %s", response.get("message"))
         return None
-    revised = str(response.get("content", "")).strip()
+    revised = str(response.get("content") or "").strip()
     return revised or None
 
 
@@ -63,6 +63,8 @@ async def apply_fixes(issues: List[Dict[str, Any]], research_result: Dict[str, A
             target = next((s for s in sections
                            if s.get("title") == issue.get("section")), None)
             if target is None:
+                logger.warning("[%s] 未找到章节，跳过修订: %s",
+                               issue.get("code"), issue.get("section"))
                 continue
             revised = await _rewrite_section(
                 target.get("content", ""), issue, keywords, llm_fn)
