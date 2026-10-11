@@ -17,7 +17,9 @@ import os
 import tempfile
 
 import pytest
+from PIL import Image
 from docx import Document
+from docx.enum.text import WD_LINE_SPACING
 from docx.oxml.ns import qn
 
 from src.converters.html_to_word import HTMLToWordConverter
@@ -226,6 +228,79 @@ class TestWordStyleHelpers:
     def test_compute_image_width_square_capped(self):
         # 近方形（宽高比<1.3）上限 11cm
         assert compute_image_width_cm(1000, 900) == pytest.approx(11.0)
+
+
+# ========== 用户验收缺陷回归 ==========
+# 缺陷1：研究模板结构性标题泄漏进正文标题流
+# 缺陷2：内联图片被 Normal 固定行距（EXACTLY 22pt）裁切成细条
+# 缺陷3：三线表列宽均分难读、无斑马纹、行跨页断裂
+
+
+def test_structural_headings_skipped():
+    """结构性标题（论证与分析/核心结论等）不输出为正文 heading，内容保留"""
+    html = ('<html><body><h1>01 测试章</h1>'
+            '<h3>论证与分析</h3><p>正文内容A</p>'
+            '<h3>核心结论</h3><p>正文内容B</p>'
+            '<h3>合法小节</h3><p>正文内容C</p></body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    heads = [p.text.strip() for p in d.paragraphs if p.style.name.startswith('Heading')]
+    assert '论证与分析' not in heads and '核心结论' not in heads
+    assert '合法小节' in heads
+    assert any('正文内容A' in p.text for p in d.paragraphs)  # 内容保留
+
+
+def test_image_paragraph_line_spacing_reset():
+    """图片段落行距重置为单倍，不继承 Normal 的 EXACTLY 22pt（避免裁切图片）"""
+    tmp = tempfile.mkdtemp()
+    img = os.path.join(tmp, 'ok.png')
+    Image.new('RGB', (400, 300), 'white').save(img)
+    html = f'<html><body><h1>T</h1><img src="{img}"/><p>tail</p></body></html>'
+    out = os.path.join(tmp, 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    for p in d.paragraphs:
+        if p._element.findall('.//' + qn('w:drawing')):
+            pf = p.paragraph_format
+            assert pf.line_spacing_rule in (None,) or str(pf.line_spacing_rule) != 'EXACTLY (4)'
+            # 继承的固定行距在 paragraph_format 上读为 None，须断言段落级
+            # 显式 spacing 且 lineRule="auto"（单倍行距），否则仍被裁切
+            spacing = p._p.pPr.find(qn('w:spacing'))
+            assert spacing is not None, '图片段落缺少显式行距，仍继承 Normal 固定 22pt'
+            assert spacing.get(qn('w:lineRule')) == 'auto', spacing.get(qn('w:lineRule'))
+            break
+    else:
+        pytest.fail('未找到图片段落')
+
+
+def test_table_autofit_and_zebra():
+    """三线表：autofit 布局 + 全宽，数据行隔行斑马纹 F7F9FC，行 cantSplit 防跨页断裂"""
+    html = ('<html><body><h1>T</h1><table>'
+            '<tr><th>指标</th><th>数值</th></tr>'
+            '<tr><td>企业数量</td><td>140</td></tr>'
+            '<tr><td>产品款数</td><td>330</td></tr>'
+            '</table></body></html>')
+    out = os.path.join(tempfile.mkdtemp(), 't.docx')
+    result = HTMLToWordConverter().convert(html, out)
+    assert result.success
+    d = Document(out)
+    t = d.tables[0]
+    assert t.autofit is True or t._tbl.tblPr.find(qn('w:tblLayout')) is not None
+
+    def cell_fill(cell):
+        shd = cell._tc.get_or_add_tcPr().find(qn('w:shd'))
+        return shd.get(qn('w:fill')) if shd is not None else None
+
+    r1 = [cell_fill(c) for c in t.rows[1].cells]
+    r2 = [cell_fill(c) for c in t.rows[2].cells]
+    assert all(f == 'F7F9FC' for f in r1), r1
+    assert all(f != 'F7F9FC' for f in r2), r2
+
+    for row in t.rows:
+        assert row._tr.trPr is not None and row._tr.trPr.find(qn('w:cantSplit')) is not None
 
 
 if __name__ == "__main__":

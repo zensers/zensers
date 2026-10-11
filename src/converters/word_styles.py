@@ -23,8 +23,13 @@ from docx.oxml.ns import qn
 NAVY = "1A2744"                # 藏青：标题/三线表框线
 GOLD = "C9A227"                # 金色：封面分隔线/强调
 TABLE_HEADER_FILL = "E8EDF4"   # 表头浅藏青底纹
+TABLE_ZEBRA_FILL = "F7F9FC"    # 数据行隔行斑马底纹
 COVER_META_FILL = "F5F6F8"     # 封面元信息区浅灰底纹
 GRAY_TEXT = "8C8C8C"           # 页眉页脚灰
+
+# 研究写作模板的内部结构标题，不应进入正文标题流
+STRUCTURAL_HEADINGS = {"论证与分析", "核心结论", "数据支撑", "风险提示",
+                       "证据支撑", "证据链", "数据表格", "深度分析"}
 
 # ========== 字体令牌 ==========
 FONT_HEADING_CN = "SimHei"         # 标题黑体
@@ -96,6 +101,22 @@ def mark_header_row_repeat(row) -> None:
     tr_pr = row._tr.get_or_add_trPr()
     if tr_pr.find(qn("w:tblHeader")) is None:
         tr_pr.append(OxmlElement("w:tblHeader"))
+
+
+def mark_row_cant_split(row) -> None:
+    """给表格行加 w:trPr/w:cantSplit，防止行内容跨页断裂。
+
+    trPr 子元素序列中 cantSplit 位于 trHeight/tblHeader 之前，
+    需 insert_element_before 保持 schema 顺序（表头行已含 tblHeader）。
+    """
+    tr_pr = row._tr.get_or_add_trPr()
+    if tr_pr.find(qn("w:cantSplit")) is None:
+        cant_split = OxmlElement("w:cantSplit")
+        tr_pr.insert_element_before(
+            cant_split,
+            "w:trHeight", "w:tblHeader", "w:tblCellSpacing", "w:jc",
+            "w:hidden", "w:ins", "w:del", "w:trPrChange",
+        )
 
 
 def add_field_run(paragraph, instr: str, placeholder: str = ""):

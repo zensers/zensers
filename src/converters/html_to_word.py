@@ -524,6 +524,7 @@ class HTMLToWordConverter:
         """
         from docx import Document
         from docx.shared import Pt, RGBColor, Cm
+        from docx.oxml import OxmlElement
         from docx.oxml.ns import qn
         from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 
@@ -532,6 +533,8 @@ class HTMLToWordConverter:
             GOLD,
             COVER_META_FILL,
             TABLE_HEADER_FILL,
+            TABLE_ZEBRA_FILL,
+            STRUCTURAL_HEADINGS,
             FONT_BODY_CN,
             FONT_HEADING_CN,
             FONT_WESTERN,
@@ -544,6 +547,7 @@ class HTMLToWordConverter:
             add_field_run,
             compute_image_width_cm,
             mark_header_row_repeat,
+            mark_row_cant_split,
             set_first_line_indent_chars,
             set_paragraph_bottom_border,
             set_table_header_cell_border,
@@ -680,6 +684,11 @@ class HTMLToWordConverter:
                         add_field_run(toc_field_para, 'TOC \\o "1-3" \\h \\z \\u')
                         paragraph_count += 2
                     else:
+                        # Normal heading：研究写作模板的内部结构标题
+                        # （论证与分析/核心结论等）不进入正文标题流
+                        if text.strip() in STRUCTURAL_HEADINGS:
+                            logger.info("跳过结构性标题: %s", text.strip())
+                            continue
                         # Normal heading：重复标题去重（H2 与前一 H1 去编号后同文则跳过）
                         stripped_text = strip_heading_number(text)
                         if level == 2 and last_h1_text and stripped_text == last_h1_text:
@@ -826,6 +835,42 @@ class HTMLToWordConverter:
                         # 跨页重复表头
                         mark_header_row_repeat(table.rows[0])
 
+                        # 自适应布局 + 全宽 + 单元格内边距（避免列宽均分难读）
+                        tbl = table._tbl
+                        tbl_pr = tbl.tblPr
+                        table.autofit = True
+                        # 覆盖 tblW 为 100% pct（add_table 默认 type=auto/w=0）
+                        tbl_w = tbl_pr.find(qn('w:tblW'))
+                        if tbl_w is None:
+                            tbl_w = OxmlElement('w:tblW')
+                            # tblW 在 tblPr 序列中位于 jc/tblCellSpacing/tblInd/tblBorders 等之前
+                            tbl_pr.insert_element_before(
+                                tbl_w, 'w:jc', 'w:tblCellSpacing', 'w:tblInd',
+                                'w:tblBorders', 'w:shd', 'w:tblLayout',
+                                'w:tblCellMar', 'w:tblLook',
+                            )
+                        tbl_w.set(qn('w:w'), '5000')
+                        tbl_w.set(qn('w:type'), 'pct')
+                        # autofit 布局（table.autofit setter 通常已建 tblLayout，此处兜底）
+                        tbl_layout = tbl_pr.find(qn('w:tblLayout'))
+                        if tbl_layout is None:
+                            tbl_layout = OxmlElement('w:tblLayout')
+                            # tblLayout 在 tblPr 序列中位于 tblCellMar/tblLook 之前
+                            tbl_pr.insert_element_before(
+                                tbl_layout, 'w:tblCellMar', 'w:tblLook'
+                            )
+                        tbl_layout.set(qn('w:type'), 'autofit')
+                        # 单元格内边距（dxa，1/20 pt）
+                        if tbl_pr.find(qn('w:tblCellMar')) is None:
+                            cellmar = OxmlElement('w:tblCellMar')
+                            # tblCellMar 在 tblPr 序列中位于 tblLook 之前
+                            tbl_pr.insert_element_before(cellmar, 'w:tblLook')
+                            for side, w in (('top', 40), ('left', 80), ('bottom', 40), ('right', 80)):
+                                el = OxmlElement(f'w:{side}')
+                                el.set(qn('w:w'), str(w))
+                                el.set(qn('w:type'), 'dxa')
+                                cellmar.append(el)
+
                         # Track absorbed cells to avoid overwriting merged content
                         absorbed = set()
 
@@ -886,6 +931,14 @@ class HTMLToWordConverter:
 
                                 actual_j += 1
 
+                        # 斑马纹：数据行（i>0）奇数行隔行浅底纹（逐 cell 设置，
+                        # 行级无 w:shd）；所有行加 cantSplit 防跨页断裂
+                        for zebra_idx, zebra_row in enumerate(table.rows):
+                            mark_row_cant_split(zebra_row)
+                            if zebra_idx > 0 and zebra_idx % 2 == 1:
+                                for zebra_cell in zebra_row.cells:
+                                    shade_cell_or_paragraph(zebra_cell, TABLE_ZEBRA_FILL)
+
                         paragraph_count += 1
             
             # Image
@@ -924,10 +977,17 @@ class HTMLToWordConverter:
                         last_para = doc.paragraphs[-1]
                         last_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
                         last_para.paragraph_format.keep_with_next = True
+                        # Normal 固定行距 22pt（EXACTLY）会把内联图片裁成细条，
+                        # 图片段落显式重置为单倍行距
+                        last_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        last_para.paragraph_format.line_spacing = 1.0
                         # 占位空段仅在后随图注时保持绑定，避免图与图注分页断链
                         spacer_para = doc.add_paragraph()
                         spacer_run = spacer_para.add_run("")
                         spacer_run.font.size = Pt(6)
+                        # spacer 同样不继承固定行距
+                        spacer_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                        spacer_para.paragraph_format.line_spacing = 1.0
                         if next_elem_type == "figure_caption":
                             spacer_para.paragraph_format.keep_with_next = True
                         paragraph_count += 2
@@ -941,6 +1001,9 @@ class HTMLToWordConverter:
                     from docx.shared import Pt as _Pt
                     cap_para = doc.add_paragraph()
                     cap_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    # 图注段落显式单倍行距，避免继承 Normal 固定 22pt 行距
+                    cap_para.paragraph_format.line_spacing_rule = WD_LINE_SPACING.SINGLE
+                    cap_para.paragraph_format.line_spacing = 1.0
                     cap_run = cap_para.add_run(text)
                     cap_run.font.size = _Pt(8.5)
                     cap_run.font.name = FONT_WESTERN
