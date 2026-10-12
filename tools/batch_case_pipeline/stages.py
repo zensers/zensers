@@ -53,12 +53,14 @@ class DefaultCtx:
         self._research_orchestrator = None
         self._doc_agent = None
 
-    async def run_research(self, case: CaseConfig, case_dir: Path) -> Dict[str, Any]:
+    async def run_research(self, case: CaseConfig, case_dir: Path,
+                           session_id: str = "") -> Dict[str, Any]:
         from src.core.orchestrator.orchestrator import ResearchOrchestrator
         if self._research_orchestrator is None:
             self._research_orchestrator = ResearchOrchestrator(
                 use_intelligent_routing=True)
-        session_id = f"{case.case_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        session_id = session_id or (
+            f"{case.case_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         result = await self._research_orchestrator.research(
             user_input={
                 "session_id": session_id,
@@ -162,7 +164,14 @@ async def run_research(ctx, case: CaseConfig, case_dir: Path,
         logger.info("[%s] research 跳过（已有 %d 章节）",
                     case.case_id, meta["sections"])
         return meta
-    report = await ctx.run_research(case, case_dir)
+    # 会话固定（checkpoint 反哺）：同一案例的重跑复用 session_id →
+    # 编排器 _restore_from_checkpoint 直接恢复已 ready 的章节，
+    # 只用 LLM 重写失败章节，避免供应商抖动导致整段重跑。
+    session_id = state.data.get("session_id") or (
+        f"{case.case_id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+    state.data["session_id"] = session_id
+    state.save()
+    report = await ctx.run_research(case, case_dir, session_id=session_id)
     (case_dir / "research_result.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1, default=str),
         encoding="utf-8")

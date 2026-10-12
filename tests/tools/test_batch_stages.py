@@ -18,7 +18,7 @@ class FakeCtx:
         self.chart_calls = 0
         self.render_calls = 0
 
-    async def run_research(self, case, case_dir):
+    async def run_research(self, case, case_dir, session_id=""):
         self.research_calls += 1
         return {"title": case.topic, "sections": [{"title": "a", "content": "b" * 60}]}
 
@@ -55,6 +55,30 @@ async def test_research_runs_when_missing(tmp_path):
     assert state.is_done("research")
     saved = json.loads((tmp_path / "research_result.json").read_text(encoding="utf-8"))
     assert saved["sections"]
+
+
+@pytest.mark.asyncio
+async def test_research_session_pinned_across_reruns(tmp_path):
+    """重跑复用同一 session_id（checkpoint 反哺：编排器只重写失败章节）。"""
+    class RecordingCtx(FakeCtx):
+        def __init__(self):
+            super().__init__()
+            self.session_ids = []
+
+        async def run_research(self, case, case_dir, session_id=""):
+            self.session_ids.append(session_id)
+            return await super().run_research(case, case_dir, session_id)
+
+    ctx = RecordingCtx()
+    state = CaseState(tmp_path / "state.json", "c1")
+    await stages.run_research(ctx, CASE, tmp_path, state)
+    state.data["stages"].pop("research")
+    await stages.run_research(ctx, CASE, tmp_path, state)
+    assert len(ctx.session_ids) == 2
+    assert ctx.session_ids[0] == ctx.session_ids[1]
+    assert ctx.session_ids[0].startswith("c1_")
+    reloaded = CaseState.load(tmp_path / "state.json", "c1")
+    assert reloaded.data.get("session_id") == ctx.session_ids[0]
 
 
 @pytest.mark.asyncio

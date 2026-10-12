@@ -12,7 +12,7 @@ CFG = BatchConfig(max_review_rounds=3, cases=[CASE])
 
 
 class FailCtx:
-    async def run_research(self, case, case_dir):
+    async def run_research(self, case, case_dir, session_id=""):
         raise RuntimeError("boom")
 
     async def run_charts(self, case, case_dir, research_result):
@@ -24,7 +24,7 @@ class FailCtx:
 
 class OkCtx:
     """全链路成功替身：产出可通过 review 的最小产物。"""
-    async def run_research(self, case, case_dir):
+    async def run_research(self, case, case_dir, session_id=""):
         return {"title": case.topic, "sections": [
             {"title": "市场规模", "content": "量子比特退相干研究" * 300, "charts": []}]}
 
@@ -73,7 +73,7 @@ class LeakCtx(OkCtx):
         self.render_calls = 0
         self.chart_calls = 0
 
-    async def run_research(self, case, case_dir):
+    async def run_research(self, case, case_dir, session_id=""):
         return {"title": case.topic, "sections": [
             {"title": "市场规模", "content": "量子比特退相干研究" * 300,
              "charts": [{"title": "t", "path": "x.png", "source": "content",
@@ -106,7 +106,7 @@ class UnfixableCtx(OkCtx):
     def __init__(self):
         self.render_calls = 0
 
-    async def run_research(self, case, case_dir):
+    async def run_research(self, case, case_dir, session_id=""):
         rr = await super().run_research(case, case_dir)
         rr["defense_audit"] = {"issues": [
             {"code": "missing_source_url", "section": "s"}]}
