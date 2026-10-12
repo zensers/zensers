@@ -72,7 +72,7 @@ async def test_research_session_pinned_across_reruns(tmp_path):
     ctx = RecordingCtx()
     state = CaseState(tmp_path / "state.json", "c1")
     await stages.run_research(ctx, CASE, tmp_path, state)
-    state.data["stages"].pop("research")
+    (tmp_path / "research_result.json").unlink()  # 模拟产物缺失后重跑
     await stages.run_research(ctx, CASE, tmp_path, state)
     assert len(ctx.session_ids) == 2
     assert ctx.session_ids[0] == ctx.session_ids[1]
