@@ -170,12 +170,12 @@ Zensers 的约束层确保研究质量，而非盲目信任 LLM 输出：
 
 | # | 案例 | 章节 | 核心数据点 | Exhibit | 交付签名 | 在线预览 |
 |---|------|:---:|:---:|:---:|------|------|
-| 1 | [人形机器人行业分析报告](samples/humanoid-robot.html) | 5 | 70 | 5 | formal / degraded | [HTML](samples/humanoid-robot.html) |
-| 2 | [人工智能行业分析报告](samples/ai-industry.html) | 5 | 73 | 5 | formal / degraded | [HTML](samples/ai-industry.html) |
-| 3 | [半导体行业分析报告](samples/semiconductor.html) | 6 | 51 | 6 | formal / degraded | [HTML](samples/semiconductor.html) |
-| 4 | [固态电池行业分析报告](samples/solid-state-battery.html) | 5 | 78 | 5 | formal / degraded | [HTML](samples/solid-state-battery.html) |
-| 5 | [新能源汽车市场研究](samples/nev-market.html)（快速版） | 2 | 66 | 2 | formal / degraded | [HTML](samples/nev-market.html) |
-| 6 | [人工智能行业深度报告](samples/ai-industry-deep.html)（7 章深度版） | 7 | 30 | 13 | formal / degraded | [HTML](samples/ai-industry-deep.html) |
+| 1 | [人形机器人行业分析报告](https://zensers.github.io/zensers/samples/humanoid-robot.html) | 5 | 70 | 5 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/humanoid-robot.html) |
+| 2 | [人工智能行业分析报告](https://zensers.github.io/zensers/samples/ai-industry.html) | 5 | 73 | 5 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/ai-industry.html) |
+| 3 | [半导体行业分析报告](https://zensers.github.io/zensers/samples/semiconductor.html) | 6 | 51 | 6 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/semiconductor.html) |
+| 4 | [固态电池行业分析报告](https://zensers.github.io/zensers/samples/solid-state-battery.html) | 5 | 78 | 5 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/solid-state-battery.html) |
+| 5 | [新能源汽车市场研究](https://zensers.github.io/zensers/samples/nev-market.html)（快速版） | 2 | 66 | 2 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/nev-market.html) |
+| 6 | [人工智能行业深度报告](https://zensers.github.io/zensers/samples/ai-industry-deep.html)（7 章深度版） | 7 | 30 | 13 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/ai-industry-deep.html) |
 
 **交付签名说明**：`formal` = 全部章节通过验收；`degraded` = 存在未完全核验的
 证据链（如实标注，不隐瞒）；每份报告的"口径、假设与方法"前置节集中声明统计口径，
