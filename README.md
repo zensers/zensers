@@ -4,351 +4,119 @@
 
 **AI 驱动的自动化行业研究平台**
 
+*从一句需求，到一份带交付签名的专业研究报告 —— 2 小时，全程无人工*
+
 <br>
 
-[![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-green.svg)]()
-[![Version](https://img.shields.io/badge/version-3.6.0-blue.svg)]()
-[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)]()
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-teal.svg)]()
+[![Next.js 14](https://img.shields.io/badge/Next.js-14-black.svg)]()
+[![Tests 6300+](https://img.shields.io/badge/tests-6300%2B-brightgreen.svg)]()
 
-<br>
-
-> 多智能体协作，将研究问题转化为专业级研究报告 —— 每一个数据点都经过交叉验证。
-
-[English](README_EN.md) · 快速开始 · [文档](docs/) · [路线图](docs/ROADMAP.md)
+[English](README_EN.md) · 在线案例 · 快速开始
 
 </div>
 
-当前版本：**v3.6.0**。版本号唯一来源为 `pyproject.toml`，前端在构建时自动同步。
+---
 
-运行时生成的报告、日志、缓存、数据库和测试产物均保存在本地目录，不应提交到 Git；仓库只保存源码、配置模板、提示词、文档和测试。
+## 🎬 真实案例画廊
+
+**以下 6 份报告 100% 由系统端到端自动生成**——不是营销样稿，是真实运行产物。
+每份报告都附带**交付签名**、**口径与方法前置节**、**编号 Exhibit 图表**，以及可溯源至 30+ 实名机构（IDC、Stanford HAI、Gartner、Fortune Business Insights、新华网…）的数据点。
+
+| # | 案例 | 章节 | 数据点 | Exhibit | 交付签名 | 在线阅读 |
+|---|------|:---:|:---:|:---:|------|:---:|
+| 1 | **人形机器人行业分析报告** | 5 | 70 | 5 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/humanoid-robot.html) |
+| 2 | **人工智能行业分析报告** | 5 | 73 | 5 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/ai-industry.html) |
+| 3 | **半导体行业分析报告** | 6 | 51 | 6 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/semiconductor.html) |
+| 4 | **固态电池行业分析报告** | 5 | 78 | 5 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/solid-state-battery.html) |
+| 5 | **新能源汽车市场研究**（快速版） | 2 | 66 | 2 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/nev-market.html) |
+| 6 | **人工智能行业深度报告**（7 章深度版） | 7 | 30 | 13 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/ai-industry-deep.html) |
+
+> 💡 每份报告开头的「口径、假设与方法」集中声明统计边界；正文关键数字 100% 可溯源；
+> 存在未完全核验的证据链时，交付签名会如实降级标注（degraded）——**宁可诚实降级，绝不掩饰不确定性**。
 
 ---
 
-## 为什么选择 Zensers？
+## ⚡ 系统如何工作
 
-传统行业研究依赖分析师数周的手工工作：搜集数据、交叉验证、撰写报告。Zensers 将这一流程自动化 —— 不是简单的 LLM 包装器，而是一支由专业 Agent 组成的协作团队，从需求解析、数据采集、深度分析到质量校准，全流程自主完成。
+```
+对话派生框架 → 多源并行检索 → 章节级写作/评审/重写 → 防御循环修复 → 质检收敛 → 交付签名定级 → 多格式排版
+```
 
-**核心价值：**
+| 阶段 | 发生什么 |
+|------|---------|
+| **需求对齐** | 对话式澄清，LLM 派生研究框架，一键确认执行 |
+| **数据采集** | 多搜索引擎并行 + 结构化数据技能（A股财务/股价）+ 世界银行/国家统计局 |
+| **深度写作** | 章节级 Writer→Reviewer→Rewriter 循环，每个数字绑定来源与认知层级 |
+| **防御审计** | L1-L5 五层确定性审计：证据归属/口径/溯源/冲突检测，自动修复轮 |
+| **交付签名** | 确定性签名器定级（formal / diagnostic / dossier），垃圾内容永不进入交付物 |
+
+---
+
+## 🏆 为什么与众不同
 
 | | |
 |---|---|
-| **10x 效率提升** | 数周的研究工作压缩至数小时，从需求到成品报告一键生成 |
-| **数据可信** | 多源交叉验证 + 来源白名单 + 事实溯源，宁可标注不确定也不传播错误 |
-| **专业级输出** | 麦肯锡风格排版，12 种专业图表，DOCX/PPTX/PDF/Markdown 多格式导出 |
-| **持续进化** | 双轨学习系统（Wisdom + Knowledge），每次研究都让系统更聪明 |
+| **交付签名，分级诚实** | 每份报告由确定性签名器定级；无法核验的内容以诊断版交付并显著标注，绝不冒充定稿 |
+| **每个数字可溯源** | 数据点携带来源 URL、证据摘录、地理/期间口径与认知层级（事实/推理/推测） |
+| **口径纪律** | 跨口径数据不合并比较；统计边界在报告开头集中声明，全文一致执行 |
+| **面向决策的解读** | 不止罗列数据——对比、测算、情景推演与分角色决策建议 |
 
 ---
 
-## 核心能力
+## 🧰 核心能力速览
 
-### 多智能体协作系统
-
-Zensers 编排一支专业 Agent 团队，每个 Agent 负责研究流程中的关键环节：
-
-```
-需求解析 → 智能澄清 → 意图分析 → 任务分解 → 并行执行 → 结果聚合 → 报告生成 → L0-L5 审计/修订 → 文档生成
-```
-
-| Agent | 职责 |
-|-------|------|
-| RequirementAnalysisAgent | 行业识别、维度分析、深度评估、技能推荐 |
-| RequirementParserAgent | 需求解析、意图识别、参数提取 |
-| DataCollectionAgent | 多源搜索、数据清洗、API 调用、文件解析 |
-| CrossSynthesisAgent | 跨领域综合、矛盾检测、逻辑整合 |
-| ReportGenerationAgent | 内容整合、结构组织、风格统一、摘要生成 |
-| QualityCheckAgent | 数据准确性、内容完整性、逻辑连贯性、格式规范 |
-| ResultCalibrationAgent | 结果校准、数据修补、质量收敛 |
-| DocumentGenerationAgent | Word/PPT/PDF/HTML 多格式专业排版输出 |
-| LayoutDesignAgent | 报告版面布局设计、样式编排 |
-| ChartPlannerAgent | 报告内容分析、主动数据获取、12种专业图表规划与生成 |
-| DataRepairAgent | 数据缺陷检测与修复 |
-| GlobalReviewAgent | 全局报告审阅与一致性检查 |
-| SurveyAnalysisAgent | 问卷数据分析与可视化 |
-
-报告修订阶段由 ReportAgent/ReportOrchestrator 直接调用搜索网关补充证据；L0-L5 只负责发现并输出结构化 issue，不直接改写报告。每条来源在最终装配阶段统一生成 `evidence_id` 和 `provenance_id`，便于断点恢复和审计追踪。
-
-### 七层架构
-
-```
-┌──────────────────────────────────────────────────┐
-│ Layer 7: 应用层 — CLI / Web API / 桌面端          │
-├──────────────────────────────────────────────────┤
-│ Layer 6: 编排层 — ResearchOrchestrator / AgentFactory │
-├──────────────────────────────────────────────────┤
-│ Layer 5: Agent 层 — 固定 Agent / 动态 Agent / 会话管理 │
-├──────────────────────────────────────────────────┤
-│ Layer 4: 能力层 — Skills / MCP 工具 / 转换器       │
-├──────────────────────────────────────────────────┤
-│ Layer 3: 记忆层 — CoreMemory / SessionMemory / KnowledgeBank │
-├──────────────────────────────────────────────────┤
-│ Layer 2: 通信层 — MessageBus / SharedMemory / EventBus │
-├──────────────────────────────────────────────────┤
-│ Layer 1: 存储层 — TaskStorage / WAL / ResearchResultStore │
-├──────────────────────────────────────────────────┤
-│ Layer 0: 约束层 — SourceWhitelist / FactTracer / CrossValidator │
-└──────────────────────────────────────────────────┘
-```
-
-### 自描述技能系统
-
-Zensers 采用**自描述技能架构**，每个技能通过 `SKILL.md` 清单文件声明自身能力，无需硬编码注册：
-
-- **SKILL.md 清单** — YAML frontmatter 定义 capabilities、action_rules、priority、aliases、data_types，Markdown 部分提供执行指令
-- **技能发现引擎** — `SkillDiscovery.discover_all()` 自动扫描 `src/skills/` 目录，解析 SKILL.md，构建注册表
-- **三维度注册表** — `SkillRegistries` 自动构建 priority_map、alias_map、structured_data_capabilities、data_source_skill_map、category_to_skills
-- **语义路由** — `infer_actions()` 根据用户意图（A股/港股/美股 + 行情/K线/热门）自动推断应执行的动作
-- **零硬编码扩展** — 新增技能只需创建目录 + SKILL.md + skill.py，系统自动发现注册
-
-```
-src/skills/xueqiu/
-├── SKILL.md          # 自描述清单（YAML + Markdown）
-│   ├── name: xueqiu
-│   ├── capabilities: [quote, kline, hot_stocks, search_and_quote, ...]
-│   ├── action_rules: [{intent: "A股+行情", actions: [quote, kline]}]
-│   ├── priority: structured_db
-│   └── aliases: [xueqiu_stock, stock_quote]
-└── skill.py          # 技能入口 → 复用 analysis/xueqiu_skill.py
-```
-
-### 数据可信保障
-
-Zensers 的约束层确保研究质量，而非盲目信任 LLM 输出：
-
-- **来源白名单** — 政府官网、统计局、上市公司财报为 Tier1 可信源；匿名论坛、未验证自媒体标记为不可信
-- **多源交叉验证** — 关键结论至少 2 个独立来源验证，数值一致性 10% 容差检查
-- **事实溯源** — 每个数据点可追溯到原始来源，支持来源可信度评分
-- **认知防御** — L1-L5 五级矛盾检测，从格式检查到 LLM 语义分析逐层升级
-- **质量收敛** — 多轮质量校准循环，自动修补数据缺陷直到达到质量阈值
-
-### 智能路由与动态编排
-
-- **语义意图分析** — 自动识别研究类型（行业/公司/竞品/政策/学术），匹配最优框架
-- **任务结构分析** — 智能分解章节依赖关系，识别核心章节与支撑章节
-- **动态阶段编排** — 根据任务复杂度生成执行计划，支持并行/串行混合调度
-- **内容锁机制** — 章节间依赖约束，确保上游章节完成后下游才能开始
-
-### 多格式专业输出
-
-| 格式 | 特性 |
+| 能力 | 说明 |
 |------|------|
-| DOCX | 标题样式、段落格式、表格样式、图表插入、页眉页脚、目录生成 |
-| PPTX | 幻灯片布局、标题样式、内容排版、图表插入、动画效果 |
-| PDF | 页面布局、字体嵌入、图表渲染 |
-| HTML | 响应式布局、样式表、图表嵌入 |
-| Markdown | 结构化文本、图表描述 |
-
-支持 12 种专业图表：柱状图、水平柱状图、柱线组合图、饼图、折线图、雷达图、散点图、气泡图、瀑布图、象限图、分组柱状图、多实体雷达图
-
-### 研究框架
-
-内置 6 种专业研究框架，每种框架有独立的搜索策略、分析深度和内容要求：
-
-| 框架 | 适用场景 | 搜索深度 | 分析深度 |
-|------|---------|---------|---------|
-| 行业研究报告 | 市场规模、竞争格局、趋势预测 | 100 次搜索 | 超深度 |
-| 公司研究报告 | 上市公司投资价值分析 | 150 次搜索 | 超深度 |
-| 竞品分析报告 | 产品/策略/优劣势对比 | 100 次搜索 | 超深度 |
-| 政策简报 | 政策影响解读与应对建议 | 80 次搜索 | 超深度 |
-| 市场简报 | 市场行情快速概览 | 30 次搜索 | 深度 |
-| 学术研究报告 | 论文/文献综述 | 200 次搜索 | 超深度 |
-
-### 双语与多语言支持
-
-- 完整中英文混合报告支持
-- 自动语言检测（中文/英文/日文/韩文）
-- 研究框架参数双语配置
-- 行业模板中英文关键词映射
+| 多智能体协作 | 13+ 专业 Agent：需求解析/数据采集/跨域综合/质检校准/文档排版 |
+| 专业图表 | 12 种图表类型，LLM 规划 + 数值校验后渲染 |
+| 多格式交付 | DOCX / PPTX / PDF / HTML / Markdown |
+| 结构化数据 | A股上市公司财务三表、关键指标、股价历史（多数据源兜底） |
+| 双轨学习 | Wisdom + Knowledge 双系统，研究结果沉淀为组织记忆 |
+| 生产级工程 | 6,300+ 测试用例、失败留痕审计、断点续跑、多 LLM 供应商容灾 |
 
 ---
 
-## 案例画廊
+## 🎯 适用场景
 
-> 以下 6 份报告均由本系统端到端自动生成（多智能体协作 → 数据交叉验证 → 防御审计 → 交付签名），
-> 每份报告附带交付签名（formal/degraded）、口径与方法前置节、编号 Exhibit 与可溯源数据点。
-
-| # | 案例 | 章节 | 核心数据点 | Exhibit | 交付签名 | 在线预览 |
-|---|------|:---:|:---:|:---:|------|------|
-| 1 | [人形机器人行业分析报告](https://zensers.github.io/zensers/samples/humanoid-robot.html) | 5 | 70 | 5 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/humanoid-robot.html) |
-| 2 | [人工智能行业分析报告](https://zensers.github.io/zensers/samples/ai-industry.html) | 5 | 73 | 5 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/ai-industry.html) |
-| 3 | [半导体行业分析报告](https://zensers.github.io/zensers/samples/semiconductor.html) | 6 | 51 | 6 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/semiconductor.html) |
-| 4 | [固态电池行业分析报告](https://zensers.github.io/zensers/samples/solid-state-battery.html) | 5 | 78 | 5 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/solid-state-battery.html) |
-| 5 | [新能源汽车市场研究](https://zensers.github.io/zensers/samples/nev-market.html)（快速版） | 2 | 66 | 2 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/nev-market.html) |
-| 6 | [人工智能行业深度报告](https://zensers.github.io/zensers/samples/ai-industry-deep.html)（7 章深度版） | 7 | 30 | 13 | formal / degraded | [HTML](https://zensers.github.io/zensers/samples/ai-industry-deep.html) |
-
-**交付签名说明**：`formal` = 全部章节通过验收；`degraded` = 存在未完全核验的
-证据链（如实标注，不隐瞒）；每份报告的"口径、假设与方法"前置节集中声明统计口径，
-正文中所有关键数字均可溯源至 30+ 实名机构来源（IDC、Stanford HAI、Gartner、
-Fortune Business Insights、新华网等）。
+**行业分析** · **公司研究** · **竞品分析** · **政策解读** · **投资决策** · **学术综述**
 
 ---
 
-## 适用场景
-
-- **行业分析** — 新能源、半导体、医疗健康等行业深度研究
-- **公司研究** — 上市公司财务建模与估值分析
-- **竞品分析** — 产品对比、策略差异、SWOT 分析
-- **政策解读** — 政策影响评估与应对策略
-- **学术综述** — 文献综述与实证分析
-- **投资决策** — 市场情报与投资建议
-
----
-
-## 快速开始
+## 🚀 快速开始
 
 ### 环境要求
 
-- Python 3.10+
-- Node.js 18+（前端）
-- OpenAI / DeepSeek API Key
+- Python 3.10+ · Node.js 18+（前端）· LLM API Key（OpenAI / DeepSeek）
 
 ### 安装
 
 ```bash
-# 克隆仓库
 git clone https://github.com/zensers/zensers.git
 cd zensers
 
-# 安装后端依赖
+# 后端
 pip install -r requirements.txt
+cp config/settings.example.yaml config/settings.yaml   # 填入你的 LLM API Key
 
-# 配置 API Key
-cp config/settings.example.yaml config/settings.yaml
-# 编辑 settings.yaml，填入你的 LLM API Key
-
-# 安装前端依赖
+# 前端
 cd web && npm install && cd ..
 ```
 
 ### 启动
 
 ```bash
-# 方式一：桌面应用（一键启动，推荐）
-python desktop_app.py
-
-# 方式二：开发模式
-uvicorn src.api.main:app --reload
-
-# 方式三：Docker
-docker compose up -d
-
-# 方式四：生产部署
-bash start.prod.sh
+python desktop_app.py        # 桌面应用（一键启动，推荐）
+uvicorn src.api.main:app --reload   # 开发模式
+docker compose up -d         # Docker
 ```
 
-> **桌面应用特性**：独立 Watchdog 进程守护，强制关闭窗口后自动清理后端/前端子进程，无僵尸进程残留。
-
-### 使用
-
-```python
-# 编程方式
-from src.core.orchestrator.orchestrator import ResearchOrchestrator
-
-orchestrator = ResearchOrchestrator()
-result = await orchestrator.research("分析中国新能源汽车市场", interaction_mode=True)
-```
-
-或通过 Web 界面：访问 `http://localhost:3000`
+访问 `http://localhost:3000`，输入你的研究需求即可。
 
 ---
 
-## 技术栈
+## 📄 License
 
-| 层级 | 技术 |
-|------|------|
-| 后端 | Python · FastAPI · asyncio |
-| LLM | OpenAI · DeepSeek · 本地模型 |
-| 搜索 | DuckDuckGo · Baidu · Google · Bing · Tavily |
-| 数据源 | AKShare · Tushare · 世界银行 · 国家统计局 |
-| 前端 | Next.js 14 · Tailwind CSS · TypeScript |
-| 文档 | python-docx · python-pptx · reportlab · markdown |
-| 图表 | matplotlib · seaborn · plotly |
-| 存储 | SQLite · PostgreSQL · Redis · WAL |
-| 协议 | MCP (Model Context Protocol) |
-| 测试 | pytest · 6,300+ 测试用例 |
-
----
-
-## 项目规模
-
-| 指标 | 数值 |
-|------|------|
-| 源文件 | 430+ |
-| 代码行数 | ~160,000 |
-| 测试文件 | 380+ |
-| 测试用例 | 6,300+ |
-| Agent 数量 | 13+ |
-| 研究框架 | 6 种 |
-| 图表类型 | 12 种 |
-| 输出格式 | 5 种 |
-
----
-
-## 项目结构
-
-```
-zensers/
-├── src/                        # 核心源码
-│   ├── agents/                 # Agent 实现
-│   │   └── fixed_agents/       # 固定 Agent 团队
-│   ├── api/                    # FastAPI 接口层
-│   ├── cli/                    # 命令行工具
-│   ├── config/                 # 配置管理
-│   ├── content/                # 内容编排
-│   ├── converters/             # 文档格式转换
-│   ├── core/                   # 核心框架
-│   │   ├── adjustment/         # 报告修订系统
-│   │   ├── agents/             # Agent 核心（工厂/会话/生命周期）
-│   │   ├── analysis/           # 分析阶段编排
-│   │   ├── coordination/       # 任务协调
-│   │   ├── decomposition/      # 任务分解策略
-│   │   ├── dialogue/           # 对话状态机
-│   │   ├── harness/            # 约束层（白名单/交叉验证）
-│   │   ├── mcp/                # MCP 协议支持
-│   │   ├── memory/             # 记忆系统（核心/会话/知识库）
-│   │   ├── orchestrator/       # 编排器（调度/聚合/输出）
-│   │   ├── preview/            # 预览生成
-│   │   ├── quality/            # 质量检查（3 阶段校验）
-│   │   ├── recovery/           # 故障恢复
-│   │   ├── search/             # 搜索去重与域名推断
-│   │   ├── storage/            # 存储引擎
-│   │   └── workflow/           # 工作流引擎
-│   ├── methodologies/          # 研究方法论框架
-│   ├── services/               # 图表规划、图表生成与数据提取
-│   ├── skills/                 # 自描述技能插件系统（SKILL.md 清单驱动）
-│   │   ├── discovery.py        # 技能发现引擎（ActionRule/Manifest/Registries）
-│   │   ├── registry.py         # 技能注册中心（capability/priority/category 查询）
-│   │   ├── base.py             # 技能基类（format_data/infer_actions/resolve_identifier）
-│   │   ├── xueqiu/             # 雪球数据技能（A股/港股/美股实时行情）
-│   │   │   ├── SKILL.md        # 自描述清单（YAML frontmatter + 指令）
-│   │   │   └── skill.py        # 技能入口
-│   │   ├── analysis/           # 数据分析技能
-│   │   ├── search_skill.py     # 搜索技能
-│   │   └── ...                 # 更多技能
-│   └── survey/                 # 问卷系统
-├── web/                        # Next.js 前端
-├── config/                     # YAML 配置文件
-├── docs/                       # 项目文档
-├── tests/                      # 测试套件
-├── scripts/                    # 工具脚本
-└── docker-compose.yml          # Docker 编排
-```
-
----
-
-## 贡献
-
-欢迎贡献！请阅读 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详情。
-
----
-
-## 许可证
-
-MIT License — 详见 [LICENSE](LICENSE)
-
----
-
-<div align="center">
-<sub>让行业研究更智能 · Making Market Research Smarter</sub>
-</div>
+[MIT](LICENSE)
