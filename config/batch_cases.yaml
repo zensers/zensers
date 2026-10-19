@@ -1,0 +1,16 @@
+# 批量案例池：只收热门/高景气赛道（政策强催化 | 融资高增长 | 技术拐点），传统行业禁入。
+max_review_rounds: 3
+framework: standard
+cases:
+  - {case_id: humanoid_robot,      topic: 中国人形机器人产业深度研究报告,          domain_keywords: [人形机器人, 具身智能, 关节模组, 灵巧手, 伺服]}
+  - {case_id: solid_state_battery, topic: 中国固态电池产业深度研究报告,            domain_keywords: [固态电池, 电解质, 硫化物, 能量密度, 凝胶]}
+  - {case_id: low_altitude_economy, topic: 中国低空经济产业深度研究报告,           domain_keywords: [低空经济, eVTOL, 无人机, 空域管理, 飞行汽车]}
+  - {case_id: llm_agent,           topic: 中国AI大模型与智能体产业深度研究报告,    domain_keywords: [大模型, 智能体, Agent, 多模态, 推理]}
+  - {case_id: embodied_ai,         topic: 中国具身智能产业深度研究报告,            domain_keywords: [具身智能, VLA, 世界模型, 机器人学习, 端到端]}
+  - {case_id: commercial_space,    topic: 中国商业航天产业深度研究报告,            domain_keywords: [商业航天, 火箭, 卫星互联网, 星座, 可回收]}
+  - {case_id: synthetic_biology,   topic: 中国合成生物产业深度研究报告,            domain_keywords: [合成生物, 基因编辑, 发酵, 菌株, 生物制造]}
+  - {case_id: ai_datacenter,       topic: 中国智算中心产业深度研究报告,            domain_keywords: [智算中心, AIDC, 算力, 液冷, GPU]}
+  - {case_id: autonomous_driving,  topic: 中国端到端自动驾驶产业深度研究报告,      domain_keywords: [自动驾驶, 端到端, 激光雷达, NOA, 智驾]}
+  - {case_id: quantum_computing,   topic: 中国量子计算产业深度研究报告,            domain_keywords: [量子计算, 量子比特, 退相干, 超导量子, 纠错]}
+  - {case_id: fusion_energy,       topic: 中国可控核聚变产业深度研究报告,          domain_keywords: [核聚变, 托卡马克, 等离子体, 氘氚, 聚变堆]}
+  - {case_id: brain_computer,      topic: 中国脑机接口产业深度研究报告,            domain_keywords: [脑机接口, 神经信号, 电极, BCI, 侵入式]}

@@ -1,0 +1,136 @@
+# Pitch Deck Template
+# Professional use: Concise and compelling market opportunity presentation for investors
+
+id: pitch_deck_investment
+name: Investment Pitch Deck
+description: Concise and compelling market opportunity presentation for investors (10-20 slides)
+output_type: pitch_deck
+estimated_pages: 10-15 pages
+suitable_for:
+  - Fundraising Pitch
+  - Investment Promotion
+  - Partnership Discussions
+supported_formats:
+  - pptx
+category_name: report-generation
+
+sections:
+  - id: title
+    name: Project Overview
+    required: true
+    description: One-sentence project description
+    sub_sections:
+      - id: elevator_pitch
+        name: Elevator Pitch
+        description: One-sentence value proposition
+      - id: key_facts
+        name: Key Facts
+        description: Stage, sector, geography
+
+  - id: problem
+    name: Pain Points & Opportunity
+    required: true
+    description: Market pain points, opportunity window
+    sub_sections:
+      - id: pain_points
+        name: Customer Pain Points
+        description: Top 3 pain points being addressed
+      - id: opportunity_window
+        name: Opportunity Window
+        description: Why now, market timing
+
+  - id: solution
+    name: Solution
+    required: true
+    description: How the product/service solves the pain points
+    sub_sections:
+      - id: product_overview
+        name: Product Overview
+        description: Core product/service description
+      - id: value_proposition
+        name: Value Proposition
+        description: Key benefits and differentiation
+
+  - id: market_opportunity
+    name: Market Opportunity
+    required: true
+    description: TAM/SAM/SOM, growth drivers
+    sub_sections:
+      - id: tam_sam_som
+        name: TAM/SAM/SOM
+        description: Market sizing and addressable market
+      - id: growth_drivers
+        name: Growth Drivers
+        description: Key factors driving market expansion
+
+  - id: business_model
+    name: Business Model
+    required: true
+    description: How to make money, unit economics (LTV/CAC)
+    sub_sections:
+      - id: revenue_model
+        name: Revenue Model
+        description: Pricing, monetization approach
+      - id: unit_economics
+        name: Unit Economics
+        description: LTV, CAC, payback period
+
+  - id: traction
+    name: Progress Data
+    required: false
+    description: Key metrics, growth data, milestones
+    sub_sections:
+      - id: key_metrics
+        name: Key Metrics
+        description: Revenue, users, growth rates
+      - id: milestones
+        name: Milestones
+        description: Key achievements and timeline
+
+  - id: competition
+    name: Competitive Analysis
+    required: true
+    description: Competitive landscape, differentiation advantage
+    sub_sections:
+      - id: competitive_landscape
+        name: Competitive Landscape
+        description: Key competitors and positioning
+      - id: differentiation
+        name: Differentiation
+        description: Unique advantages and moat
+
+  - id: team
+    name: Team Introduction
+    required: true
+    description: Founder and core member backgrounds
+    sub_sections:
+      - id: founders
+        name: Founders
+        description: Founder backgrounds and relevant experience
+      - id: key_hires
+        name: Key Hires
+        description: Critical roles to fill
+
+  - id: financials
+    name: Financial Projections
+    required: false
+    description: Revenue forecast, cost structure
+    sub_sections:
+      - id: revenue_forecast
+        name: Revenue Forecast
+        description: 3-5 year revenue projections
+      - id: cost_structure
+        name: Cost Structure
+        description: Major cost categories and margins
+
+  - id: ask
+    name: Funding Requirements
+    required: true
+    description: Funding amount, use of funds, milestones
+    sub_sections:
+      - id: funding_amount
+        name: Funding Amount
+        description: Amount raising and terms
+      - id: use_of_funds
+        name: Use of Funds
+        description: Allocation and milestone plan

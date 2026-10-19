@@ -1,0 +1,43 @@
+{
+  "meta": {
+    "name": "end",
+    "display_name": "结束页",
+    "description": "报告结束页，深蓝背景+金色标题"
+  },
+  "background": {
+    "type": "solid",
+    "color": "navy"
+  },
+  "slots": [
+    {
+      "id": "title",
+      "type": "text",
+      "source": "title",
+      "position": { "left": 1.0, "top": 2.5, "width": 11.3, "height": 1.2 },
+      "style": {
+        "font_size": 44,
+        "font_weight": "bold",
+        "color": "gold",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "source": "content",
+      "position": { "left": 1.5, "top": 4.0, "width": 10.3, "height": 0.8 },
+      "style": {
+        "font_size": 24,
+        "color": "white",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    }
+  ],
+  "decorations": [
+    { "type": "footer_bar", "layer": "bottom", "color": "gold", "height": 0.11 },
+    { "type": "title_underline", "layer": "bottom", "color": "gold", "width": 6.0, "offset_top": 3.8 },
+    { "type": "branding", "layer": "top", "text": "CONFIDENTIAL", "position": "top_right", "color": "text_light", "font_size": 9 }
+  ]
+}

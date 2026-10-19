@@ -1,0 +1,7 @@
+{
+  "id": "peer_benchmarking",
+  "name": "同业对比分析 (Peer Benchmarking)",
+  "priority": 5,
+  "aspects": ["enterprise_analysis", "enterprise", "competitive_landscape", "financial_analysis"],
+  "content": "请按以下维度进行同业对比:\n1. 规模对比: 营收/资产/市值/员工数的绝对与相对水平\n2. 盈利对比: 毛利率/净利率/ROE/ROIC的排名和趋势\n3. 成长对比: 营收增速/利润增速/份额变化的相对表现\n4. 效率对比: 人均产出/资产周转率/运营费用率的行业位置\n5. 估值对比: PE/PB/EV-EBITDA等估值指标的行业分位"
+}

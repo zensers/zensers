@@ -1,0 +1,56 @@
+{
+  "meta": {
+    "name": "section_title",
+    "display_name": "章节分隔页",
+    "description": "深蓝背景章节标题页，含章节编号和摘要"
+  },
+  "background": {
+    "type": "solid",
+    "color": "navy"
+  },
+  "slots": [
+    {
+      "id": "section_number",
+      "type": "text",
+      "source": "section_number",
+      "position": { "left": 0.8, "top": 0.5, "width": 3.0, "height": 1.0 },
+      "style": {
+        "font_size": 48,
+        "font_weight": "bold",
+        "color": "gold",
+        "alignment": "left",
+        "font": "Microsoft YaHei",
+        "format": "zero_padded"
+      }
+    },
+    {
+      "id": "title",
+      "type": "text",
+      "source": "title",
+      "position": { "left": 1.0, "top": 2.0, "width": 11.3, "height": 1.0 },
+      "style": {
+        "font_size": 36,
+        "font_weight": "bold",
+        "color": "white",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "source": "section_summary",
+      "position": { "left": 1.5, "top": 3.5, "width": 10.3, "height": 1.0 },
+      "style": {
+        "font_size": 16,
+        "color": "white",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    }
+  ],
+  "decorations": [
+    { "type": "footer_bar", "layer": "bottom", "color": "gold", "height": 0.11 },
+    { "type": "branding", "layer": "top", "text": "CONFIDENTIAL", "position": "top_right", "color": "text_light", "font_size": 9 }
+  ]
+}

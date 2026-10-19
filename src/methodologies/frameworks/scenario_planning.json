@@ -1,0 +1,7 @@
+{
+  "id": "scenario_planning",
+  "name": "情景规划 (Scenario Planning)",
+  "priority": 5,
+  "aspects": ["policy", "trend", "strategy", "risk_assessment"],
+  "content": "请按情景规划框架进行分析:\n1. 关键变量: 影响未来的核心不确定因素识别\n2. 情景矩阵: 最佳情景/基准情景/最差情景的设定\n3. 路径推演: 每种情景的实现路径和触发条件\n4. 影响量化: 各情景对行业/企业的定量影响评估\n5. 韧性测试: 企业在不同情景下的敏感度和应对方案"
+}

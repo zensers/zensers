@@ -1,0 +1,113 @@
+# Investment Memo Template
+# Professional use: Internal investment decision reference for investment institutions
+
+id: investment_memo_standard
+name: Investment Memo
+description: Internal investment decision reference for investment institutions, covering investment thesis and risk assessment
+output_type: investment_memo
+estimated_pages: 10-20 pages
+suitable_for:
+  - Investment Decisions
+  - Investment Committee Review
+  - Due Diligence
+supported_formats:
+  - docx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: one_pager
+    name: One-Page Summary
+    required: true
+    description: Final recommendation, key investment points, risks and mitigating factors
+    sub_sections:
+      - id: recommendation
+        name: Recommendation
+        description: Invest/pass/conditional recommendation
+      - id: key_points
+        name: Key Investment Points
+        description: Top 3 reasons to invest
+
+  - id: company_overview
+    name: Company Overview
+    required: true
+    description: Solution, business model, market size
+    sub_sections:
+      - id: solution_summary
+        name: Solution Summary
+        description: What the company does and for whom
+      - id: market_size
+        name: Market Size
+        description: TAM and growth characteristics
+
+  - id: traction
+    name: Traction Data
+    required: true
+    description: Revenue growth, user growth, unit economics
+    sub_sections:
+      - id: growth_metrics
+        name: Growth Metrics
+        description: Revenue, user, and engagement growth
+      - id: unit_economics
+        name: Unit Economics
+        description: LTV/CAC, payback, margins
+
+  - id: growth_friction
+    name: Growth Friction
+    required: false
+    description: Current bottlenecks, use of funds
+    sub_sections:
+      - id: bottlenecks
+        name: Current Bottlenecks
+        description: Key constraints on growth
+      - id: fund_utilization
+        name: Fund Utilization
+        description: How new capital resolves bottlenecks
+
+  - id: competition
+    name: Competitive Landscape
+    required: true
+    description: Competitor comparison, core differentiation, moat
+    sub_sections:
+      - id: competitor_map
+        name: Competitor Map
+        description: Direct and indirect competitors
+      - id: moat_analysis
+        name: Moat Analysis
+        description: Sustainable competitive advantages
+
+  - id: team
+    name: Team Assessment
+    required: true
+    description: Background and experience, complementarity, organizational culture
+    sub_sections:
+      - id: founder_assessment
+        name: Founder Assessment
+        description: Background, domain expertise, leadership
+      - id: team_composition
+        name: Team Composition
+        description: Key roles, gaps, and hiring plan
+
+  - id: risks
+    name: Risks & Counterarguments
+    required: true
+    description: All internal and external risks and mitigation measures
+    sub_sections:
+      - id: risk_catalog
+        name: Risk Catalog
+        description: Market, execution, financial, regulatory risks
+      - id: mitigants
+        name: Mitigants
+        description: Risk mitigation strategies
+
+  - id: thesis_alignment
+    name: Investment Philosophy Alignment
+    required: false
+    description: Fit with fund investment strategy
+    sub_sections:
+      - id: fund_fit
+        name: Fund Fit
+        description: Alignment with fund thesis and stage
+      - id: portfolio_synergy
+        name: Portfolio Synergy
+        description: Complementarity with existing portfolio

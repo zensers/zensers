@@ -1,0 +1,7 @@
+{
+  "id": "technology_roadmapping",
+  "name": "技术路线图规划",
+  "priority": 6,
+  "aspects": ["technology", "technology_analysis", "strategy"],
+  "content": "请按三阶段时间轴规划技术路线:\n1. 短期 (1-2年): 即将商业化的技术，当前研发重点\n2. 中期 (3-5年): 在研技术，预计突破窗口，关键里程碑\n3. 长期 (5-10年): 前沿探索，颠覆性潜力，需要关注的信号\n4. 关键依赖: 技术突破所需的外部条件和交叉技术"
+}

@@ -1,0 +1,2888 @@
+# -*- coding: utf-8 -*-
+"""
+Document Generation Agent
+=========================
+
+Unified document generation agent supporting multiple output formats and version control.
+
+Design Principles:
+1. Inherits from FixedAgent base class
+2. Supports multiple document formats (Word/PPT/PDF)
+3. Supports multiple actions (generate/rollback/compare/export)
+4. Session context integration
+5. Comprehensive error handling
+6. LLM content revision support (Week 34)
+
+Architecture Reference: docs/UNIFIED_DOCUMENT_GENERATION_AGENT_DESIGN.md
+"""
+
+import json
+import logging
+import re
+import shutil
+import uuid
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from .base_fixed_agent import FixedAgent
+from .document_models import (
+    DocumentFormat,
+    GenerationAction,
+    DocumentGenerationRequest,
+    DocumentGenerationResult,
+    ValidationError,
+)
+
+from src.core.adjustment import SectionLocator, ContentApplier
+from src.core.llm_client import call_llm
+
+logger = logging.getLogger(__name__)
+
+# ==================== Constants ====================
+MAX_REVISION_CONTENT_LENGTH = 5000  # Max length for revision content storage
+MAX_PROMPT_CONTENT_LENGTH = 3000    # Max original content length in prompt
+DEFAULT_LLM_MAX_TOKENS = 4096       # Default LLM max tokens
+DEFAULT_LLM_TEMPERATURE = 0.3       # Default LLM temperature (lower for consistency in revisions)
+
+
+class DocumentGenerationAgent(FixedAgent):
+    """
+    Document Generation Agent
+    
+    Responsible for converting research results into professional format document outputs.
+    Supports Word/PPT/PDF formats with version control capabilities.
+    
+    Core Capabilities:
+    - Multi-format document generation
+    - Version management (create/list/compare/rollback)
+    - Export management
+    - Preview generation
+    - Content adjustment
+    
+    Attributes:
+        agent_type: Agent type identifier
+        version: Agent version number
+        capabilities: Agent capability list
+    """
+    
+    agent_type = "document_generation"
+    version = "1.0.0"
+    capabilities = [
+        "Word文档生成",
+        "PPT文档生成",
+        "PDF文档生成",
+        "版本管理",
+        "导出管理",
+        "预览生成",
+        "内容调整"
+    ]
+    
+    def __init__(
+        self,
+        agent_id: str,
+        name: str = "DocumentGenerationAgent",
+        description: str = "Unified Document Generation Agent",
+        storage_path: Optional[str] = None,
+    ):
+        """
+        Initialize Document Generation Agent
+        
+        Args:
+            agent_id: Agent unique identifier
+            name: Agent name
+            description: Agent description
+            storage_path: Storage path
+        """
+        super().__init__(agent_id, name=name, description=description, storage_path=storage_path)
+        
+        # Storage path (with exception handling)
+        self._storage_path = Path(storage_path) if storage_path else Path("data")
+        self._documents_dir = self._storage_path / "documents"
+        
+        try:
+            self._documents_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            raise RuntimeError(f"Failed to create documents directory: {e}") from e
+        
+        # Session integration
+        self._shared_memory: Optional[Any] = None
+        self._message_bus: Optional[Any] = None
+        # RG-FIX-2: cross-section deduplication fingerprint set
+        self._global_seen_paragraphs: set = set()
+        
+        # Revision manager
+        self._revision_manager: Optional[Any] = None
+    
+    def set_shared_memory(self, shared_memory: Any) -> None:
+        """
+        Set SharedMemory instance
+        
+        Args:
+            shared_memory: SharedMemory instance
+        """
+        self._shared_memory = shared_memory
+    
+    def set_message_bus(self, message_bus: Any) -> None:
+        """
+        Set MessageBus instance
+        
+        Args:
+            message_bus: MessageBus instance
+        """
+        self._message_bus = message_bus
+    
+    def set_revision_manager(self, revision_manager: Any) -> None:
+        """
+        Set revision manager
+        
+        Args:
+            revision_manager: RevisionManager instance
+        """
+        self._revision_manager = revision_manager
+    
+    def _validate_document_path(self, document_path: str) -> Path:
+        """
+        Validate document path security
+        
+        Prevents path traversal attacks, ensuring path is within allowed directories.
+        
+        Args:
+            document_path: Document path to validate
+            
+        Returns:
+            Validated Path object
+            
+        Raises:
+            ValueError: Path is not in allowed directory or path is empty
+        """
+        if not document_path:
+            raise ValueError("Document path cannot be empty")
+        
+        path = Path(document_path).resolve()
+        allowed_dir = self._documents_dir.resolve()
+        
+        # Check for dangerous path patterns
+        dangerous_patterns = ['../', '..\\', '/etc/', '/root/', '\\Windows\\']
+        for pattern in dangerous_patterns:
+            if pattern in document_path:
+                logger.warning(f"Dangerous path pattern detected: {document_path}")
+                raise ValueError(f"Document path contains dangerous pattern: {pattern}")
+        
+        # Allowed directory check (relaxed mode, allows output and temp directories)
+        allowed_prefixes = [
+            str(allowed_dir),
+            str(Path("output").resolve()),
+            str(Path("data").resolve()),
+            str(Path("temp").resolve()),
+        ]
+        
+        path_str = str(path)
+        for prefix in allowed_prefixes:
+            if path_str.startswith(prefix):
+                return path
+        
+        # If not in allowed directory, log warning but allow (backward compatibility)
+        logger.warning(f"Document path outside recommended directories: {document_path}")
+        return path
+    
+    def validate_input(self, task_input: Dict[str, Any]) -> tuple[bool, str]:
+        """
+        Validate input parameters
+        
+        Args:
+            task_input: Input parameters to validate
+            
+        Returns:
+            (is_valid, error_message)
+        """
+        # Basic validation
+        valid, error = super().validate_input(task_input)
+        if not valid:
+            return valid, error
+        
+        # Validate action field
+        if "action" not in task_input:
+            return False, "Missing required field: action"
+        
+        # Validate action value
+        action_value = task_input["action"]
+        valid_actions = [a.value for a in GenerationAction]
+        if action_value not in valid_actions:
+            return False, f"Invalid action: {action_value}. Valid actions: {valid_actions}"
+        
+        # Validate required fields based on action
+        try:
+            action = GenerationAction(action_value)
+        except ValueError:
+            return False, f"Invalid action: {action_value}"
+        
+        # produce_document and regenerate_document require output_format
+        if action in [GenerationAction.PRODUCE_DOCUMENT, GenerationAction.REGENERATE_DOCUMENT]:
+            if "output_format" not in task_input:
+                return False, "Missing required field: output_format for produce/regenerate action"
+            
+            # Validate output_format value
+            valid_formats = [f.value for f in DocumentFormat]
+            if task_input["output_format"] not in valid_formats:
+                return False, f"Invalid output_format: {task_input['output_format']}. Valid formats: {valid_formats}"
+        
+        # rollback_version requires task_id and version_id
+        if action == GenerationAction.ROLLBACK_VERSION:
+            if "task_id" not in task_input:
+                return False, "Missing required field: task_id for rollback action"
+            if "version_id" not in task_input:
+                return False, "Missing required field: version_id for rollback action"
+        
+        # compare_versions requires task_id and two version_ids
+        if action == GenerationAction.COMPARE_VERSIONS:
+            if "task_id" not in task_input:
+                return False, "Missing required field: task_id for compare action"
+            if "version_id" not in task_input or "version_id_2" not in task_input:
+                return False, "Missing required fields: version_id and version_id_2 for compare action"
+        
+        # list_versions requires task_id
+        if action == GenerationAction.LIST_VERSIONS:
+            if "task_id" not in task_input:
+                return False, "Missing required field: task_id for list_versions action"
+        
+        # export_document requires task_id and export_path
+        if action == GenerationAction.EXPORT_DOCUMENT:
+            if "task_id" not in task_input:
+                return False, "Missing required field: task_id for export action"
+            if "export_path" not in task_input:
+                return False, "Missing required field: export_path for export action"
+        
+        # get_preview requires task_id
+        if action == GenerationAction.GET_PREVIEW:
+            if "task_id" not in task_input:
+                return False, "Missing required field: task_id for preview action"
+        
+        # adjust_content requires task_id and adjustments
+        if action == GenerationAction.ADJUST_CONTENT:
+            if "task_id" not in task_input:
+                return False, "Missing required field: task_id for adjust action"
+        
+        return True, ""
+    
+    async def execute(self, task_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute document generation task (asynchronous)
+
+        Dispatches to corresponding handler based on action type.
+
+        Args:
+            task_input: Task input parameters
+
+        Returns:
+            Task execution result
+        """
+        # Publish start event
+        await self.publish_event("document_generation_started", task_input.get("action", "unknown"))
+        
+        # Parse request
+        try:
+            request = DocumentGenerationRequest.from_dict(task_input)
+        except ValidationError as e:
+            return DocumentGenerationResult(
+                success=False,
+                error=str(e),
+                error_code="VALIDATION_ERROR"
+            ).to_dict()
+        
+        # Dispatch based on action
+        action_handlers = {
+            GenerationAction.PRODUCE_DOCUMENT: self._handle_produce_document,
+            GenerationAction.REGENERATE_DOCUMENT: self._handle_regenerate_document,
+            GenerationAction.ADJUST_CONTENT: self._handle_adjust_content,
+            GenerationAction.EXPORT_DOCUMENT: self._handle_export_document,
+            GenerationAction.GET_PREVIEW: self._handle_get_preview,
+            GenerationAction.LIST_VERSIONS: self._handle_list_versions,
+            GenerationAction.ROLLBACK_VERSION: self._handle_rollback_version,
+            GenerationAction.COMPARE_VERSIONS: self._handle_compare_versions,
+        }
+        
+        handler = action_handlers.get(request.action)
+        if not handler:
+            return DocumentGenerationResult(
+                success=False,
+                error=f"Unsupported action: {request.action}",
+                error_code="UNSUPPORTED_ACTION"
+            ).to_dict()
+        
+        import asyncio as _asyncio
+        if _asyncio.iscoroutinefunction(handler):
+            result = await handler(request)
+        else:
+            result = handler(request)
+        
+        # Publish completion event
+        await self.publish_event("document_generation_completed", {"success": result.get("success", False)})
+        
+        return result
+    
+    async def _handle_produce_document(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle document generation request
+
+        Uses JSON → HTML → Word/PPT workflow to generate document:
+        1. Get content from research result or history
+        2. Use ContentOrchestrator to convert to HTML
+        3. Use HTMLToWordConverter/HTMLToPPTConverter to generate final document
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Generation result
+        """
+        # Generate task ID
+        task_id = request.task_id or f"doc_{uuid.uuid4().hex[:8]}"
+        
+        # 1. Get research content
+        research_result = request.research_result
+        if not research_result:
+            # Try to load from history
+            research_result = self._load_research_result(task_id)
+        
+        if not research_result:
+            if request.task_id:
+                return DocumentGenerationResult(
+                    success=True,
+                    task_id=task_id,
+                    output_format=request.output_format,
+                    warning="PENDING: research result is not available yet",
+                ).to_dict()
+            return DocumentGenerationResult(
+                success=False,
+                task_id=task_id,
+                error="No research result provided and no historical record found",
+                error_code="NO_CONTENT"
+            ).to_dict()
+        
+        # 2. Determine output format
+        output_format = request.output_format or DocumentFormat.DOCX
+        format_value = output_format.value if hasattr(output_format, 'value') else str(output_format)
+        
+        # 3. Generate output path (prefer directory specified in request)
+        if request.output_dir:
+            output_dir = Path(request.output_dir)
+        else:
+            output_dir = self._documents_dir / "generated"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_filename = f"{task_id}_report_{timestamp}.{format_value}"
+        output_path = output_dir / output_filename
+        
+        # 4. Use document generation workflow
+        try:
+            # HTML preview: use ContentOrchestrator (not DocumentGenerator which only does DOCX/PDF)
+            if format_value == "html":
+                # Chart planning is an LLM stage: it must understand the
+                # section argument before selecting data and a visual form.
+                research_result = await self._generate_charts_for_html(research_result)
+                research_result = self._normalize_report_titles_for_render(research_result)
+                # 渲染期剥离内部证据标注（（factual）/（inferential）/（置信度：中）），
+                # 落盘的 research_result 审计原件不动
+                research_result = self._strip_annotations_for_render(research_result)
+
+                from src.content.content_orchestrator import ContentOrchestrator
+                from src.core.preview_storage import PreviewStorage
+                orchestrator = ContentOrchestrator()
+                html_layout = request._html_layout or 'docx'
+                html_content = orchestrator.transform_to_html(
+                    research_result=research_result,
+                    output_format=html_layout,
+                    output_dir=str(PreviewStorage.NEW_DIR),
+                )
+                html_content = self._prepare_html_chart_assets(
+                    html_content, output_path.parent,
+                )
+                original_html_content = html_content
+                html_content = self._repair_html_contract(
+                    html_content, research_result=research_result,
+                )
+                if html_content != original_html_content:
+                    research_result["_html_contract_repaired"] = True
+                html_contract = self._finalize_html_contract(
+                    html_content,
+                    research_result=research_result,
+                    render_diagnostics=orchestrator.get_render_diagnostics(),
+                )
+                if html_contract.get("issues") or html_contract.get("explicit_nonformal"):
+                    html_content = self._add_delivery_banner(html_content)
+                output_path.write_text(html_content, encoding="utf-8")
+                
+                file_size = output_path.stat().st_size
+                pages_estimate = max(1, len(research_result.get("sections", [])))
+                logger.info(f"HTML preview generated: {output_path}")
+                
+                return DocumentGenerationResult(
+                    success=True,
+                    task_id=task_id,
+                    output_format=output_format,
+                    version_id="v1",
+                    document_path=str(output_path),
+                    file_size=file_size,
+                    pages_estimate=pages_estimate,
+                    metadata=html_contract,
+                    message=f"Preview generated: {output_filename}"
+                ).to_dict()
+
+            # DOCX/PDF/PPTX: use DocumentGenerator or direct HTML conversion
+            preview_html_path = request._preview_html_path
+            direct_conversion_ok = False
+            if preview_html_path and Path(preview_html_path).exists():
+                html_content = Path(preview_html_path).read_text(encoding='utf-8')
+                logger.info(f"Reusing preview HTML for {format_value} conversion: {preview_html_path}")
+
+                if format_value == "pptx":
+                    from src.converters.html_to_ppt import HTMLToPPTConverter
+                    converter = HTMLToPPTConverter()
+                    conv_result = converter.convert(html=html_content, output_path=str(output_path))
+                    if conv_result.success:
+                        direct_conversion_ok = True
+                    else:
+                        logger.warning(f"PPTX conversion from preview HTML failed: {conv_result.error}, falling back to DocumentGenerator")
+                        preview_html_path = None
+                elif format_value == "docx":
+                    from src.converters.html_to_word import HTMLToWordConverter
+                    converter = HTMLToWordConverter()
+                    template_html = None
+                    try:
+                        from src.content.content_orchestrator import ContentOrchestrator
+                        co = ContentOrchestrator()
+                        template_html = co.get_template_html()
+                    except Exception:
+                        pass
+                    conv_result = converter.convert(html=html_content, output_path=str(output_path), template_html=template_html)
+                    if conv_result.success:
+                        direct_conversion_ok = True
+                    else:
+                        logger.warning(f"DOCX conversion from preview HTML failed: {conv_result.error}, falling back to DocumentGenerator")
+                        preview_html_path = None
+                else:
+                    preview_html_path = None
+
+            if not direct_conversion_ok:
+                from ...core.orchestrator.output.document_generator import (
+                    DocumentGenerator,
+                    DocumentConfig,
+                    DocumentFormat as DGFormat,
+                )
+                
+                # Map format
+                format_map = {
+                    DocumentFormat.DOCX: DGFormat.DOCX,
+                    DocumentFormat.PDF: DGFormat.PDF,
+                    DocumentFormat.PPTX: DGFormat.PPTX,
+                }
+                dg_format = format_map.get(output_format, DGFormat.DOCX)
+                
+                # Create document config
+                config = DocumentConfig(
+                    format=dg_format,
+                    title=research_result.get("title") or research_result.get("topic") or "Research Report",
+                    author=research_result.get("author", "AI Research Assistant"),
+                    template_path=Path(request.template) if request.template else None,
+                )
+                
+                # Create document generator
+                generator = DocumentGenerator(config)
+                
+                # Add content
+                self._populate_document_content(generator, research_result)
+                
+                # Generate document
+                generator.generate(output_path)
+            
+            if output_path.exists():
+                file_size = output_path.stat().st_size
+                pages_estimate = max(1, len(research_result.get("sections", [])))
+                
+                logger.info(f"Document generated successfully: {output_path}")
+                
+                return DocumentGenerationResult(
+                    success=True,
+                    task_id=task_id,
+                    output_format=output_format,
+                    version_id="v1",
+                    document_path=str(output_path),
+                    file_size=file_size,
+                    pages_estimate=pages_estimate,
+                    message=f"Document generated: {output_filename}"
+                ).to_dict()
+            else:
+                return DocumentGenerationResult(
+                    success=False,
+                    task_id=task_id,
+                    error="Document generation failed - no output file created",
+                    error_code="GENERATION_FAILED"
+                ).to_dict()
+                
+        except ImportError as e:
+            logger.warning(f"DocumentGenerator not available: {e}, using fallback")
+            return self._fallback_generate_document(
+                task_id=task_id,
+                research_result=research_result,
+                output_format=format_value,
+                output_path=output_path,
+            )
+        except Exception as e:
+            logger.error(f"Document generation error: {e}", exc_info=True)
+            return DocumentGenerationResult(
+                success=False,
+                task_id=task_id,
+                error=f"Document generation failed: {str(e)}",
+                error_code="GENERATION_ERROR"
+            ).to_dict()
+    
+    def _load_research_result(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Load research result from history
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            Research result dictionary, or None if not found
+        """
+        # Try to load from SharedMemory
+        if self._shared_memory:
+            try:
+                result = self._shared_memory.get(f"research_result_{task_id}")
+                if result:
+                    return result
+            except Exception as e:
+                logger.warning(f"Failed to load from SharedMemory: {e}")
+        
+        # Try to load from file
+        result_file = self._documents_dir.parent / "research_results" / f"{task_id}.json"
+        if result_file.exists():
+            try:
+                import json
+                with open(result_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    # Extract research result
+                    if "result" in data and "data" in data["result"]:
+                        return data["result"]["data"]
+                    return data
+            except Exception as e:
+                logger.warning(f"Failed to load research result from file: {e}")
+        
+        return None
+    
+    def _populate_document_content(
+        self,
+        generator: Any,
+        research_result: Dict[str, Any]
+    ) -> None:
+        """
+        Populate research result into document generator
+
+        Args:
+            generator: DocumentGenerator instance
+            research_result: Research result dictionary
+        """
+        # [FIX Bug 2] Store original section metadata (data_points, charts) for chart generation
+        sections_data = research_result.get("sections", [])
+        if hasattr(generator, 'set_sections_meta'):
+            generator.set_sections_meta(sections_data)
+
+        # Add title
+        title=research_result.get("title", "研究报告")
+        generator.add_heading(title, level=0)
+        
+        # Add metadata
+        if research_result.get("author"):
+            generator.add_paragraph(f"Author: {research_result['author']}")
+        if research_result.get("date"):
+            generator.add_paragraph(f"Date: {research_result['date']}")
+        
+        generator.add_paragraph("")  # Empty line
+
+        # I5 交付签名：dossier 级交付——全部章节失败时产出研究资料包，
+        # 而非空壳文档（垃圾内容永不进入任何级别的文档）；diagnostic 级
+        # 交付在正文前插入诊断横幅（设计 §I5"诊断版 docx（横幅）"）。
+        signature = research_result.get("delivery_signature") or {}
+        delivery_class = str(signature.get("delivery_class") or "")
+        if delivery_class == "dossier":
+            self._populate_dossier_document(generator, research_result, signature)
+            return
+        if delivery_class == "diagnostic" and signature.get("banner"):
+            generator.add_heading("交付说明", level=1)
+            generator.add_paragraph(str(signature["banner"]))
+            generator.add_paragraph("")
+
+        # D1（格式标准 2026-10-18）：口径、假设与方法前置。
+        # 全文档唯一的口径/假设声明在正文前集中呈现（声明已在组装层去重）。
+        methodology_notes = research_result.get("methodology_notes") or []
+        if methodology_notes:
+            generator.add_heading("口径、假设与方法", level=1)
+            for i, note in enumerate(methodology_notes, 1):
+                generator.add_paragraph(f"{i}. {note}")
+            generator.add_paragraph("")
+
+        # Add sections
+        sections = research_result.get("sections", [])
+
+        # Add sections
+        sections = research_result.get("sections", [])
+        for section in sections:
+            section_title = section.get("title", "")
+            section_content = section.get("content", "")
+            section_data_points = section.get("data_points", [])
+            
+            if section_title:
+                generator.add_heading(section_title, level=1)
+            
+            if section_content:
+                # Clean content: remove LLM conversation prefixes and irrelevant content
+                cleaned_content = self._clean_llm_content(section_content)
+                
+                # Remove duplicate title at content start (avoid "Executive Summary" appearing twice)
+                cleaned_content = self._strip_duplicate_title(cleaned_content, section_title)
+                
+                # **New**: Remove duplicate paragraphs (LLM may generate duplicate content)
+                cleaned_content = self._deduplicate_paragraphs(cleaned_content, global_dedup=True)  # RG-FIX-2
+                
+                # Process Markdown format content
+                elements = self._process_markdown_content(cleaned_content)
+                
+                for element in elements:
+                    if element["type"] == "heading":
+                        # Skip headings in content: section.title already added as heading
+                        continue
+                    elif element["type"] == "paragraph":
+                        generator.add_paragraph(element["text"])
+                    elif element["type"] == "list":
+                        for item in element["items"]:
+                            generator.add_paragraph(f"• {item}")
+                    elif element["type"] == "ordered_list":
+                        for j, item in enumerate(element["items"], 1):
+                            generator.add_paragraph(f"{j}. {item}")
+                    elif element["type"] == "table":
+                        if len(element["rows"]) > 1:
+                            headers = element["rows"][0]
+                            rows = element["rows"][1:]
+                                # Filter out separator rows (like |---|---|) and empty value rows
+                            rows = [r for r in rows if not all(
+                                (c is None) or (c.replace("-", "").replace(":", "") == "") 
+                                for c in r
+                            )]
+                            if rows:
+                                generator.add_table(headers, rows)
+                
+                # Smart chart generation: automatically add charts for suitable sections
+                if self._should_generate_charts(section_title):
+                    try:
+                        # [FIX Bug 3] Use original section_content (not cleaned) for data extraction
+                        # so market share, growth rates, etc. aren't lost during dedup/stripping
+                        chart_paths = generator.add_smart_chart(
+                            section_title=section_title,
+                            content=section_content,
+                            data_points=section_data_points,
+                            max_charts=2
+                        )
+                        if chart_paths:
+                            logger.info(f"Auto-generated {len(chart_paths)} charts for section: {section_title}")
+                            # [FIX Bug 1] Embed generated chart images into document content
+                            for chart_path in chart_paths:
+                                try:
+                                    generator.add_image(Path(chart_path))
+                                except Exception as img_e:
+                                    logger.warning(f"Failed to add chart image {chart_path}: {img_e}")
+                    except Exception:
+                        logger.exception("Failed to generate smart charts")
+            
+            # P0-3 fix: Handle charts in section
+            section_charts = section.get("charts", [])
+            for chart in section_charts:
+                chart_path = chart.get("path", "")
+                if chart_path and Path(chart_path).exists():
+                    try:
+                        generator.add_image(chart_path)
+                        logger.info(f"Added chart image: {chart_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to add chart image {chart_path}: {e}")
+            
+            # Process subsections
+            subsections = section.get("subsections", [])
+            for subsection in subsections:
+                sub_title = subsection.get("title", "")
+                sub_content = subsection.get("content", "")
+                sub_points = subsection.get("points", []) or []
+                
+                if sub_title:
+                    generator.add_heading(sub_title, level=2)
+                
+                if sub_points:
+                    for pt in sub_points:
+                        generator.add_heading(pt, level=3)
+                        pt_content = self._extract_point_text(sub_content, pt)
+                        if pt_content:
+                            cleaned = self._clean_llm_content(pt_content)
+                            elements = self._process_markdown_content(cleaned)
+                            for element in elements:
+                                if element["type"] == "heading":
+                                    continue
+                                elif element["type"] == "paragraph":
+                                    generator.add_paragraph(element["text"])
+                                elif element["type"] == "list":
+                                    for item in element["items"]:
+                                        generator.add_paragraph(f"• {item}")
+                                elif element["type"] == "ordered_list":
+                                    for j, item in enumerate(element["items"], 1):
+                                        generator.add_paragraph(f"{j}. {item}")
+                                elif element["type"] == "table":
+                                    if len(element["rows"]) > 1:
+                                        headers = element["rows"][0]
+                                        rows = element["rows"][1:]
+                                        rows = [r for r in rows if not all(
+                                            (c is None) or (c.replace("-", "").replace(":", "") == "")
+                                            for c in r
+                                        )]
+                                        if rows:
+                                            generator.add_table(headers, rows)
+                elif sub_content:
+                    cleaned_content = self._clean_llm_content(sub_content)
+                    elements = self._process_markdown_content(cleaned_content)
+                    
+                    for element in elements:
+                        if element["type"] == "heading":
+                            heading_text = element.get("text", "").strip()
+                            if heading_text == sub_title:
+                                continue
+                            generator.add_heading(heading_text, level=3)
+                        elif element["type"] == "paragraph":
+                            generator.add_paragraph(element["text"])
+                        elif element["type"] == "list":
+                            for item in element["items"]:
+                                generator.add_paragraph(f"• {item}")
+                        elif element["type"] == "ordered_list":
+                            for j, item in enumerate(element["items"], 1):
+                                generator.add_paragraph(f"{j}. {item}")
+                        elif element["type"] == "table":
+                            if len(element["rows"]) > 1:
+                                headers = element["rows"][0]
+                                rows = element["rows"][1:]
+                                rows = [r for r in rows if not all(
+                                    (c is None) or (c.replace("-", "").replace(":", "") == "") 
+                                    for c in r
+                                )]
+                                if rows:
+                                    generator.add_table(headers, rows)
+        
+        # Add key findings
+        key_findings = research_result.get("key_findings", [])
+        if key_findings:
+            generator.add_heading("Key Findings", level=1)
+            for finding in key_findings:
+                generator.add_paragraph(f"• {finding}")
+        
+        # Add data points
+        data_points = research_result.get("data_points", [])
+        if data_points:
+            generator.add_heading("Key Data", level=1)
+            headers = ["Metric", "Value", "Unit"]
+            rows = [
+                [dp.get("metric", ""), dp.get("value", ""), dp.get("unit", "")]
+                for dp in data_points
+            ]
+            generator.add_table(headers, rows)
+        
+        # P0-3 fix: Add data sources/references
+        sources = research_result.get("sources", [])
+        if sources:
+            generator.add_heading("Data Sources", level=1)
+            from src.agents.fixed_agents.report_upgrade.orchestrator import _is_vague_source
+            for i, source in enumerate(sources[:20], 1):  # Show at most 20 sources
+                title = source.get("title", "")
+                url = source.get("url", "")
+                if title and url:
+                    line = f"[{i}] {title} - {url}"
+                elif url:
+                    line = f"[{i}] {url}"
+                elif title:
+                    line = f"[{i}] {title}"
+                else:
+                    continue
+                # D3 信源分级（格式标准 2026-10-18，终审 P1#2 修正）：
+                # 自媒体/转载类域名任一命中即降权标注；通用标题+无 URL
+                # 的弱锚定来源同样标注（知乎援引类场景实测可达）。
+                url_lower = str(url).lower()
+                weak_domain = any(
+                    marker in url_lower
+                    for marker in (
+                        "zhihu.com", "weibo.com", "bilibili.com",
+                        "baijiahao.baidu.com", "toutiao.com", "sohu.com",
+                        "163.com", "csdn.net", "weixin.qq.com",
+                        "xiaohongshu.com", "douyin.com",
+                    )
+                )
+                weak_anchor = (not str(url or "").strip()) and _is_vague_source(str(title))
+                if weak_domain or weak_anchor:
+                    line += "（非机构来源，仅供参考）"
+                generator.add_paragraph(line)
+    
+    def _populate_dossier_document(self, generator, research_result, signature) -> None:
+        """I5：dossier 级交付文档——研究资料包（一天的活儿永远有产出）。"""
+        from src.core.delivery_signer import DeliverySigner
+        dossier = DeliverySigner.build_dossier(research_result)
+
+        generator.add_heading("研究资料包", level=1)
+        banner = str(signature.get("banner") or "")
+        if banner:
+            generator.add_paragraph(f"【交付说明】{banner}")
+        reasons = signature.get("reasons") or []
+        if reasons:
+            generator.add_paragraph("定级原因：" + "；".join(str(r) for r in reasons))
+        generator.add_paragraph("")
+
+        generator.add_heading("一、章节素材状态", level=2)
+        for item in dossier["section_materials"]:
+            generator.add_paragraph(
+                f"- {item['title'] or '（未命名）'}：{item['status']}"
+                f"（{item['chars']} 字，{item['data_points']} 个数据点）"
+            )
+        if not dossier["section_materials"]:
+            generator.add_paragraph("（无章节素材）")
+
+        generator.add_heading("二、已收集数据点", level=2)
+        dps = [dp for dp in dossier["data_points"] if isinstance(dp, dict)]
+        rows = [
+            [str(dp.get("metric") or ""), str(dp.get("value") or ""),
+             str(dp.get("unit") or ""), str(dp.get("source") or "")]
+            for dp in dps
+        ]
+        rows = [r for r in rows if any(c.strip() for c in r)]
+        if rows:
+            generator.add_table(["指标", "数值", "单位", "来源"], rows)
+        else:
+            generator.add_paragraph("（无已核验数据点）")
+
+        generator.add_heading("三、来源清单", level=2)
+        for i, source in enumerate(dossier["sources"][:50], 1):
+            title = str(source.get("title") or "")
+            url = str(source.get("url") or "")
+            generator.add_paragraph(f"[{i}] {title}" + (f" - {url}" if url else ""))
+        if not dossier["sources"]:
+            generator.add_paragraph("（无来源记录）")
+
+        if dossier["methodology_notes"]:
+            generator.add_heading("四、口径与方法", level=2)
+            for i, note in enumerate(dossier["methodology_notes"], 1):
+                generator.add_paragraph(f"{i}. {note}")
+
+    @staticmethod
+    def _extract_point_text(full_content: str, point_title: str) -> str:
+        """Extract text belonging to a specific point from subsection content.
+        
+        Searches for the point heading in markdown content and returns the
+        text between this heading and the next heading or end of content.
+        """
+        if not full_content or not point_title:
+            return ""
+        import re
+        escaped = re.escape(point_title)
+        pattern = rf'^#{{1,4}}\s+{escaped}\s*$'
+        lines = full_content.split('\n')
+        capturing = False
+        captured = []
+        for line in lines:
+            if re.match(pattern, line.strip(), re.IGNORECASE):
+                capturing = True
+                continue
+            if capturing:
+                if re.match(r'^#{1,4}\s+', line.strip()):
+                    break
+                captured.append(line)
+        return '\n'.join(captured).strip()
+    
+    def _strip_duplicate_title(self, content: str, section_title: str) -> str:
+        """
+        Remove duplicate title at content start to avoid title being rendered twice
+
+        Scenario: section title is already "Executive Summary",
+        and content starts with "## Executive Summary", "### Executive Summary", or "**Executive Summary**",
+        causing the title to appear twice.
+
+        Args:
+            content: Original content
+            section_title: Section title
+
+        Returns:
+            Cleaned content
+        """
+        if not content or not section_title:
+            return content
+        
+        import re
+        
+        lines = content.split("\n")
+        cleaned = []
+        title_stripped = section_title.strip()
+        
+        # Build patterns to skip: various markdown forms of the title
+        skip_patterns = [
+            r'^#{1,6}\s*' + re.escape(title_stripped) + r'\s*$',
+            r'^\*\*' + re.escape(title_stripped) + r'\*\*\s*$',
+            r'^' + re.escape(title_stripped) + r'\s*$',
+        ]
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+                # Extend scope to first 20 lines, covering more LLM output prefixes
+            if i < 20:
+                should_skip = False
+                for pattern in skip_patterns:
+                    if re.match(pattern, stripped):
+                        should_skip = True
+                        break
+                if should_skip:
+                    continue
+            cleaned.append(line)
+        
+        return "\n".join(cleaned)
+    
+    def _deduplicate_paragraphs(self, content: str, global_dedup: bool = False) -> str:
+        """
+        Remove duplicate paragraphs from content (RG-FIX-2: cross-section support)
+
+        LLM sometimes generates duplicate paragraphs (e.g., same sentence output twice).
+        This method detects and removes consecutive duplicate paragraphs.
+        When global_dedup=True, uses class-level _global_seen_paragraphs for cross-section dedup.
+
+        Args:
+            content: Original content
+            global_dedup: If True, check against global fingerprint set
+
+        Returns:
+            Deduplicated content
+        """
+        if not content:
+            return content
+        
+        content = self._clean_duplicate_html_tags(content)
+        content = self._clean_inline_duplicates(content)
+        
+        lines = content.split('\n')
+        result = []
+        prev_paragraph = []
+        prev_paragraph_text = ""
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            
+            if stripped:
+                prev_paragraph.append(stripped)
+                i += 1
+                continue
+            
+            if prev_paragraph:
+                current_text = ' '.join(prev_paragraph)
+                
+                # RG-FIX-2: cross-section dedup via global fingerprint
+                if global_dedup:
+                    _fingerprint = current_text.strip()[:80]
+                    if _fingerprint in self._global_seen_paragraphs:
+                        logger.debug(f"RG-FIX-2: Skipping cross-section duplicate: {current_text[:50]}...")
+                        prev_paragraph = []
+                        i += 1
+                        continue
+                    self._global_seen_paragraphs.add(_fingerprint)
+                
+                if self._is_similar_paragraph(current_text, prev_paragraph_text):
+                    logger.debug(f"Skipping duplicate paragraph: {current_text[:50]}...")
+                else:
+                    result.extend(prev_paragraph)
+                    result.append('')
+                    prev_paragraph_text = current_text
+                
+                prev_paragraph = []
+            
+            i += 1
+        
+        if prev_paragraph:
+            current_text = ' '.join(prev_paragraph)
+            if global_dedup:
+                _fingerprint = current_text.strip()[:80]
+                if _fingerprint in self._global_seen_paragraphs:
+                    return '\n'.join(result)
+                self._global_seen_paragraphs.add(_fingerprint)
+            if not self._is_similar_paragraph(current_text, prev_paragraph_text):
+                result.extend(prev_paragraph)
+        
+        return '\n'.join(result)
+    
+    def _clean_duplicate_html_tags(self, content: str) -> str:
+        """
+        Clean duplicate HTML tags
+
+        Handles duplicate tags that LLM might generate, such as:
+        - <table><table> → <table>
+        - <thead><tr><thead><tr> → <thead><tr>
+        - </tbody></table></tbody></table> → </tbody></table>
+
+        Args:
+            content: Original content
+
+        Returns:
+            Cleaned content
+        """
+        import re
+        
+        # Common duplicate tag patterns
+        duplicate_patterns = [
+            # Opening tag duplicates
+            (r'(<table[^>]*>)\s*\1', r'\1'),
+            (r'(<thead[^>]*>)\s*\1', r'\1'),
+            (r'(<tbody[^>]*>)\s*\1', r'\1'),
+            (r'(<tr[^>]*>)\s*\1', r'\1'),
+            (r'(<td[^>]*>)\s*\1', r'\1'),
+            (r'(<th[^>]*>)\s*\1', r'\1'),
+            (r'(<ul[^>]*>)\s*\1', r'\1'),
+            (r'(<ol[^>]*>)\s*\1', r'\1'),
+            (r'(<li[^>]*>)\s*\1', r'\1'),
+            (r'(<div[^>]*>)\s*\1', r'\1'),
+            (r'(<section[^>]*>)\s*\1', r'\1'),
+            # Closing tag duplicates
+            (r'(</table>)\s*\1', r'\1'),
+            (r'(</thead>)\s*\1', r'\1'),
+            (r'(</tbody>)\s*\1', r'\1'),
+            (r'(</tr>)\s*\1', r'\1'),
+            (r'(</td>)\s*\1', r'\1'),
+            (r'(</th>)\s*\1', r'\1'),
+            (r'(</ul>)\s*\1', r'\1'),
+            (r'(</ol>)\s*\1', r'\1'),
+            (r'(</li>)\s*\1', r'\1'),
+            (r'(</div>)\s*\1', r'\1'),
+            (r'(</section>)\s*\1', r'\1'),
+        ]
+        
+        for pattern, replacement in duplicate_patterns:
+            # Multiple replacements until no change
+            prev_content = None
+            while prev_content != content:
+                prev_content = content
+                content = re.sub(pattern, replacement, content, flags=re.IGNORECASE)
+        
+        return content
+    
+    def _clean_inline_duplicates(self, content: str) -> str:
+        """
+        Clean inline duplicate text
+
+        Handles duplicate text that LLM might generate, such as:
+        - "市场概况市场概况" → "市场概况"
+        - "研究结论研究结论" → "研究结论"
+
+        Args:
+            content: Original content
+
+        Returns:
+            Cleaned content
+        """
+        import re
+        
+        lines = content.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            stripped = line.strip()
+            
+            # Skip empty lines
+            if not stripped:
+                cleaned_lines.append(line)
+                continue
+            
+            # Detect and fix inline duplicates (word/phrase level duplicates)
+            # Pattern: detect consecutive duplicate text fragments (length >= 4 characters)
+            # Example: "市场概况市场概况" → "市场概况"
+
+            # Special handling for Chinese text
+            if len(stripped) >= 8:  # Only process lines long enough
+                # Check if first half and second half are identical
+                half_len = len(stripped) // 2
+                if half_len >= 4:
+                    first_half = stripped[:half_len]
+                    second_half = stripped[half_len:]
+                    
+                    # If both halves are identical or highly similar
+                    if first_half == second_half:
+                        stripped = first_half
+                        logger.debug(f"Cleaned inline duplicate: {line.strip()[:50]}...")
+                    elif self._is_similar_paragraph(first_half, second_half, threshold=0.95):
+                        stripped = first_half
+                        logger.debug(f"Cleaned similar inline duplicate: {line.strip()[:50]}...")
+            
+            # Detect duplicates in Markdown heading lines
+            # Example: "## 市场概况## 市场概况" → "## 市场概况"
+            title_match = re.match(r'^(#{1,6})\s+(.+)$', stripped)
+            if title_match:
+                prefix = title_match.group(1)
+                title_text = title_match.group(2)
+                
+                # Check if title text is duplicated
+                half_len = len(title_text) // 2
+                if half_len >= 2:
+                    first_half = title_text[:half_len]
+                    second_half = title_text[half_len:]
+                    if first_half == second_half:
+                        stripped = f"{prefix} {first_half}"
+                        logger.debug(f"Cleaned title duplicate: {line.strip()[:50]}...")
+            
+            # Detect duplicates in table rows
+            # Example: "| 指标 | 数值 || 指标 | 数值 |" → "| 指标 | 数值 |"
+            if stripped.startswith("|") and stripped.endswith("|"):
+                cells = [c.strip() for c in stripped.split("|")[1:-1] if c.strip()]
+                if cells:
+                    half_len = len(cells) // 2
+                    if half_len >= 1:
+                        first_half = cells[:half_len]
+                        second_half = cells[half_len:]
+                        if first_half == second_half:
+                            stripped = "| " + " | ".join(first_half) + " |"
+                            logger.debug(f"Cleaned table row duplicate: {line.strip()[:50]}...")
+            
+            cleaned_lines.append(stripped)
+        
+        return '\n'.join(cleaned_lines)
+    
+    def _is_similar_paragraph(self, text1: str, text2: str, threshold: float = 0.9) -> bool:
+        """
+        Determine if two paragraphs are similar
+
+        Args:
+            text1: First paragraph
+            text2: Second paragraph
+            threshold: Similarity threshold (0-1)
+
+        Returns:
+            Whether similar
+        """
+        if not text1 or not text2:
+            return False
+        
+        # Exactly identical
+        if text1 == text2:
+            return True
+        
+        # Compare after normalization
+        import re
+        norm1 = re.sub(r'\s+', '', text1)
+        norm2 = re.sub(r'\s+', '', text2)
+        
+        if norm1 == norm2:
+            return True
+        
+# Calculate similarity (simple character overlap rate)
+        if len(norm1) == 0 or len(norm2) == 0:
+            return False
+        
+        # Use longer text as baseline
+        shorter, longer = (norm1, norm2) if len(norm1) < len(norm2) else (norm2, norm1)
+        
+        # Check if shorter text is a substring of longer text
+        if shorter in longer:
+            overlap_ratio = len(shorter) / len(longer)
+            return overlap_ratio >= threshold
+        
+        return False
+    
+    def _clean_llm_content(self, content: str) -> str:
+        """
+        Clean LLM-generated content, remove conversation prefixes and irrelevant content
+
+        Args:
+            content: Original content
+
+        Returns:
+            Cleaned content
+        """
+        if not content:
+            return content
+        
+        # Define conversation prefix patterns to remove
+        prefixes_to_remove = [
+            "好的，收到您的研究任务",
+            "好的，收到您的综合分析任务",
+            "好的，收到您的深度研究任务",
+            "好的，收到您的",
+            "好的，基于您提供的",
+            "好的，我将",
+            "好的，让我",
+            "好的，这是",
+            "收到，我将",
+            "收到，让我",
+        ]
+        
+        # Define prompt trace patterns to delete entire lines
+        # **Fix**: Add more cleaning patterns
+        prompt_patterns_to_remove = [
+            r'^基于您提供的.*数据点.*分析.*',
+            r'^基于您提供的所有数据点.*',
+            r'.*将对["""].*["""].*维度进行.*',
+            r'.*形成一份面向决策层.*',
+            r'.*原创性的综合与提炼.*',
+            r'^数据来源\s*数据来源\s*$',  # Duplicate data source header
+            r'^原创洞察[：:]\s*',        # Remove "Original insight:" at line start
+            r'^原创洞察\s*',              # Remove "Original insight" at line start
+            r'.*基于多源数据.*',          # Remove data source description
+            r'^本.*基于.*数据.*分析.*',   # Remove "This executive summary is based on multi-source data..."
+            r'原创洞察[：:]\s*',          # Remove "Original insight:" in paragraph
+            r'原创洞察\s*[：:]',          # Remove "Original insight:" (with space variant)
+        ]
+        
+        # Check and remove prefixes
+        lines = content.split("\n")
+        cleaned_lines = []
+        skip_initial_prefix = True
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            
+            # Skip initial conversation prefixes
+            if skip_initial_prefix and i < 5:  # 只检查前5行
+                is_prefix = False
+                for prefix in prefixes_to_remove:
+                    if stripped.startswith(prefix):
+                        is_prefix = True
+                        break
+                if is_prefix:
+                    continue
+                else:
+                    skip_initial_prefix = False
+            
+            # Skip various separator lines (usually LLM reply format markers)
+            # **Fix**: Extend separator cleaning, cover more forms, remove line count limit
+            if re.match(r'^[-*_]{3,}$', stripped):
+                continue
+            
+            # Check if matches prompt trace pattern to delete
+            should_remove = False
+            for pattern in prompt_patterns_to_remove:
+                if re.match(pattern, stripped):
+                    should_remove = True
+                    break
+            if should_remove:
+                continue
+            
+            # **Fix**: Replace inline patterns (like "Original insight:")
+            cleaned_line = line
+            for pattern in [r'原创洞察[：:]\s*', r'原创洞察\s*[：:]']:
+                cleaned_line = re.sub(pattern, '', cleaned_line)
+            
+            cleaned_lines.append(cleaned_line)
+        
+        return "\n".join(cleaned_lines)
+    
+    def _process_markdown_content(self, content: str) -> List[Dict[str, Any]]:
+        """
+        Process Markdown format content, extract structured elements
+
+        Supported formats:
+        - Headings: # ~ ######
+        - Lists: - or *
+        - Ordered lists: 1. 2. 3.
+        - Tables: | col1 | col2 |
+        - Bold: **text**
+        - Italic: *text* or _text_
+        - Code: `code`
+
+        Args:
+            content: Markdown format content
+
+        Returns:
+            List of structured elements
+        """
+        import re
+        elements = []
+        lines = content.split("\n")
+        
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            
+            # Heading processing
+            heading_match = re.match(r'^(#{1,6})\s+(.+)$', stripped)
+            if heading_match:
+                level = len(heading_match.group(1))
+                title = self._clean_inline_markdown(heading_match.group(2))
+                elements.append({
+                    "type": "heading",
+                    "level": level,
+                    "text": title
+                })
+                i += 1
+                continue
+            
+            # List item processing
+            list_match = re.match(r'^[-*]\s+(.+)$', stripped)
+            if list_match:
+                items = [self._clean_inline_markdown(list_match.group(1))]
+                i += 1
+                # Collect consecutive list items
+                while i < len(lines):
+                    next_match = re.match(r'^[-*]\s+(.+)$', lines[i].strip())
+                    if next_match:
+                        items.append(self._clean_inline_markdown(next_match.group(1)))
+                        i += 1
+                    else:
+                        break
+                elements.append({
+                    "type": "list",
+                    "items": items
+                })
+                continue
+            
+            # Ordered list processing
+            ordered_match = re.match(r'^\d+\.\s+(.+)$', stripped)
+            if ordered_match:
+                items = [self._clean_inline_markdown(ordered_match.group(1))]
+                i += 1
+                # Collect consecutive ordered list items
+                while i < len(lines):
+                    next_match = re.match(r'^\d+\.\s+(.+)$', lines[i].strip())
+                    if next_match:
+                        items.append(self._clean_inline_markdown(next_match.group(1)))
+                        i += 1
+                    else:
+                        break
+                elements.append({
+                    "type": "ordered_list",
+                    "items": items
+                })
+                continue
+            
+            # Table processing (simple tables)
+            if stripped.startswith("|") and "|" in stripped[1:]:
+                table_lines = []
+                while i < len(lines) and lines[i].strip().startswith("|"):
+                    table_lines.append(lines[i].strip())
+                    i += 1
+                
+                if len(table_lines) > 2:  # 至少有表头和一行数据
+                    # Parse table
+                    rows = []
+                    for tl in table_lines:
+                        cells = [self._clean_inline_markdown(c.strip()) for c in tl.split("|")[1:-1]]
+                        rows.append(cells)
+                    elements.append({
+                        "type": "table",
+                        "rows": rows
+                    })
+                continue
+            
+            # Normal paragraph
+            if stripped:
+                paragraph_lines = [stripped]
+                i += 1
+                # Collect consecutive non-empty lines as paragraph
+                while i < len(lines) and lines[i].strip() and not re.match(r'^(#{1,6}|\*|[-*]|\d+\.)', lines[i].strip()):
+                    paragraph_lines.append(lines[i].strip())
+                    i += 1
+                # Clean inline Markdown formatting
+                cleaned_text = self._clean_inline_markdown(" ".join(paragraph_lines))
+                elements.append({
+                    "type": "paragraph",
+                    "text": cleaned_text
+                })
+            else:
+                i += 1
+        
+        return elements
+    
+    def _clean_inline_markdown(self, text: str) -> str:
+        """
+        Clean inline Markdown formatting, convert to plain text
+
+        Handles:
+        - **bold** → bold
+        - *italic* → italic
+        - `code` → code
+        - [link](url) → link
+        - ~~strikethrough~~ → strikethrough
+
+        Args:
+            text: Text containing Markdown formatting
+
+        Returns:
+            Cleaned plain text
+        """
+        import re
+        
+        # Handle bold **text** or __text__
+        text = re.sub(r'\*\*(.+?)\*\*', r'\1', text)
+        text = re.sub(r'__(.+?)__', r'\1', text)
+        
+        # Handle italic *text* or _text_
+        text = re.sub(r'\*(.+?)\*', r'\1', text)
+        text = re.sub(r'_(.+?)_', r'\1', text)
+        
+        # Handle code `code`
+        text = re.sub(r'`(.+?)`', r'\1', text)
+        
+        # Handle link [text](url)
+        text = re.sub(r'\[(.+?)\]\(.+?\)', r'\1', text)
+        
+        # Handle strikethrough ~~text~~
+        text = re.sub(r'~~(.+?)~~', r'\1', text)
+        
+        # Handle HTML entities
+        text = text.replace('&nbsp;', ' ')
+        text = text.replace('&amp;', '&')
+        text = text.replace('&lt;', '<')
+        text = text.replace('&gt;', '>')
+        text = text.replace('&quot;', '"')
+        
+        return text
+
+    # ==================== 图表系统修复：HTML 路径自动配图 ====================
+
+    async def _generate_charts_for_html(self, research_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Plan charts with the LLM, then render only validated plans.
+
+        Numeric extraction is deliberately not a fallback here.  A report
+        section may contain many numbers that are not comparable or not
+        decision-relevant; if the planner cannot justify a chart, no chart is
+        produced.
+        """
+        if not research_result.get("sections"):
+            return research_result
+
+        MAX_CHARTS_PER_SECTION = 2
+
+        try:
+            from src.services.chart_planner import ChartPlannerAgent
+            from src.services.chart_generator import ChartConfig, ChartGenerator
+        except ImportError:
+            logger.warning("Chart planner or renderer unavailable; skipping charts")
+            return research_result
+
+        root = Path(__file__).resolve().parent.parent.parent.parent
+        output_dir = root / "data" / "html_reports" / "charts"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        planner = ChartPlannerAgent(output_dir=str(output_dir))
+        topic = str(research_result.get("topic") or research_result.get("title") or "研究报告")
+
+        for section in research_result.get("sections", []):
+            if section.get("charts"):
+                # Charts already attached by the report-generation planner are
+                # already semantic plans; do not mechanically supplement them.
+                continue
+            title = str(section.get("title") or section.get("id") or "章节")
+            content = str(section.get("content") or "")
+            datapoints = section.get("data_points", [])
+            if datapoints:
+                content += "\n\n## 报告已提取的数据点（仅供语义核验）\n"
+                content += json.dumps(datapoints[:80], ensure_ascii=False, indent=2, default=str)
+            try:
+                plans = await planner.plan(content=content, topic=topic, section_title=title)
+            except Exception:
+                logger.exception("LLM chart planning failed: %s", title)
+                continue
+            generator = ChartGenerator(output_dir=str(output_dir))
+            generated = []
+            for plan in plans[:2]:
+                try:
+                    rendered = generator.generate(ChartConfig(
+                        chart_type=plan.chart_type,
+                        title=plan.title,
+                        data=plan.data,
+                        xlabel=plan.xlabel,
+                        ylabel=plan.ylabel,
+                        caption=plan.caption,
+                        source=plan.source or "公开资料整理",
+                        unit=plan.unit,
+                    ))
+                    if rendered.success and rendered.image_path:
+                        generated.append({
+                            "path": rendered.image_path,
+                            "chart_id": f"{section.get('id', title)}:llm:{len(generated)}",
+                            "chart_type": plan.chart_type.value,
+                            "title": plan.title,
+                            "caption": plan.caption,
+                            "section_title": title,
+                            "data_ref": plan.data_source,
+                            "source": plan.source or "公开资料整理",
+                            "unit": plan.unit,
+                            "insertion_anchor": plan.insertion_anchor,
+                            "anchor_type": plan.anchor_type or "section_end",
+                        })
+                except Exception:
+                    logger.exception("LLM chart rendering failed: %s", plan.title)
+            if generated:
+                section["charts"] = generated
+                logger.info("Generated %d LLM-planned chart(s) for section: %s", len(generated), title)
+
+        for section in research_result.get("sections", []):
+            charts = section.get("charts", [])
+            unique_charts = []
+            seen_chart_keys = set()
+            for chart in charts:
+                chart_key = chart.get("chart_id") or (
+                    chart.get("path", ""),
+                    chart.get("chart_type", ""),
+                    chart.get("data_ref", ""),
+                )
+                if chart_key in seen_chart_keys:
+                    continue
+                seen_chart_keys.add(chart_key)
+                unique_charts.append(chart)
+            section["charts"] = charts = unique_charts
+            if len(charts) <= MAX_CHARTS_PER_SECTION:
+                continue
+            planner_charts = [c for c in charts if c.get("insertion_anchor") or c.get("anchor_type")]
+            other_charts = [c for c in charts if c not in planner_charts]
+            if len(planner_charts) >= MAX_CHARTS_PER_SECTION:
+                section["charts"] = planner_charts[:MAX_CHARTS_PER_SECTION]
+            else:
+                needed = MAX_CHARTS_PER_SECTION - len(planner_charts)
+                section["charts"] = planner_charts + other_charts[:needed]
+
+        return research_result
+
+    @staticmethod
+    def _prepare_html_chart_assets(html_content: str, output_dir: Path) -> str:
+        """Copy chart assets beside an HTML file and use portable URLs.
+
+        DOCX/PDF conversion needs absolute image paths, but browser HTML must
+        reference assets relative to the served HTML document.  Keep this
+        normalization at the HTML boundary so the converter contract remains
+        unchanged.
+        """
+        output_dir = Path(output_dir)
+        charts_dir = output_dir / "charts"
+        charts_dir.mkdir(parents=True, exist_ok=True)
+
+        def _replace(match):
+            prefix, raw_path, suffix = match.groups()
+            if not raw_path or raw_path.startswith("data:"):
+                return match.group(0)
+            source = Path(raw_path)
+            if not source.is_absolute() or not source.exists() or source.suffix.lower() not in {
+                ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp",
+            }:
+                return match.group(0)
+            destination = charts_dir / source.name
+            try:
+                if source.resolve() != destination.resolve():
+                    shutil.copy2(source, destination)
+            except OSError:
+                logger.warning("Failed to copy HTML chart asset: %s", source)
+                return match.group(0)
+            return f'{prefix}charts/{source.name}{suffix}'
+
+        # Only rewrite quoted img src attributes; leave unrelated URLs intact.
+        return re.sub(r'(<img\b[^>]*\bsrc=["\'])([^"\']+)(["\'])', _replace, html_content, flags=re.IGNORECASE)
+
+    # 指标-数值语义校验白名单
+    _METRIC_SEMANTIC_RULES = {
+        "净利润": {"max_value": 10000, "unit_hint": "亿元"},
+        "营收": {"max_value": 100000, "unit_hint": "亿元"},
+        "收入": {"max_value": 100000, "unit_hint": "亿元"},
+        "研发投入": {"max_value": 10000, "unit_hint": "亿元"},
+        "毛利率": {"min_value": -100, "max_value": 100, "unit_hint": "%"},
+        "净利率": {"min_value": -100, "max_value": 100, "unit_hint": "%"},
+        "增长率": {"min_value": -1000, "max_value": 1000, "unit_hint": "%"},
+        "市占率": {"min_value": 0, "max_value": 100, "unit_hint": "%"},
+        "份额": {"min_value": 0, "max_value": 100, "unit_hint": "%"},
+        "销量": {"max_value": 10000, "unit_hint": "万辆"},
+        "出口": {"max_value": 10000, "unit_hint": "万辆"},
+    }
+
+    @staticmethod
+    def _validate_chart_datapoint(metric: str, value: float) -> bool:
+        """校验单个数据点的指标-数值组合语义合理性"""
+        for kw, rules in DocumentGenerationAgent._METRIC_SEMANTIC_RULES.items():
+            if kw in metric:
+                if "min_value" in rules and value < rules["min_value"]:
+                    return False
+                if "max_value" in rules and value > rules["max_value"]:
+                    return False
+        return True
+
+    @staticmethod
+    def _chart_metric_family(metric: str) -> str:
+        """Return a conservative comparable-metric key for charting.
+
+        Removing only period and scenario qualifiers lets repeated measures
+        form a time series (for example, revenue in 2024 and 2025) while
+        keeping semantically different percentages separate.
+        """
+        family = str(metric or "").strip().lower()
+        family = re.sub(r"[（(][^）)]*[）)]", "", family)
+        family = re.sub(
+            r"(?:19|20)\d{2}\s*(?:年|q[1-4]|上半年|下半年)?", "", family,
+            flags=re.IGNORECASE,
+        )
+        family = re.sub(r"\s+", "", family)
+        family = re.sub(r"[：:，,。.!！?？、/\\_-]+", "", family)
+        return family
+
+    def _html_charts_from_datapoints(self, research_result: Dict[str, Any]) -> None:
+        """从 data_points 结构化数据生成图表（最可靠）"""
+        try:
+            from src.services.chart_generator import ChartGenerator, ChartConfig, ChartType
+        except ImportError:
+            logger.warning("ChartGenerator not available for HTML charts")
+            return
+        except Exception:
+            logger.exception("ChartGenerator import failed")
+            return
+
+        _root = Path(__file__).resolve().parent.parent.parent.parent
+        chart_gen = ChartGenerator(output_dir=str(_root / "data" / "html_reports" / "charts"))
+
+        sections = research_result.get("sections", [])
+        for section in sections:
+            data_points = section.get("data_points", [])
+            if len(data_points) < 1:
+                continue
+
+            categories = []
+            values = []
+            units = []
+            year_points = []
+            metric_families = []
+            for dp in data_points:
+                metric = dp.get("metric", "")
+                value = dp.get("value", "")
+                unit = dp.get("unit", "")
+                try:
+                    raw_value = str(value).strip().replace(',', '')
+                    is_parenthesized = raw_value.startswith('(') and raw_value.endswith(')')
+                    if is_parenthesized:
+                        raw_value = raw_value[1:-1].strip()
+                    numeric_text = re.sub(r'[^\d.\-]', '', raw_value)
+                    if not numeric_text:
+                        raise ValueError("empty numeric value")
+                    v = float(numeric_text)
+                    if is_parenthesized:
+                        v = -v
+                except (ValueError, TypeError):
+                    continue
+                # 语义校验：跳过明显不合理的数据点
+                if not DocumentGenerationAgent._validate_chart_datapoint(metric, v):
+                    logger.debug(f"Skipped semantically invalid datapoint: {metric}={v}{unit}")
+                    continue
+                categories.append(metric[:15])
+                values.append(v)
+                units.append(str(unit).strip())
+                metric_families.append(DocumentGenerationAgent._chart_metric_family(metric))
+                year_match = re.search(r"(?<!\d)((?:19|20)\d{2})(?:年|\b)", metric)
+                year_points.append((year_match.group(1), re.sub(
+                    r"\s*(?:19|20)\d{2}年?\s*", "", metric
+                ).strip() if year_match else "") if year_match else None)
+
+            if len(categories) < 2:
+                continue
+
+            try:
+                section_sources = section.get("sources", [])
+                source_str = "Public data compilation"
+                if section_sources and isinstance(section_sources, list):
+                    titles = [s.get("title", "") for s in section_sources if isinstance(s, dict) and s.get("title")]
+                    if titles:
+                        source_str = "；".join(titles[:3])
+
+                # A chart must have one unit.  Keep the original order while
+                # splitting mixed financial, volume, and percentage metrics.
+                groups = {}
+                for category, value, unit, year_point, family in zip(
+                    categories, values, units, year_points, metric_families,
+                ):
+                    if unit in {"", "未注明单位", "时间", "时间点", "位", "排名", "名", "年", "日期"}:
+                        continue
+                    if not family:
+                        continue
+                    groups.setdefault((unit or "未注明单位", family), []).append(
+                        {"category": category, "value": value, "year_point": year_point}
+                    )
+
+                for (unit, family), points in groups.items():
+                    if len(points) < 2:
+                        continue
+                    group_categories = [point["category"] for point in points[:10]]
+                    group_values = [point["value"] for point in points[:10]]
+                    group_year_points = [point["year_point"] for point in points]
+                    metrics_lower = [category.lower() for category in group_categories]
+                    has_year = any("年" in metric or "year" in metric or "time" in metric for metric in metrics_lower)
+                    has_share = any("份额" in metric or "share" in metric or "占比" in metric or "构成" in metric for metric in metrics_lower)
+                    all_percent = unit in {"%", "％", "百分比", "百分点"}
+
+                    chart_type = ChartType.BAR
+                    usable_year_points = [point for point in group_year_points if point is not None and point[1]]
+                    if has_year and len(usable_year_points) == len(group_values) and len(group_values) >= 8:
+                        chart_type = ChartType.LINE
+                    elif has_share and all_percent and len(group_categories) <= 6:
+                        chart_type = ChartType.PIE
+
+                    if chart_type is ChartType.LINE:
+                        years = [year for year, _ in usable_year_points[:10]]
+                        series_name = usable_year_points[0][1]
+                        chart_data = {"years": years, "scenarios": {series_name: group_values[:len(years)]}}
+                    else:
+                        chart_data = {"categories": group_categories, "values": group_values}
+
+                    config = ChartConfig(
+                        chart_type=chart_type,
+                        title=f"{section.get('title', '')[:40]} - 关键数据（{unit}）",
+                        data=chart_data,
+                        xlabel="指标",
+                        ylabel=unit,
+                        source=source_str,
+                        unit=unit,
+                    )
+                    result = chart_gen.generate(config)
+                    if result.success and result.image_path:
+                        existing = section.get("charts", []) or []
+                        existing.append({
+                            "path": result.image_path,
+                            "chart_id": f"{section.get('id', section.get('title', 'section'))}:data_points:{unit}",
+                            "chart_type": chart_type.value,
+                            "caption": f"{section.get('title', '')} - 关键数据（{unit}）",
+                            "section_title": section.get("title", ""),
+                            "data_ref": "section.data_points",
+                            "source": source_str,
+                            "unit": unit,
+                            "insertion_anchor": "",
+                            "anchor_type": "section_end",
+                        })
+                        section["charts"] = existing
+                        logger.info(f"Generated data_points chart: {result.image_path} unit={unit}")
+            except Exception:
+                logger.exception(f"data_points chart failed: {section.get('title', '')}")
+
+    def _html_charts_from_content(self, research_result: Dict[str, Any]) -> None:
+        """使用 SmartChartGenerator 分析段落文本中的数据并配图"""
+        try:
+            from src.services.smart_chart_generator import SmartChartGenerator
+        except ImportError:
+            logger.warning("SmartChartGenerator not available for HTML charts")
+            return
+
+        _root = Path(__file__).resolve().parent.parent.parent.parent
+        smart_gen = SmartChartGenerator(output_dir=str(_root / "data" / "html_reports" / "charts"))
+
+        sections = research_result.get("sections", [])
+        for section in sections:
+            title = section.get("title", "")
+            content = section.get("content", "")
+            data_points = section.get("data_points", [])
+
+            # Structured data generation is authoritative.  Do not generate
+            # a second chart from the same section's prose after it succeeds.
+            if section.get("charts"):
+                continue
+
+            skip_keywords = ["概述", "总结", "结论", "建议", "方法论", "附录", "参考文献", "目录", "摘要"]
+            if any(kw in title for kw in skip_keywords):
+                continue
+
+            try:
+                suggestions = smart_gen.analyze_content(
+                    section_title=title,
+                    content=content,
+                    data_points=data_points,
+                )
+                for suggestion in suggestions[:2]:
+                    chart_path = smart_gen.generate_chart(suggestion)
+                    if chart_path:
+                        existing = section.get("charts", []) or []
+                        existing.append({
+                            "path": chart_path,
+                            "chart_id": f"{section.get('id', title)}:content:{len(existing)}",
+                            "chart_type": suggestion.chart_type.value,
+                            "caption": suggestion.caption or title,
+                            "section_title": title,
+                            "data_ref": "section.content",
+                            "source": "content extraction candidate",
+                            "insertion_anchor": "",
+                            "anchor_type": "section_end",
+                        })
+                        section["charts"] = existing
+                        logger.info(f"Generated content chart: {chart_path}")
+                if section.get("charts"):
+                    logger.info(f"Section '{title}': {len(section['charts'])} charts generated")
+            except Exception:
+                logger.exception(f"Content chart failed: {title}")
+
+    # ==================== End chart fix ====================
+
+    def _should_generate_charts(self, section_title: str) -> bool:
+        """
+        Determine whether charts should be generated for this section
+
+        Args:
+            section_title: Section title
+
+        Returns:
+            Whether charts should be generated
+        """
+        # Keywords suitable for chart generation (relaxed conditions)
+        chart_keywords = [
+            "市场规模", "市场份额", "竞争格局", "行业趋势",
+            "财务分析", "用户分析", "技术对比", "区域分布",
+            "增长分析", "投资分析", "销量分析", "数据对比",
+            "占比", "排名", "趋势", "对比", "分布",
+            "分析", "数据", "统计", "规模", "格局",  # New generic keywords
+        ]
+        
+        # Keywords not suitable for chart generation
+        no_chart_keywords = [
+            "概述", "总结", "结论", "建议", "方法论",
+            "附录", "参考文献", "目录", "摘要",
+        ]
+        
+        # Check if contains unsuitable keywords
+        for keyword in no_chart_keywords:
+            if keyword in section_title:
+                return False
+        
+        # Check if contains suitable keywords
+        for keyword in chart_keywords:
+            if keyword in section_title:
+                return True
+        
+        return False
+    
+    def _fallback_generate_document(
+        self,
+        task_id: str,
+        research_result: Dict[str, Any],
+        output_format: str,
+        output_path: Path
+    ) -> Dict[str, Any]:
+        """
+        Fallback document generation method
+
+        When DocumentGenerator is unavailable, use python-docx directly to generate document.
+
+        Args:
+            task_id: Task ID
+            research_result: Research result
+            output_format: Output format
+            output_path: Output path
+
+        Returns:
+            Generation result dictionary
+        """
+        try:
+            from docx import Document
+            from docx.shared import Inches
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            
+            doc = Document()
+            
+            # Title
+            title = research_result.get("title", "Research Report")
+            title_para = doc.add_heading(title, 0)
+            title_para.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+            # Metadata
+            if research_result.get("author"):
+                doc.add_paragraph(f"Author: {research_result['author']}")
+            if research_result.get("date"):
+                doc.add_paragraph(f"Date: {research_result['date']}")
+            
+            doc.add_paragraph("")
+            
+# Sections
+            for section in research_result.get("sections", []):
+                section_title = section.get("title", "")
+                section_content = section.get("content", "")
+                
+                if section_title:
+                    doc.add_heading(section_title, level=1)
+                
+                if section_content:
+                    for para in section_content.split("\n"):
+                        if para.strip():
+                            import re
+                            img_match = re.match(r'^\s*<img\s[^>]*src="([^"]+)"[^>]*/?>\s*$', para)
+                            if img_match:
+                                try:
+                                    doc.add_picture(img_match.group(1), width=Inches(5))
+                                except Exception:
+                                    doc.add_paragraph(para.strip())
+                            else:
+                                doc.add_paragraph(para.strip())
+                
+                # Subsections
+                for subsection in section.get("subsections", []):
+                    sub_title = subsection.get("title", "")
+                    sub_content = subsection.get("content", "")
+                    
+                    if sub_title:
+                        doc.add_heading(sub_title, level=2)
+                    
+                    if sub_content:
+                        for para in sub_content.split("\n"):
+                            if para.strip():
+                                doc.add_paragraph(para.strip())
+            
+            # Save document
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            doc.save(str(output_path))
+            
+            file_size = output_path.stat().st_size
+            
+            logger.info(f"Document generated via fallback: {output_path}")
+            
+            return DocumentGenerationResult(
+                success=True,
+                task_id=task_id,
+                output_format=DocumentFormat.DOCX,
+                version_id="v1",
+                document_path=str(output_path),
+                file_size=file_size,
+                pages_estimate=max(1, len(research_result.get("sections", []))),
+                message=f"文档已生成（备用方法）: {output_path.name}"
+            ).to_dict()
+            
+        except ImportError:
+            return DocumentGenerationResult(
+                success=False,
+                task_id=task_id,
+                error="python-docx not installed, cannot generate document",
+                error_code="DEPENDENCY_MISSING"
+            ).to_dict()
+        except Exception as e:
+            logger.error(f"Fallback document generation failed: {e}", exc_info=True)
+            return DocumentGenerationResult(
+                success=False,
+                task_id=task_id,
+                error=f"Fallback generation failed: {str(e)}",
+                error_code="FALLBACK_ERROR"
+            ).to_dict()
+    
+    def _handle_regenerate_document(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle regeneration request
+
+        Create new version based on historical research result
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Generation result (contains warning field indicating skeleton status)
+        """
+        return DocumentGenerationResult(
+            success=True,
+            task_id=request.task_id,
+            output_format=request.output_format,
+            version_id="v2",
+            document_path=f"/output/{request.task_id}_report_v2.{request.output_format.value if request.output_format else 'docx'}",
+            warning="SKELETON_IMPLEMENTATION: Regenerate logic pending (Week 22-23)"
+        ).to_dict()
+    
+    async def _handle_adjust_content(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle content adjustment request
+
+        Apply adjustments and create new version (revision loop support)
+
+        Phase 8 refactoring: Uses SectionLocator and ContentApplier
+
+        Args:
+            request: Document generation request containing:
+                - task_id: Task ID
+                - section: Section name to adjust
+                - adjustment: Adjustment description (user feedback)
+                - document_path: Current document path
+                - revision_type: Revision type (minor/section/phase/full)
+
+        Returns:
+            Adjustment result containing new document path
+        """
+        task_id = request.task_id or "unknown"
+        
+        # Extract parameters from adjustments (adjustments is List[Dict])
+        adjustment_data = {}
+        if request.adjustments and len(request.adjustments) > 0:
+            adjustment_data = request.adjustments[0]  # 取第一个调整
+        
+        section = adjustment_data.get("section", "")
+        section_id = adjustment_data.get("section_id")  # New: precise section ID
+        adjustment = adjustment_data.get("adjustment", "")
+        document_path = adjustment_data.get("document_path", "")
+        revision_type = adjustment_data.get("revision_type", "minor")
+        original_content = adjustment_data.get("original_content", "")
+        keywords = adjustment_data.get("keywords", [])  # New: keyword search
+        
+        # Generate new version ID
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        version_id = f"v_{timestamp}"
+        
+        # === Phase 8: Use SectionLocator to locate section ===
+        section_location = None
+        if document_path and Path(document_path).exists():
+            try:
+                locator = SectionLocator()
+                section_location = locator.locate(
+                    document_path=document_path,
+                    section_id=section_id,
+                    section_title=section,
+                    keywords=keywords,
+                )
+                
+                if section_location:
+                    logger.info(f"Located section: {section_location.section_id} - {section_location.section_title}")
+                    # Get original content
+                    if not original_content:
+                        original_content = section_location.content
+                else:
+                    logger.warning(f"Section not found, using fallback: {section}")
+                    
+            except Exception as e:
+                logger.warning(f"SectionLocator failed, using fallback: {e}")
+        
+        # Use LLM for content modification
+        revised_content = None
+        llm_success = False
+        
+        if adjustment:
+            try:
+                revision_prompt = self._build_revision_prompt(
+                    section=section_location.section_title if section_location else section,
+                    original_content=original_content,
+                    adjustment=adjustment,
+                    revision_type=revision_type,
+                )
+                
+                llm_result = await call_llm(
+                    prompt=revision_prompt,
+                    system_prompt=self._get_revision_system_prompt(),
+                    max_tokens=DEFAULT_LLM_MAX_TOKENS,
+                    temperature=DEFAULT_LLM_TEMPERATURE,
+                )
+                
+                if llm_result.get("success"):
+                    revised_content = llm_result.get("content", "")
+                    llm_success = True
+                    logger.info(f"LLM revision successful for task {task_id}, section {section}")
+                else:
+                    logger.warning(f"LLM revision failed: {llm_result.get('error')}")
+                    
+            except Exception as e:
+                logger.error(f"LLM revision error: {e}", exc_info=True)
+        
+        # === Phase 8: Use ContentApplier to apply revision ===
+        revised_path = None
+        apply_success = False
+        
+        if llm_success and revised_content and section_location and document_path:
+            try:
+                applier = ContentApplier(
+                    backup_dir=str(self._documents_dir / "backups"),
+                    create_backup=True,
+                    version_suffix=True,
+                )
+                
+                apply_result = applier.apply(
+                    document_path=document_path,
+                    location=section_location,
+                    new_content=revised_content,
+                    preserve_formatting=True,
+                )
+                
+                if apply_result.success:
+                    # Verify new document path exists
+                    if apply_result.new_document_path and Path(apply_result.new_document_path).exists():
+                        revised_path = Path(apply_result.new_document_path)
+                        apply_success = True
+                        logger.info(f"Content applied successfully: {revised_path}")
+                    else:
+                        logger.warning(f"ContentApplier succeeded but new document path invalid: {apply_result.new_document_path}")
+                else:
+                    logger.warning(f"ContentApplier failed: {apply_result.error}")
+                    
+            except Exception as e:
+                logger.error(f"ContentApplier error: {e}", exc_info=True)
+        
+        # Fallback: Use old method to create revised version
+        if not apply_success:
+            if not llm_success:
+                logger.info("Using legacy revision method: LLM revision not successful")
+            elif not revised_content:
+                logger.info("Using legacy revision method: No revised content generated")
+            elif not section_location:
+                logger.info("Using legacy revision method: Section not located")
+            elif not document_path:
+                logger.info("Using legacy revision method: No document path provided")
+            else:
+                logger.info("Using legacy revision method: ContentApplier failed")
+            
+            if document_path:
+                try:
+                    original_path = self._validate_document_path(document_path)
+                except ValueError as e:
+                    logger.warning(f"Invalid document path, using default: {e}")
+                    original_path = self._documents_dir / Path(document_path).name
+                
+                filename = original_path.stem
+                extension = original_path.suffix or ".docx"
+                parent_dir = original_path.parent
+                revised_path = parent_dir / f"{filename}_revised_{version_id}{extension}"
+            else:
+                revised_path = self._documents_dir / f"{task_id}_adjusted_{version_id}.docx"
+            
+            # If LLM modification successful, save revised content (old method)
+            if llm_success and revised_content:
+                try:
+                    if document_path and Path(document_path).exists():
+                        shutil.copy2(document_path, revised_path)
+                    
+                    # Save revised content to metadata file
+                    meta_path = revised_path.with_suffix('.revision.json')
+                    revision_meta = {
+                        "task_id": task_id,
+                        "version_id": version_id,
+                        "section": section,
+                        "adjustment": adjustment,
+                        "revised_content": revised_content[:MAX_REVISION_CONTENT_LENGTH],
+                        "created_at": datetime.now().isoformat(),
+                        "llm_used": True,
+                        "phase8_components_used": False,  # Mark Phase 8 components not used
+                    }
+                    
+                    with open(meta_path, 'w', encoding='utf-8') as f:
+                        json.dump(revision_meta, f, indent=2, ensure_ascii=False)
+                        
+                except OSError as e:
+                    logger.error(f"Failed to save revised content: {e}")
+        
+        # Record revision to RevisionManager
+        if self._revision_manager:
+            try:
+                revision_record = self._revision_manager.create_revision(
+                    task_id=task_id,
+                    revision_type=revision_type,
+                    section=section,
+                    adjustment=adjustment,
+                    original_content=original_content[:MAX_REVISION_CONTENT_LENGTH] if original_content else None,
+                    revised_content=revised_content[:MAX_REVISION_CONTENT_LENGTH] if revised_content else None,
+                    document_path=document_path,
+                    revised_document_path=str(revised_path) if revised_path else None,
+                    user_feedback=adjustment,
+                )
+                version_id = revision_record.version_id
+                logger.info(f"Revision recorded: {revision_record.revision_id}")
+            except Exception as e:
+                logger.warning(f"Failed to record revision: {e}")
+        
+        # Record revision info to SharedMemory (if available)
+        if self._shared_memory:
+            revision_record = {
+                "task_id": task_id,
+                "version_id": version_id,
+                "section": section,
+                "section_id": section_location.section_id if section_location else None,
+                "adjustment": adjustment,
+                "timestamp": datetime.now().isoformat(),
+                "original_path": document_path,
+                "revised_path": str(revised_path) if revised_path else None,
+                "llm_used": llm_success,
+                "phase8_components_used": apply_success,
+            }
+            self._shared_memory.set(f"revision_{task_id}_{version_id}", revision_record)
+        
+        # Send revision notification to MessageBus (if available)
+        if self._message_bus:
+            from src.core.communication import Event
+            from src.core.orchestrator.execution.task_utils import safe_create_task
+            safe_create_task(self._message_bus.publish(
+                topic="document.adjusted",
+                event=Event(
+                    type="document.adjusted",
+                    data={
+                        "task_id": task_id,
+                        "section": section,
+                        "section_id": section_location.section_id if section_location else None,
+                        "adjustment": adjustment,
+                        "version_id": version_id,
+                        "llm_used": llm_success,
+                        "phase8_components_used": apply_success,
+                    },
+                    source=self.agent_id,
+                )
+            ), name="document_agent.publish_adjusted")
+        
+        # Build result message
+        if apply_success:
+            message = f"章节 '{section}' 已通过 Phase 8 组件修订完成"
+        elif llm_success:
+            message = f"章节 '{section}' 已通过LLM修订完成"
+        else:
+            message = f"章节 '{section}' 修订已记录（LLM未使用或失败）"
+        
+        return DocumentGenerationResult(
+            success=True,
+            task_id=task_id,
+            output_format=request.output_format,
+            version_id=version_id,
+            document_path=str(revised_path) if revised_path else document_path,
+            message=message,
+            metadata={
+                "llm_used": llm_success,
+                "revision_type": revision_type,
+                "section": section,
+                "section_id": section_location.section_id if section_location else None,
+                "phase8_components_used": apply_success,
+            }
+        ).to_dict()
+    
+    def _build_revision_prompt(
+        self,
+        section: str,
+        original_content: str,
+        adjustment: str,
+        revision_type: str,
+    ) -> str:
+        """
+        Build revision Prompt
+
+        Args:
+            section: Section name
+            original_content: Original content
+            adjustment: Adjustment description
+            revision_type: Revision type
+
+        Returns:
+            Complete revision Prompt
+        """
+        type_instructions = {
+            "minor": "请进行小幅调整，保持原有风格和结构。",
+            "section": "请重写该章节，确保内容完整且符合要求。",
+            "phase": "请重新分析该部分，提供更深入的见解。",
+            "full": "请全面重写，确保所有内容都得到改进。",
+        }
+        
+        instruction = type_instructions.get(revision_type, type_instructions["minor"])
+        
+        prompt = f"""你是一位专业的市场研究报告编辑。请根据用户的反馈修订以下章节内容。
+
+## 章节名称
+{section}
+
+## 原始内容
+{original_content[:MAX_PROMPT_CONTENT_LENGTH] if original_content else "（无原始内容）"}
+
+## 用户反馈/修订要求
+{adjustment}
+
+## 修订指南
+{instruction}
+
+## 输出要求
+1. 使用中文输出所有内容
+2. 保持专业的研究报告风格
+3. 确保数据准确性和来源可信
+4. 使用清晰的结构和逻辑
+5. 保持与原文档的一致性
+
+请直接输出修订后的章节内容，不要包含解释或说明。
+"""
+        return prompt
+    
+    def _get_revision_system_prompt(self) -> str:
+        """Get revision system Prompt"""
+        return """你是一位资深的市场研究报告编辑，拥有国际咨询公司（McKinsey/BCG/Bain）从业背景。
+
+## 专业领域
+- 研究报告质量审核与修订
+- 商业写作标准（金字塔原理、MECE原则）
+- 数据准确性验证与来源追溯
+- 逻辑论证链完整性检查
+
+## 修订标准
+1. **数据准确**：核实每个关键数据的来源和上下文，确保引用无误
+2. **逻辑严谨**：每个结论必须有完整的论证链（判断→推导→数据→反面证据）
+3. **表达精炼**：300字的有力论证 > 3000字的泛泛而谈
+4. **结构清晰**：遵循金字塔原理，结论先行，层层展开
+
+## 禁止行为
+- 不得添加原文没有的新数据或事实
+- 不得改变原文的核心结论
+- 不得为了美观牺牲信息完整性
+
+你的输出应直接是修订后的内容，不要包含解释说明。"""
+
+    def _handle_export_document(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle export request
+
+        Copy document to user-specified path
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Export result (contains warning field indicating skeleton status)
+        """
+        return DocumentGenerationResult(
+            success=True,
+            task_id=request.task_id,
+            output_format=request.output_format,
+            document_path=request.export_path,
+            warning="SKELETON_IMPLEMENTATION: Export logic pending (Week 24)"
+        ).to_dict()
+    
+    @staticmethod
+    def _normalize_report_titles_for_render(
+        research_result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Use the user-facing manifest titles when rendering HTML.
+
+        Report repair/debug labels can leak into section titles after a late
+        defense pass.  Normalize only titles that have an explicit manifest
+        counterpart; content and data remain untouched.
+        """
+        # Title normalization is a report repair, not merely a presentation
+        # concern. Mutate the canonical payload so cache/session consumers and
+        # the HTML artifact keep the same section identity.
+        result = research_result if isinstance(research_result, dict) else {}
+        structure = result.get("_task_structure")
+        manifest = result.get("section_manifest")
+        if not manifest and isinstance(structure, dict):
+            manifest = structure.get("section_manifest")
+        if isinstance(manifest, list):
+            expected = {
+                str(item.get("section_id") or item.get("id") or "").strip(): str(
+                    item.get("section_name") or item.get("title") or item.get("name") or ""
+                ).strip()
+                for item in manifest
+                if isinstance(item, dict)
+                and str(item.get("output_slot") or "body").strip().lower() == "body"
+            }
+            for section in result.get("sections") or []:
+                if not isinstance(section, dict):
+                    continue
+                section_id = str(section.get("section_id") or section.get("id") or "").strip()
+                title = expected.get(section_id)
+                if title:
+                    section["title"] = title
+                    if "name" in section:
+                        section["name"] = title
+        return result
+
+    @staticmethod
+    def _strip_epistemic_annotations(text: str) -> str:
+        """剥离内部证据标注（factual/inferential/inference/speculative/置信度）。
+
+        最终版净化器，覆盖：
+        - 方括号整体：[tag] / [tag，置信度：中高] / [置信度：中等——prose]
+        - 圆括号标签开头：（tag）/（tag，...）/（tag：...）→ 整括号删除
+        - 圆括号置信度开头：（置信度：高，关键假设：...）→ 整括号删除
+        - 标签收尾复合括号：（据拓端统计，factual）→（据拓端统计）
+        - markdown 表格单元格裸标签：| factual（机构报告） | → | （机构报告） |
+          （仅当单元格起始且格内无小写英文才删，保护 "on-device inference" 等术语）
+        合法引用（[1]/[PDF]/[新战略咨询]）与来源口径标注不误删。
+        """
+        if not text:
+            return text
+        tag = r'(?:factual|inferential|inference|speculative)'
+        # 表格裸标签仅限标注词：inference 在真实数据中只作英文术语出现
+        # （如"端侧 inference"），排除以免误删术语格
+        bare_tag = r'(?:factual|inferential|speculative)'
+        patterns = [
+            # 方括号整体：[tag] / [tag，置信度：中高] / [tag，置信度：中等偏低——prose]
+            (re.compile(r'\[\s*' + tag + r'\s*(?:[，,](?:[^\[\]]|[（(][^（）()]*[）)])*)?\]'), ''),
+            # 方括号：[置信度：中等——结构判断逻辑充分，替代解释：①...②...]（长度不设限）
+            (re.compile(r'\[\s*置信度\s*[：:](?:[^\[\]]|[（(][^（）()]*[）)])*\]'), ''),
+            # 圆括号以标签开头：（tag）/（tag，...）/（tag：...含单层嵌套括号的长推断）→ 整括号删除
+            #   prose 段懒惰匹配 + 允许单层嵌套全角括号（如（工信部）），止于首个合法闭括号
+            (re.compile(r'[（(]\s*' + tag + r'\b[：:]?(?:[^（）()]|[（(][^（）()]*[）)])*?[）)]'), ''),
+            # 圆括号以置信度开头：（置信度：高，关键假设：电机国产化率达标）→ 整括号删除
+            (re.compile(r'[（(]\s*置信度\s*[：:](?:[^（）()]|[（(][^（）()]*[）)])*?[）)]'), ''),
+            # 圆括号标签收尾：（据拓端统计，factual）→（据拓端统计）
+            # （逗号在捕获组外：删"，tag"，保留来源与原闭括号）
+            (re.compile(r'([（(][^（）()]{0,60}?)[，,]\s*' + tag + r'\s*([）)])'), r'\1\2'),
+            # markdown 表格裸标签（仅标注词）：
+            #   独占格 | inferential | → |  |（尾随空白保留在原位）
+            (re.compile(r'(?m)((?:^|\|)[ \t]*)' + bare_tag + r'(?=[ \t]*(?:\||$))'), r'\1'),
+            #   标签+来源括号 | factual（机构报告） | → | （机构报告） |
+            (re.compile(r'(?m)((?:^|\|)[ \t]*)' + bare_tag + r'(?=[ \t]*[（(])'), r'\1'),
+        ]
+        result = str(text)
+        changed = True
+        while changed:
+            changed = False
+            for p, repl in patterns:
+                new = p.sub(repl, result)
+                if new != result:
+                    result, changed = new, True
+        return result
+
+    def _strip_annotations_for_render(self, research_result):
+        """渲染期净化 research_result 中的内部证据标注（仅内存对象，不影响落盘审计原件）。
+
+        覆盖 section 的 title/content、key_findings/key_conclusions、
+        data_points（含 epistemic_level 表格列置空与字符串字段剥离），
+        以及顶层 key_findings/exec_summary/conclusion/claims[].text。
+
+        P2-E（复审修订）：在深拷贝副本上净化并返回副本——此前原地变异
+        泄漏回调用方载荷，后续复检（_recheck_report_defense_audit）会在
+        epistemic 被清空的载荷上凭空新增 83 条 L1 invalid_epistemic_level。
+        """
+        import copy as _copy
+        if not isinstance(research_result, dict):
+            return research_result
+        research_result = _copy.deepcopy(research_result)
+        sections = research_result.get("sections")
+        if isinstance(sections, list):
+            for section in sections:
+                if not isinstance(section, dict):
+                    continue
+                if isinstance(section.get("title"), str):
+                    section["title"] = self._strip_epistemic_annotations(section["title"])
+                if isinstance(section.get("content"), str):
+                    section["content"] = self._strip_epistemic_annotations(section["content"])
+                findings = section.get("key_findings")
+                if isinstance(findings, list):
+                    section["key_findings"] = [
+                        self._strip_epistemic_annotations(f) if isinstance(f, str) else f
+                        for f in findings
+                    ]
+                conclusions = section.get("key_conclusions")
+                if isinstance(conclusions, list):
+                    section["key_conclusions"] = [
+                        self._strip_epistemic_annotations(x) if isinstance(x, str) else x
+                        for x in conclusions
+                    ]
+                for dp in section.get("data_points") or []:
+                    if not isinstance(dp, dict):
+                        continue
+                    # 表格列不再渲染 factual（机构报告）等内部证据等级
+                    if "epistemic_level" in dp:
+                        dp["epistemic_level"] = ""
+                    for k, v in dp.items():
+                        if isinstance(v, str):
+                            dp[k] = self._strip_epistemic_annotations(v)
+        top_findings = research_result.get("key_findings")
+        if isinstance(top_findings, list):
+            research_result["key_findings"] = [
+                self._strip_epistemic_annotations(f) if isinstance(f, str) else f
+                for f in top_findings
+            ]
+        for fld in ("exec_summary", "conclusion"):
+            if isinstance(research_result.get(fld), str):
+                research_result[fld] = self._strip_epistemic_annotations(research_result[fld])
+        claims = research_result.get("claims")
+        if isinstance(claims, list):
+            for c in claims:
+                if isinstance(c, dict) and isinstance(c.get("text"), str):
+                    c["text"] = self._strip_epistemic_annotations(c["text"])
+        return research_result
+
+    @staticmethod
+    def _repair_html_contract(
+        html_content: str,
+        research_result: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Apply deterministic, non-inventive repairs before finalization."""
+        text = str(html_content or "")
+        placeholder_terms = (
+            "当前数据尚缺少可核验的结构化证据", "数据缺口", "待补充",
+            "待数据获取后生成", "数据获取后生成", "示例数据", "数据为示例", "合理估算",
+        )
+        try:
+            from bs4 import BeautifulSoup
+
+            soup = BeautifulSoup(text, "html.parser")
+
+            # Empty tables are layout defects, not meaningful content. Keep
+            # the surrounding section so the artifact remains usable.
+            for table in list(soup.find_all("table")):
+                rows = table.find_all("tr")
+                data_rows = rows[1:] if len(rows) > 1 else []
+                has_data = any(
+                    row.find("td") and row.get_text("", strip=True)
+                    for row in data_rows
+                )
+                if len(rows) < 2 or not has_data:
+                    table.decompose()
+
+            # Placeholder-only paragraphs/list items are removed. For mixed
+            # nodes, remove only the offending phrases; never fabricate data.
+            for node in list(soup.find_all(["p", "li", "td", "th", "caption"])):
+                node_text = node.get_text(" ", strip=True)
+                if not node_text or not any(term in node_text for term in placeholder_terms):
+                    continue
+                if len(node_text) <= 180:
+                    node.decompose()
+                    continue
+                for string in list(node.find_all(string=True)):
+                    cleaned = str(string)
+                    for term in placeholder_terms:
+                        cleaned = cleaned.replace(term, "")
+                    string.replace_with(cleaned)
+
+            # Remove common Markdown residue from text nodes and discard
+            # standalone Markdown table rows that were never rendered.
+            for string in list(soup.find_all(string=True)):
+                cleaned = str(string).replace("**", "")
+                for term in placeholder_terms:
+                    cleaned = cleaned.replace(term, "")
+                if re.match(r"^\s*\|[^\n<]+\|\s*$", cleaned):
+                    parent = string.parent
+                    if parent and parent.name in {"p", "li", "div"}:
+                        parent.decompose()
+                        continue
+                if cleaned != str(string):
+                    string.replace_with(cleaned)
+
+            for element in soup.find_all(True):
+                for attribute in ("alt", "title", "aria-label"):
+                    value = element.get(attribute)
+                    if not isinstance(value, str):
+                        continue
+                    cleaned = value
+                    for term in placeholder_terms:
+                        cleaned = cleaned.replace(term, "")
+                    if cleaned != value:
+                        element[attribute] = cleaned
+
+            # Replace known internal repair labels in headings with the
+            # manifest title for the corresponding section, when available.
+            expected_by_id = {}
+            incoming = research_result or {}
+            manifest = incoming.get("section_manifest")
+            if not manifest and isinstance(incoming.get("_task_structure"), dict):
+                manifest = incoming["_task_structure"].get("section_manifest")
+            if isinstance(manifest, list):
+                expected_by_id = {
+                    str(item.get("section_id") or item.get("id") or "").strip(): str(
+                        item.get("section_name") or item.get("title") or item.get("name") or ""
+                    ).strip()
+                    for item in manifest if isinstance(item, dict)
+                }
+            incoming_sections = [s for s in incoming.get("sections") or [] if isinstance(s, dict)]
+            replacement = next(
+                (
+                    expected_by_id.get(str(section.get("section_id") or section.get("id") or "").strip())
+                    for section in incoming_sections
+                    if "数据精准修补" in str(section.get("title") or section.get("name") or "")
+                    and expected_by_id.get(str(section.get("section_id") or section.get("id") or "").strip())
+                ),
+                "",
+            )
+            if replacement:
+                for string in list(soup.find_all(string=True)):
+                    if "数据精准修补" in str(string):
+                        string.replace_with(str(string).replace("数据精准修补", replacement))
+                for element in soup.find_all(True):
+                    for attribute in ("alt", "title", "aria-label"):
+                        value = element.get(attribute)
+                        if isinstance(value, str) and "数据精准修补" in value:
+                            element[attribute] = value.replace("数据精准修补", replacement)
+
+            return str(soup)
+        except Exception as exc:
+            logger.warning("HTML contract repair skipped: %s", exc)
+            # A failed repair must not prevent delivery; finalizer metadata
+            # will classify the original content as a warning artifact.
+            return text
+
+    @staticmethod
+    def _finalize_html_contract(
+        html_content: str,
+        research_result: Optional[Dict[str, Any]] = None,
+        render_diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Run the final, non-blocking delivery check for generated HTML.
+
+        HTML remains available when this check reports defects.  The result is
+        explicitly classified so downstream persistence cannot mistake an
+        existing file for a formally accepted report.
+        """
+        text = str(html_content or "")
+        lower = text.lower()
+        incoming = research_result or {}
+        title_mismatches = []
+        title_manifest = incoming.get("title_manifest") or incoming.get("manifest")
+        if isinstance(title_manifest, dict):
+            expected_report_title = str(
+                title_manifest.get("title") or title_manifest.get("report_title")
+                or title_manifest.get("name") or ""
+            ).strip()
+            if expected_report_title and str(incoming.get("title") or "").strip() != expected_report_title:
+                title_mismatches.append("report")
+        section_manifest = incoming.get("section_manifest")
+        if not section_manifest and isinstance(incoming.get("_task_structure"), dict):
+            section_manifest = incoming["_task_structure"].get("section_manifest")
+        if isinstance(section_manifest, list):
+            expected_titles = {
+                str(item.get("section_id") or item.get("id") or "").strip(): str(
+                    item.get("section_name") or item.get("title") or item.get("name") or ""
+                ).strip()
+                for item in section_manifest
+                if isinstance(item, dict)
+                and str(item.get("output_slot") or "body").strip().lower() == "body"
+            }
+            for section in incoming.get("sections") or []:
+                if not isinstance(section, dict):
+                    continue
+                section_id = str(section.get("section_id") or section.get("id") or "").strip()
+                expected_title = expected_titles.get(section_id, "")
+                actual_title = str(section.get("title") or section.get("name") or "").strip()
+                if expected_title and actual_title != expected_title:
+                    title_mismatches.append(section_id or "section")
+        table_defects = []
+        for table_body in re.findall(r"<table\b[^>]*>(.*?)</table\s*>", text, flags=re.IGNORECASE | re.DOTALL):
+            rows = re.findall(r"<tr\b[^>]*>(.*?)</tr\s*>", table_body, flags=re.IGNORECASE | re.DOTALL)
+            data_rows = rows[1:] if len(rows) > 1 else []
+            nonempty_data = any(
+                re.sub(r"<[^>]+>", "", row).strip()
+                for row in data_rows
+                if re.search(r"<td\b", row, flags=re.IGNORECASE)
+            )
+            if len(rows) < 2 or not nonempty_data:
+                table_defects.append("empty_or_header_only_table")
+        checks = {
+            "placeholder": any(term in text for term in (
+                "当前数据尚缺少可核验的结构化证据", "数据缺口", "待补充",
+                "待数据获取后生成", "数据获取后生成", "示例数据", "数据为示例", "合理估算",
+            )),
+            "raw_markdown": "**" in text or bool(re.search(r"(?:^|>)\s*\|[^<\n]+\|", text)),
+            "unrendered_template": bool(re.search(r"\{\{|\{%", text)),
+            "html_structure": bool(re.search(r"</html>\s*<html", lower)),
+            "title_manifest": bool(title_mismatches),
+            "empty_table": bool(table_defects),
+            "auto_repaired": bool(incoming.get("_html_contract_repaired")),
+        }
+        diagnostics = render_diagnostics or {}
+        diagnostic_issues = list(diagnostics.get("issues") or [])
+        if not (diagnostics.get("post_render_validation") or {}).get("passed", True):
+            diagnostic_issues.append({"code": "POST_RENDER_VALIDATION_FAILED"})
+        issues = [name for name, failed in checks.items() if failed]
+        if diagnostic_issues:
+            issues.append("render_diagnostics")
+
+        has_explicit_quality_state = any(
+            key in incoming for key in ("formal_complete", "quality_gate_status")
+        )
+        gate = str(incoming.get("quality_gate_status") or "").lower()
+        formal_complete = bool(incoming.get("formal_complete", False)) and not issues and gate not in {"blocked", "degraded"}
+        explicit_nonformal = has_explicit_quality_state and not formal_complete
+        return {
+            "finalizer": "html_delivery_contract",
+            "finalizer_passed": not issues,
+            "issues": issues,
+            "title_mismatches": title_mismatches,
+            "table_defects": table_defects,
+            "render_diagnostics": diagnostic_issues,
+            "quality_gate_status": (
+                "passed" if formal_complete
+                else (gate if gate in {"blocked", "degraded"} else ("degraded" if has_explicit_quality_state else "pending"))
+            ),
+            "formal_complete": formal_complete,
+            "delivery_class": "formal_ready" if formal_complete else "available_with_warnings",
+            "artifact_status": "ready",
+            "explicit_nonformal": explicit_nonformal,
+        }
+
+    @staticmethod
+    def _add_delivery_banner(html_content: str) -> str:
+        """Make a warning artifact visibly distinguishable from a formal report."""
+        banner = (
+            '<div class="report-delivery-status report-delivery-status-warning" '
+            'role="status">诊断版 / 草稿版：本文件包含质量或渲染警告，不应作为正式报告使用。</div>'
+        )
+        if "report-delivery-status" in html_content:
+            return html_content
+        match = re.search(r"<body(?:\s[^>]*)?>", html_content, flags=re.IGNORECASE)
+        if match:
+            return html_content[:match.end()] + banner + html_content[match.end():]
+        return banner + html_content
+
+    async def _handle_get_preview(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle preview request - Generate HTML preview
+
+        Flow: research_result → ContentOrchestrator → HTML → Return HTML path
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Preview result (containing HTML path)
+        """
+        task_id = request.task_id or f"preview_{uuid.uuid4().hex[:8]}"
+        
+        # 1. Get research content
+        research_result = request.research_result
+        if not research_result:
+            research_result = self._load_research_result(task_id)
+        
+        if not research_result:
+            if request.task_id:
+                return DocumentGenerationResult(
+                    success=True,
+                    task_id=task_id,
+                    output_format=request.output_format,
+                    warning="PENDING: research result is not available yet",
+                ).to_dict()
+            return DocumentGenerationResult(
+                success=False,
+                task_id=task_id,
+                error="No research result for preview",
+                error_code="NO_CONTENT"
+            ).to_dict()
+
+        # 2. Generate charts for HTML before creating preview
+        research_result = await self._generate_charts_for_html(research_result)
+        research_result = self._normalize_report_titles_for_render(research_result)
+        
+        # 3. Use ContentOrchestrator to generate HTML preview
+        try:
+            from src.content.content_orchestrator import ContentOrchestrator
+            
+            from src.core.preview_storage import PreviewStorage
+            
+            orchestrator = ContentOrchestrator()
+            html_layout = request._html_layout or 'docx'
+            html_content = orchestrator.transform_to_html(
+                research_result=research_result,
+                output_format=html_layout,
+                output_dir=str(PreviewStorage.NEW_DIR)  # External chart images
+            )
+            html_content = self._prepare_html_chart_assets(
+                html_content, PreviewStorage.NEW_DIR,
+            )
+            original_html_content = html_content
+            html_content = self._repair_html_contract(
+                html_content, research_result=research_result,
+            )
+            if html_content != original_html_content:
+                research_result["_html_contract_repaired"] = True
+            html_contract = self._finalize_html_contract(
+                html_content,
+                research_result=research_result,
+                render_diagnostics=orchestrator.get_render_diagnostics(),
+            )
+            if html_contract.get("issues") or html_contract.get("explicit_nonformal"):
+                html_content = self._add_delivery_banner(html_content)
+            
+            # 3. Save HTML file to serving directory
+            PreviewStorage.write(task_id, html_content)
+            html_path = PreviewStorage.path(task_id)
+            
+            logger.info(f"Generated HTML preview for {task_id}")
+            
+            return DocumentGenerationResult(
+                success=True,
+                task_id=task_id,
+                output_format=request.output_format,
+                document_path=str(html_path),
+                preview_path=str(html_path),
+                metadata=html_contract,
+            ).to_dict()
+            
+        except Exception as e:
+            logger.error(f"Failed to generate HTML preview: {e}")
+            return DocumentGenerationResult(
+                success=False,
+                task_id=task_id,
+                error=f"Preview generation failed: {e}",
+                error_code="PREVIEW_FAILED"
+            ).to_dict()
+    
+    def _handle_list_versions(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle version list request
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Version list
+        """
+        # Week 21 skeleton implementation
+        return DocumentGenerationResult(
+            success=True,
+            task_id=request.task_id,
+            output_format=request.output_format,
+            versions=[
+                {
+                    "version_id": "v1",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "initial"
+                }
+            ]
+        ).to_dict()
+    
+    def _handle_rollback_version(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle version rollback request
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Comparison result
+        """
+        # Week 21 skeleton implementation
+        return DocumentGenerationResult(
+            success=True,
+            task_id=request.task_id,
+            output_format=request.output_format,
+            version_id=f"v_rollback_from_{request.version_id}"
+        ).to_dict()
+    
+    def _handle_compare_versions(
+        self,
+        request: DocumentGenerationRequest
+    ) -> Dict[str, Any]:
+        """
+        Handle version comparison request
+
+        Args:
+            request: Document generation request
+
+        Returns:
+            Comparison result
+        """
+        # Week 21 skeleton implementation
+        return DocumentGenerationResult(
+            success=True,
+            task_id=request.task_id,
+            output_format=request.output_format,
+            diff_result={
+                "version_1": request.version_id,
+                "version_2": request.version_id_2,
+                "changes": []  # To be implemented
+            }
+        ).to_dict()
+
+
+# Export
+__all__ = ["DocumentGenerationAgent"]

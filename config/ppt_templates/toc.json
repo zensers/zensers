@@ -1,0 +1,45 @@
+{
+  "meta": {
+    "name": "toc",
+    "display_name": "目录",
+    "description": "报告目录页，带编号列表"
+  },
+  "background": {
+    "type": "solid",
+    "color": "off_white"
+  },
+  "slots": [
+    {
+      "id": "title",
+      "type": "text",
+      "source": "title",
+      "position": { "left": 0.8, "top": 0.3, "width": 11.7, "height": 0.7 },
+      "style": {
+        "font_size": 28,
+        "font_weight": "bold",
+        "color": "navy",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "toc_items",
+      "type": "items",
+      "source": "items",
+      "position": { "left": 1.5, "top": 1.8, "width": 10.3, "height": 4.8 },
+      "style": {
+        "bullet": "■",
+        "bullet_color": "gold",
+        "font_size": 28,
+        "color": "navy",
+        "line_spacing": 20,
+        "font": "Microsoft YaHei"
+      }
+    }
+  ],
+  "decorations": [
+    { "type": "footer_bar", "layer": "bottom", "color": "gold", "height": 0.11 },
+    { "type": "left_accent", "layer": "bottom", "color": "gold", "width": 0.05, "height": 4.0 },
+    { "type": "page_number", "layer": "top", "position": "bottom_right", "color": "text_light", "font_size": 10 }
+  ]
+}

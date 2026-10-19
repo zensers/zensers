@@ -1,0 +1,46 @@
+{
+  "meta": {
+    "name": "comparison",
+    "display_name": "对比分析",
+    "description": "双栏对比布局"
+  },
+  "background": {
+    "type": "solid",
+    "color": "white"
+  },
+  "slots": [
+    {
+      "id": "title",
+      "type": "text",
+      "source": "title",
+      "position": { "left": 0.8, "top": 0.3, "width": 11.7, "height": 0.7 },
+      "style": {
+        "font_size": 24,
+        "font_weight": "bold",
+        "color": "navy",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "compare",
+      "type": "comparison",
+      "source": "comparison_data",
+      "position": { "left": 0.8, "top": 1.3, "width": 11.7, "height": 5.2 },
+      "style": {
+        "left_title": "Current State",
+        "right_title": "Future State",
+        "left_color": "navy",
+        "right_color": "gold",
+        "font_size": 13,
+        "font": "Microsoft YaHei"
+      }
+    }
+  ],
+  "decorations": [
+    { "type": "side_accent", "layer": "bottom", "color": "gold", "width": 0.06 },
+    { "type": "footer_bar", "layer": "bottom", "color": "gold", "height": 0.11 },
+    { "type": "title_underline", "layer": "bottom", "color": "gold", "width": 4.0, "offset_top": 1.05 },
+    { "type": "page_number", "layer": "top", "position": "bottom_right", "color": "text_light", "font_size": 10 },
+    { "type": "source_text", "layer": "top", "text": "", "position": "bottom_left", "color": "text_light", "font_size": 9 }
+  ]
+}

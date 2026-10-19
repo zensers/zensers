@@ -1,0 +1,70 @@
+{
+    "metadata": {
+        "description": "专业分析师报告样本",
+        "version": "1.0",
+        "created_at": "2025-01-15",
+        "quality_standard": "一线分析师水平"
+    },
+    "reports": [
+        {
+            "id": "analyst_001",
+            "title": "2025年中国新能源汽车市场深度研究报告",
+            "type": "market_research",
+            "analyst_level": "senior",
+            "quality_score": 92,
+            "metrics": {
+                "accuracy": 0.99,
+                "completeness": 0.97,
+                "consistency": 0.95,
+                "format": 0.98,
+                "language": 0.90
+            },
+            "content_summary": {
+                "word_count": 5000,
+                "sections": 8,
+                "data_points": 45,
+                "sources": 5
+            }
+        },
+        {
+            "id": "analyst_002",
+            "title": "半导体行业投资价值分析报告",
+            "type": "industry_analysis",
+            "analyst_level": "senior",
+            "quality_score": 88,
+            "metrics": {
+                "accuracy": 0.98,
+                "completeness": 0.94,
+                "consistency": 0.92,
+                "format": 0.95,
+                "language": 0.88
+            },
+            "content_summary": {
+                "word_count": 4500,
+                "sections": 6,
+                "data_points": 38,
+                "sources": 4
+            }
+        },
+        {
+            "id": "analyst_003",
+            "title": "某科技公司财务分析报告",
+            "type": "company_research",
+            "analyst_level": "mid",
+            "quality_score": 85,
+            "metrics": {
+                "accuracy": 0.96,
+                "completeness": 0.92,
+                "consistency": 0.90,
+                "format": 0.94,
+                "language": 0.85
+            },
+            "content_summary": {
+                "word_count": 3500,
+                "sections": 5,
+                "data_points": 30,
+                "sources": 3
+            }
+        }
+    ]
+}

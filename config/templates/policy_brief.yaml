@@ -1,0 +1,102 @@
+# Policy Brief Report Template
+# Professional use: In-depth interpretation of industry-related policies and impacts
+
+id: policy_brief_standard
+name: Policy Brief Report
+description: In-depth interpretation of industry-related policies and impacts
+output_type: policy_brief
+estimated_pages: 10-15 pages
+suitable_for:
+  - Compliance Preparation
+  - Strategic Planning
+  - Risk Assessment
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: academic-research
+
+sections:
+  - id: summary
+    name: Summary
+    required: true
+    description: Core policy highlights
+    sub_sections:
+      - id: key_takeaways
+        name: Key Takeaways
+        description: Top 3-5 policy highlights
+      - id: urgency_assessment
+        name: Urgency Assessment
+        description: Timeline and compliance deadlines
+
+  - id: policy_overview
+    name: Policy Overview
+    required: true
+    description: Policy background, main content
+    sub_sections:
+      - id: policy_background
+        name: Policy Background
+        description: Context and motivation for the policy
+      - id: main_provisions
+        name: Main Provisions
+        description: Key clauses and requirements
+
+  - id: policy_analysis
+    name: Policy Analysis
+    required: true
+    description: Policy intent, scope of impact
+    sub_sections:
+      - id: policy_intent
+        name: Policy Intent
+        description: Underlying objectives and expected outcomes
+      - id: impact_scope
+        name: Impact Scope
+        description: Industries, entities, and geographies affected
+
+  - id: industry_impact
+    name: Industry Impact
+    required: true
+    description: Impact analysis on various industries
+    sub_sections:
+      - id: affected_sectors
+        name: Affected Sectors
+        description: Sector-by-sector impact assessment
+      - id: market_reaction
+        name: Market Reaction
+        description: Stock and commodity market response
+
+  - id: company_impact
+    name: Company Impact
+    required: true
+    description: Impact on key companies
+    sub_sections:
+      - id: beneficiary_companies
+        name: Beneficiaries
+        description: Companies positively affected
+      - id: adversely_affected
+        name: Adversely Affected
+        description: Companies negatively impacted
+
+  - id: compliance_guide
+    name: Compliance Guide
+    required: false
+    description: Compliance recommendations, countermeasures
+    sub_sections:
+      - id: action_items
+        name: Action Items
+        description: Required compliance actions by deadline
+      - id: best_practices
+        name: Best Practices
+        description: Recommended compliance approaches
+
+  - id: outlook
+    name: Policy Outlook
+    required: false
+    description: Future policy trend forecast
+    sub_sections:
+      - id: upcoming_policies
+        name: Upcoming Policies
+        description: Expected follow-up regulations
+      - id: long_term_trend
+        name: Long-term Trend
+        description: Regulatory direction and implications

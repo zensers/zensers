@@ -1,0 +1,69 @@
+{
+  "meta": {
+    "region": "china",
+    "name": "中国",
+    "name_en": "China",
+    "sources": {
+      "age_gender": {
+        "name": "UN World Population Prospects 2024",
+        "url": "https://population.un.org/wpp/"
+      },
+      "education": {
+        "name": "World Bank Gender Statistics",
+        "url": "https://databank.worldbank.org/source/gender-statistics/"
+      },
+      "income": {
+        "name": "World Bank PIP",
+        "url": "https://pip.worldbank.org/country-profiles/CHN"
+      },
+      "city_tier": {
+        "name": "GaWC 2024",
+        "url": "https://gawc.lboro.ac.uk/gawc-worlds/the-world-according-to-gawc/world-cities-2024/"
+      }
+    },
+    "source_url": "https://population.un.org/wpp/",
+    "primary_source_url": "https://population.un.org/wpp/",
+    "data_notes": "Age: UN WPP 2024 (1-year intervals aggregated). Education: World Bank 2023. Income: World Bank PIP consumption quintiles 2023. City tier: GaWC 2024 international connectivity classification mapped to domestic tiers.",
+    "updated": "2024-01-01"
+  },
+  "age": {
+    "18_24": 0.107,
+    "25_34": 0.185,
+    "35_44": 0.179,
+    "45_54": 0.172,
+    "55_59": 0.068,
+    "60_69": 0.148,
+    "70_79": 0.096,
+    "80_plus": 0.045
+  },
+  "gender": {
+    "male": 0.512,
+    "female": 0.488
+  },
+  "education": {
+    "未上过学": 0.024,
+    "小学": 0.248,
+    "初中": 0.345,
+    "高中/中专": 0.151,
+    "大学专科": 0.104,
+    "大学本科": 0.067,
+    "研究生": 0.007,
+    "其他/未说明": 0.054
+  },
+  "income": {
+    "note": "Household consumption per capita quintile shares. Source: World Bank PIP 2023 (consumption-based).",
+    "最低20%": 0.060,
+    "第二个20%": 0.110,
+    "第三个20%": 0.155,
+    "第四个20%": 0.225,
+    "最高20%": 0.450
+  },
+  "city_tier": {
+    "note": "GaWC 2024 mapping. Alpha+/Alpha = 一线, Beta+/Beta = 新一线/二线, Gamma = 三线, Sufficiency = 县城/农村.",
+    "一线": 0.07,
+    "新一线": 0.10,
+    "二线及三线": 0.36,
+    "四线及以下": 0.26,
+    "农村": 0.21
+  }
+}

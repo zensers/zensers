@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "region": "jpn",
+    "name_en": "Japan",
+    "sources": {
+      "age_gender": {
+        "name": "UN World Population Prospects 2024",
+        "url": "https://population.un.org/wpp/"
+      },
+      "education": {
+        "name": "World Bank Gender Statistics",
+        "url": "https://databank.worldbank.org/source/gender-statistics/"
+      },
+      "income": {
+        "name": "World Bank PIP",
+        "url": "https://pip.worldbank.org/country-profiles/JPN"
+      }
+    },
+    "source_url": "https://population.un.org/wpp/",
+    "data_notes": "Age/gender: UN WPP 2024. Education: World Bank 2023 population 25+. Income: World Bank PIP 2018.",
+    "updated": "2024-01-01"
+  },
+  "age": {
+    "18_24": 0.073,
+    "25_34": 0.117,
+    "35_44": 0.145,
+    "45_54": 0.156,
+    "55_59": 0.08,
+    "60_69": 0.168,
+    "70_79": 0.155,
+    "80_plus": 0.106
+  },
+  "gender": {
+    "male": 0.487,
+    "female": 0.513
+  },
+  "education": {
+    "no_formal": 0.019,
+    "primary": 0.095,
+    "lower_secondary": 0.12,
+    "upper_secondary": 0.224,
+    "post_secondary": 0.294,
+    "bachelor": 0.176,
+    "graduate": 0.072
+  },
+  "income": {
+    "note": "Household income per capita quintiles. Source: World Bank PIP 2018.",
+    "lowest_20": 0.078,
+    "second_20": 0.123,
+    "third_20": 0.162,
+    "fourth_20": 0.217,
+    "highest_20": 0.42
+  },
+  "urbanization": {
+    "urban": 0.917,
+    "rural": 0.083
+  }
+}

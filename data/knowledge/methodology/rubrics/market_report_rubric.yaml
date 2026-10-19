@@ -1,0 +1,55 @@
+rubric_id: report_quality_v2
+section_type: market_report
+description: 行业研究报告质量评分标准（校准版）
+
+dimensions:
+  - name: "证据锚定"
+    weight: 0.25
+    levels:
+      excellent: "大部分核心断言有数据来源，数据有具体数值（非模糊描述），来源可追溯"
+      good: "主要断言有数据支撑，部分来源标注不完整，但核心数据可信"
+      adequate: "有部分数据但来源不清晰，存在较多无据断言"
+      poor: "几乎没有数据支撑，大量无据断言或编造数据"
+
+  - name: "逻辑完整性"
+    weight: 0.20
+    levels:
+      excellent: "论证逻辑清晰，结论与论据匹配，无明显逻辑跳跃"
+      good: "主要逻辑通顺，存在少量跳跃但不影响整体结论"
+      adequate: "逻辑基本可读，但存在明显矛盾或跳跃"
+      poor: "逻辑混乱，结论与论据脱节"
+
+  - name: "数据使用"
+    weight: 0.20
+    levels:
+      excellent: "数据引用充分，有表格/图表支撑，数据与论点紧密相关"
+      good: "有数据引用和表格，基本支撑论点"
+      adequate: "数据引用不足，表格不完整或缺失"
+      poor: "几乎没有数据引用"
+
+  - name: "洞察深度"
+    weight: 0.15
+    levels:
+      excellent: "有因果分析和传导机制，揭示了数据背后的规律"
+      good: "有一定分析深度，能解释部分因果关系"
+      adequate: "主要是事实陈述，分析有限"
+      poor: "纯事实罗列，无分析"
+
+  - name: "结构合规"
+    weight: 0.10
+    levels:
+      excellent: "结构完整（结论→论证→数据→风险），层次清晰"
+      good: "结构基本完整，有少量偏差"
+      adequate: "结构不完整，缺少部分要素"
+      poor: "结构混乱"
+
+  - name: "前瞻价值"
+    weight: 0.10
+    levels:
+      excellent: "有具体建议或预测，有边界条件"
+      good: "有建议或预测，但不够具体"
+      adequate: "建议笼统"
+      poor: "无建议或预测"
+
+min_pass_score: 60
+fail_dimensions: ["证据锚定", "逻辑完整性"]

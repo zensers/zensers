@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "region": "gbr",
+    "name_en": "United Kingdom",
+    "sources": {
+      "age_gender": {
+        "name": "UN World Population Prospects 2024",
+        "url": "https://population.un.org/wpp/"
+      },
+      "education": {
+        "name": "World Bank Gender Statistics",
+        "url": "https://databank.worldbank.org/source/gender-statistics/"
+      },
+      "income": {
+        "name": "World Bank PIP",
+        "url": "https://pip.worldbank.org/country-profiles/GBR"
+      }
+    },
+    "source_url": "https://population.un.org/wpp/",
+    "data_notes": "Age/gender: UN WPP 2024. Education: World Bank 2023 population 25+. Income: World Bank PIP 2021.",
+    "updated": "2024-01-01"
+  },
+  "age": {
+    "18_24": 0.101,
+    "25_34": 0.158,
+    "35_44": 0.153,
+    "45_54": 0.16,
+    "55_59": 0.079,
+    "60_69": 0.154,
+    "70_79": 0.13,
+    "80_plus": 0.065
+  },
+  "gender": {
+    "male": 0.491,
+    "female": 0.509
+  },
+  "education": {
+    "no_formal": 0.018,
+    "primary": 0.088,
+    "lower_secondary": 0.16,
+    "upper_secondary": 0.265,
+    "post_secondary": 0.182,
+    "bachelor": 0.198,
+    "graduate": 0.089
+  },
+  "income": {
+    "note": "Household income per capita quintiles. Source: World Bank PIP 2021.",
+    "lowest_20": 0.065,
+    "second_20": 0.112,
+    "third_20": 0.16,
+    "fourth_20": 0.228,
+    "highest_20": 0.435
+  },
+  "urbanization": {
+    "urban": 0.842,
+    "rural": 0.158
+  }
+}

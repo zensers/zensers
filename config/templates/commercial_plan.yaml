@@ -1,0 +1,149 @@
+# Commercial Plan Template
+# Professional use: Systematic description of business model and development plan
+
+id: commercial_plan_standard
+name: Standard Commercial Plan
+description: Systematic description of business model and development plan, for fundraising or internal planning
+output_type: commercial_plan
+estimated_pages: 30-50 pages
+suitable_for:
+  - Fundraising Application
+  - Internal Planning
+  - Partnership Development
+supported_formats:
+  - docx
+  - pdf
+category_name: report-generation
+
+sections:
+  - id: exec_summary
+    name: Executive Summary
+    required: true
+    description: Project highlights summary (standard business plan terminology, 1-2 pages)
+    sub_sections:
+      - id: project_highlights
+        name: Project Highlights
+        description: Key value propositions and achievements
+      - id: funding_ask
+        name: Funding Ask Summary
+        description: Amount, use, and expected outcomes
+
+  - id: company_intro
+    name: Company Introduction
+    required: true
+    description: Mission & vision, business status, registration information
+    sub_sections:
+      - id: mission_vision
+        name: Mission & Vision
+        description: Company mission, vision, and values
+      - id: business_status
+        name: Business Status
+        description: Current operational stage and registration info
+
+  - id: market_analysis
+    name: Market Analysis
+    required: true
+    description: Industry size, growth trends, competitive analysis
+    sub_sections:
+      - id: market_sizing
+        name: Market Sizing
+        description: TAM, SAM, SOM and growth rate
+      - id: competitive_landscape
+        name: Competitive Landscape
+        description: Key competitors and market structure
+
+  - id: product_service
+    name: Products & Services
+    required: true
+    description: Product/service description, core advantages, technology barriers
+    sub_sections:
+      - id: product_description
+        name: Product Description
+        description: Detailed product/service offering
+      - id: core_advantages
+        name: Core Advantages
+        description: Technology barriers and differentiation
+
+  - id: business_model
+    name: Business Model
+    required: true
+    description: Revenue model, pricing strategy, unit economics
+    sub_sections:
+      - id: revenue_streams
+        name: Revenue Streams
+        description: Revenue model and pricing strategy
+      - id: unit_economics
+        name: Unit Economics
+        description: LTV, CAC, contribution margin
+
+  - id: marketing_sales
+    name: Marketing & Sales Strategy
+    required: false
+    description: Channel strategy, promotion plan, customer acquisition cost (CAC)
+    sub_sections:
+      - id: channel_strategy
+        name: Channel Strategy
+        description: Sales channels and distribution approach
+      - id: customer_acquisition
+        name: Customer Acquisition
+        description: Marketing plan and CAC optimization
+
+  - id: operations
+    name: Operations Plan
+    required: false
+    description: Supply chain management, capacity planning, cost structure
+    sub_sections:
+      - id: supply_chain
+        name: Supply Chain
+        description: Supply chain management and vendor relationships
+      - id: capacity_planning
+        name: Capacity Planning
+        description: Production capacity and scaling plan
+
+  - id: team
+    name: Team Introduction
+    required: true
+    description: Core member backgrounds, organizational structure, complementarity
+    sub_sections:
+      - id: core_team
+        name: Core Team
+        description: Founders and key executives
+      - id: org_structure
+        name: Organizational Structure
+        description: Team structure and key hires needed
+
+  - id: financial_plan
+    name: Financial Plan
+    required: true
+    description: Historical data, future projections, breakeven analysis
+    sub_sections:
+      - id: historical_financials
+        name: Historical Financials
+        description: Past 2-3 years financial performance
+      - id: projections
+        name: Projections
+        description: 3-5 year financial forecasts and breakeven
+
+  - id: funding_plan
+    name: Funding Requirements
+    required: true
+    description: Funding amount, use of funds, milestone plan
+    sub_sections:
+      - id: funding_structure
+        name: Funding Structure
+        description: Amount, instrument, and valuation
+      - id: milestone_plan
+        name: Milestone Plan
+        description: Use of funds with milestone targets
+
+  - id: risks
+    name: Risk Analysis
+    required: false
+    description: Potential risks and contingency measures
+    sub_sections:
+      - id: risk_identification
+        name: Risk Identification
+        description: Key business and market risks
+      - id: contingency_planning
+        name: Contingency Planning
+        description: Mitigation strategies and contingency measures

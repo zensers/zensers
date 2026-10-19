@@ -1,0 +1,102 @@
+# Competitor Analysis Report Template
+# Professional use: Multi-dimensional comparison of key competitors' strengths and weaknesses
+
+id: competitor_analysis_standard
+name: Competitive Comparison Analysis
+description: Multi-dimensional comparison of key competitors' strengths and weaknesses
+output_type: competitor_analysis
+estimated_pages: 8-15 pages
+suitable_for:
+  - Product Positioning
+  - Competitive Strategy
+  - Differentiation Design
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: market-analysis
+
+sections:
+  - id: summary
+    name: Summary
+    required: true
+    description: Core conclusions of competitor analysis
+    sub_sections:
+      - id: key_findings
+        name: Key Findings
+        description: Top 3-5 competitive insights
+      - id: strategic_implications
+        name: Strategic Implications
+        description: Recommended competitive response
+
+  - id: competitor_list
+    name: Competitor List
+    required: true
+    description: Key competitor list and selection criteria
+    sub_sections:
+      - id: selection_criteria
+        name: Selection Criteria
+        description: How competitors were selected
+      - id: competitor_profiles
+        name: Competitor Profiles
+        description: Brief profile of each competitor
+
+  - id: feature_comparison
+    name: Feature Comparison
+    required: true
+    description: Product feature comparison matrix
+    sub_sections:
+      - id: feature_matrix
+        name: Feature Matrix
+        description: Side-by-side feature comparison table
+      - id: capability_gaps
+        name: Capability Gaps
+        description: Areas where competitors lead or lag
+
+  - id: pricing_comparison
+    name: Pricing Comparison
+    required: true
+    description: Pricing strategy, package comparison
+    sub_sections:
+      - id: pricing_structure
+        name: Pricing Structure
+        description: Pricing tiers and models comparison
+      - id: value_analysis
+        name: Value Analysis
+        description: Price-to-value ratio assessment
+
+  - id: market_positioning
+    name: Market Positioning
+    required: true
+    description: Positioning map, differentiation analysis
+    sub_sections:
+      - id: positioning_map
+        name: Positioning Map
+        description: Visual positioning of competitors
+      - id: differentiation
+        name: Differentiation Analysis
+        description: Unique positioning of each competitor
+
+  - id: strength_weakness
+    name: Strengths & Weaknesses Analysis
+    required: true
+    description: SWOT analysis, core strengths and weaknesses
+    sub_sections:
+      - id: swot_analysis
+        name: SWOT Analysis
+        description: Comprehensive SWOT for key competitors
+      - id: core_advantages
+        name: Core Advantages
+        description: Sustainable competitive advantages per competitor
+
+  - id: strategy_recommendation
+    name: Strategy Recommendations
+    required: false
+    description: Competitive strategy recommendations
+    sub_sections:
+      - id: offensive_strategy
+        name: Offensive Strategy
+        description: Opportunities to exploit competitor weaknesses
+      - id: defensive_strategy
+        name: Defensive Strategy
+        description: How to defend against competitor strengths

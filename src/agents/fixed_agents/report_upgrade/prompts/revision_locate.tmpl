@@ -1,0 +1,35 @@
+# 修订定位任务
+
+## 研究主题
+${topic}
+
+## 章节索引
+${chapter_index}
+
+## 已使用的数据指标
+${data_index}
+
+## 质检问题
+${issues_context}
+
+## 用户修订请求
+${user_request}
+
+## 输出格式（严格JSON，包裹在 ```json ``` 中）
+```json
+{
+  "complexity": "lightweight|standard|complex",
+  "targets": [
+    {
+      "chapter_id": "章节ID",
+      "chapter_title": "章节标题",
+      "revision_type": "modify|rewrite|patch_data|delete",
+      "revision_description": "具体修订描述",
+      "data_patches": ["数据修补指令"]
+    }
+  ],
+  "preceding_summary": "前文核心结论摘要",
+  "data_gaps": [{"chapter_id": "", "metric": "缺失指标", "context": "上下文"}],
+  "data_conflicts": [{"metric": "冲突指标", "entries": []}]
+}
+```

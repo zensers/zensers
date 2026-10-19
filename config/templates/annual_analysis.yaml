@@ -1,0 +1,205 @@
+# Annual Report Analysis Template
+# Professional use: Comprehensive analysis of listed company annual performance
+
+id: annual_analysis_standard
+name: Annual Report Analysis
+description: Comprehensive analysis of listed company annual performance, including in-depth financial review, strategic assessment, and governance evaluation
+output_type: company_research
+estimated_pages: 20-50 pages
+suitable_for:
+  - Annual Evaluation
+  - Long-term Investment
+  - Comprehensive Analysis
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: summary
+    name: Annual Report Overview
+    required: true
+    description: Full-year performance summary, key metrics, variance from expectations
+    sub_sections:
+      - id: performance_summary
+        name: Performance Summary
+        points:
+          - zh: 全年业绩概览与核心指标
+            en: Full-year performance overview and core metrics
+          - zh: 与预期差异分析
+            en: Variance from expectations analysis
+      - id: key_highlights
+        name: Key Highlights
+        points:
+          - zh: 年度亮点与重要变化
+            en: Annual highlights and significant changes
+          - zh: 管理层指引与展望
+            en: Management guidance and outlook
+
+  - id: business_review
+    name: Business Operations Analysis
+    required: true
+    description: Segment performance, market environment changes
+    sub_sections:
+      - id: segment_performance
+        name: Segment Performance
+        points:
+          - zh: 分业务板块经营表现
+            en: Business segment operating performance
+          - zh: 新业务进展与贡献
+            en: New business progress and contribution
+      - id: market_environment
+        name: Market Environment Changes
+        points:
+          - zh: 市场环境变化与影响
+            en: Market environment changes and impact
+          - zh: 竞争格局演变
+            en: Competitive landscape evolution
+
+  - id: financial_deep
+    name: In-depth Financial Analysis
+    required: true
+    description: Detailed analysis of three financial statements, financial ratios
+    sub_sections:
+      - id: income_analysis
+        name: Income Statement Deep Dive
+        points:
+          - zh: 收入结构与增长质量
+            en: Revenue structure and growth quality
+          - zh: 毛利率/净利率变化分析
+            en: Gross/net margin change analysis
+      - id: balance_analysis
+        name: Balance Sheet Deep Dive
+        points:
+          - zh: 资产结构变化与质量评估
+            en: Asset structure changes and quality assessment
+          - zh: 负债结构与杠杆水平
+            en: Debt structure and leverage level
+      - id: ratio_analysis
+        name: Financial Ratio Analysis
+        points:
+          - zh: 盈利能力指标(ROE/ROIC)
+            en: Profitability metrics (ROE/ROIC)
+          - zh: 运营效率与偿债能力指标
+            en: Operational efficiency and solvency metrics
+
+  - id: cashflow_analysis
+    name: Cash Flow Analysis
+    required: true
+    description: Cash flow management, debt analysis
+    sub_sections:
+      - id: operating_cashflow
+        name: Operating Cash Flow
+        points:
+          - zh: 经营性现金流质量评估
+            en: Operating cash flow quality assessment
+          - zh: 净利润与现金流差异分析
+            en: Net income vs. cash flow variance analysis
+      - id: investment_financing
+        name: Investment & Financing Cash Flow
+        points:
+          - zh: 资本开支与投资方向
+            en: Capital expenditure and investment direction
+          - zh: 融资活动与分红政策
+            en: Financing activities and dividend policy
+
+  - id: governance
+    name: Governance & Internal Controls
+    required: false
+    description: Governance structure, effectiveness of internal controls
+    sub_sections:
+      - id: governance_structure
+        name: Governance Structure
+        points:
+          - zh: 董事会构成与独立性
+            en: Board composition and independence
+          - zh: 高管薪酬与激励机制
+            en: Executive compensation and incentive mechanisms
+      - id: internal_controls
+        name: Internal Controls
+        points:
+          - zh: 内控体系有效性评估
+            en: Internal control system effectiveness assessment
+          - zh: 审计意见与风险提示
+            en: Audit opinion and risk alerts
+
+  - id: strategy
+    name: Strategic Planning
+    required: true
+    description: Future development strategy, business plans
+    sub_sections:
+      - id: strategic_direction
+        name: Strategic Direction
+        points:
+          - zh: 未来发展战略与方向
+            en: Future development strategy and direction
+          - zh: 战略转型与升级路径
+            en: Strategic transformation and upgrade path
+      - id: business_plans
+        name: Business Plans
+        points:
+          - zh: 重点项目与投资计划
+            en: Key projects and investment plans
+          - zh: 市场拓展与产能规划
+            en: Market expansion and capacity planning
+
+  - id: outlook
+    name: Outlook
+    required: true
+    description: Industry outlook, company development assessment
+    sub_sections:
+      - id: industry_outlook
+        name: Industry Outlook
+        points:
+          - zh: 行业前景与趋势判断
+            en: Industry prospects and trend assessment
+          - zh: 政策与监管环境展望
+            en: Policy and regulatory environment outlook
+      - id: company_outlook
+        name: Company Development Assessment
+        points:
+          - zh: 公司发展前景评估
+            en: Company development prospect assessment
+          - zh: 业绩增长预期与关键假设
+            en: Earnings growth expectations and key assumptions
+
+  - id: investment_view
+    name: Investment Assessment
+    required: true
+    description: Investment value evaluation, recommendations
+    sub_sections:
+      - id: valuation_assessment
+        name: Valuation Assessment
+        points:
+          - zh: 当前估值水平评估
+            en: Current valuation level assessment
+          - zh: 估值方法与合理区间
+            en: Valuation methodology and fair range
+      - id: investment_recommendation
+        name: Investment Recommendation
+        points:
+          - zh: 投资建议与评级
+            en: Investment recommendation and rating
+          - zh: 关键监测指标与风险提示
+            en: Key monitoring metrics and risk alerts
+
+  - id: risks
+    name: Risk Factors
+    required: true
+    description: Long-term risk factors
+    sub_sections:
+      - id: operational_risks
+        name: Operational Risks
+        points:
+          - zh: 经营风险与行业风险
+            en: Operational and industry risks
+          - zh: 竞争加剧与市场份额风险
+            en: Intensifying competition and market share risks
+      - id: financial_policy_risks
+        name: Financial & Policy Risks
+        points:
+          - zh: 财务风险与流动性风险
+            en: Financial and liquidity risks
+          - zh: 政策风险与合规风险
+            en: Policy and compliance risks

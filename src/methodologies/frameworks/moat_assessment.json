@@ -1,0 +1,7 @@
+{
+  "id": "moat_assessment",
+  "name": "护城河评估 (Morningstar框架)",
+  "priority": 3,
+  "aspects": ["enterprise_analysis", "enterprise", "competitive_landscape"],
+  "content": "请按Morningstar五大护城河来源评估:\n1. 网络效应: 用户越多价值越大，评估用户粘性和迁移成本\n2. 无形资产: 品牌认知度/专利壁垒/监管牌照的持续性\n3. 转换成本: 客户更换供应商的技术/资金/习惯成本\n4. 成本优势: 规模经济/独特工艺/资源优势的成本结构\n5. 效率规模: 利基市场规模刚性，有效竞争者有限"
+}

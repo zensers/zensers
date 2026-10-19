@@ -1,0 +1,57 @@
+{
+  "meta": {
+    "name": "cover",
+    "display_name": "封面",
+    "description": "报告封面页，深蓝渐变背景+金色标题"
+  },
+  "background": {
+    "type": "gradient",
+    "color1": "navy",
+    "color2": "navy_light"
+  },
+  "slots": [
+    {
+      "id": "title",
+      "type": "text",
+      "source": "title",
+      "position": { "left": 1.0, "top": 2.2, "width": 11.3, "height": 1.5 },
+      "style": {
+        "font_size": 40,
+        "font_weight": "bold",
+        "color": "gold",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "subtitle",
+      "type": "text",
+      "source": "content",
+      "position": { "left": 1.5, "top": 3.9, "width": 10.3, "height": 0.8 },
+      "style": {
+        "font_size": 22,
+        "color": "white",
+        "alignment": "center",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "date",
+      "type": "text",
+      "source": "auto",
+      "position": { "left": 1.5, "top": 5.0, "width": 10.3, "height": 0.5 },
+      "style": {
+        "font_size": 16,
+        "color": "white",
+        "alignment": "center",
+        "font": "Microsoft YaHei",
+        "auto_type": "date"
+      }
+    }
+  ],
+  "decorations": [
+    { "type": "footer_bar", "layer": "bottom", "color": "gold", "height": 0.11 },
+    { "type": "title_underline", "layer": "bottom", "color": "gold", "width": 6.0, "offset_top": 3.7 },
+    { "type": "branding", "layer": "top", "text": "CONFIDENTIAL", "position": "top_right", "color": "text_light", "font_size": 9 }
+  ]
+}

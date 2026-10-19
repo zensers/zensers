@@ -1,0 +1,82 @@
+# LLM Profile Definitions
+# Each profile defines a complete LLM configuration.
+# Environment variables can be referenced with ${VAR_NAME} syntax.
+
+profiles:
+  deepseek:
+    name: deepseek
+    display_name: DeepSeek
+    provider: deepseek
+    api_key: ${LLM_API_KEY}
+    base_url: ${LLM_BASE_URL}
+    model: deepseek-v4-pro
+    fallback_model: deepseek-v4-flash
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+    max_context_tokens: 128000
+    cost_limit_per_call: 0.0
+    max_concurrency: 3
+    enabled: false
+
+  mimo:
+    name: mimo
+    display_name: Xiaomi MiMo
+    provider: mimo
+    api_key: ${MIMO_API_KEY}
+    base_url: https://token-plan-cn.xiaomimimo.com/v1
+    model: mimo-v2.5
+    fallback_model: mimo-v2.5
+    temperature: 0.7
+    max_tokens: 8192
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+    max_context_tokens: 131072
+    cost_limit_per_call: 0.0
+    max_concurrency: 3
+    enabled: true
+
+  zhipu:
+    name: zhipu
+    display_name: 智谱
+    provider: zhipu
+    api_key: ${ZHIPU_API_KEY}
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    model: glm-5.2
+    fallback_model: glm-5.1
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+    max_context_tokens: 128000
+    cost_limit_per_call: 0.0
+    # Disabled until credentials and provider health are explicitly verified.
+    # It must not be selected by automatic fallback while MIMO is the primary.
+    enabled: false
+
+  local:
+    name: local
+    display_name: Ollama
+    provider: local
+    api_key: ""
+    base_url: http://localhost:11434/v1
+    model: qwen2.5
+    fallback_model: ""
+    temperature: 0.7
+    max_tokens: 4096
+    top_p: 1.0
+    frequency_penalty: 0.0
+    presence_penalty: 0.0
+    max_context_tokens: 32768
+    cost_limit_per_call: 0.0
+    enabled: false
+
+default_profile: mimo
+fallback_chain:
+  - mimo
+  - deepseek
+  - local

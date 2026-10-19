@@ -1,0 +1,7 @@
+{
+  "id": "comps_analysis",
+  "name": "可比公司分析",
+  "priority": 5,
+  "aspects": ["financial_valuation", "competitive_landscape"],
+  "content": "请按以下步骤进行可比公司分析:\n1. 选取可比公司\n2. 计算估值倍数 (PE/PB/EV/EBITDA)\n3. 与行业平均水平对比\n4. 分析溢价/折价原因"
+}

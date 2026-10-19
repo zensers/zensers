@@ -1,0 +1,101 @@
+# Quarterly Commentary Template
+# Professional use: Rapid interpretation of listed company quarterly results
+
+id: quarterly_commentary_standard
+name: Quarterly Commentary
+description: Rapid interpretation of listed company quarterly results, including financial comparison, segment analysis, and outlook adjustments
+output_type: quarterly_commentary
+estimated_pages: 8-15 pages
+suitable_for:
+  - Quarterly Tracking
+  - Earnings Interpretation
+  - Rapid Response
+supported_formats:
+  - docx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: performance_overview
+    name: Performance Overview
+    required: true
+    description: Revenue, net profit, EPS comparison, beat/miss assessment
+    sub_sections:
+      - id: headline_metrics
+        name: Headline Metrics
+        description: Revenue, net profit, EPS and YoY/QoQ comparison
+      - id: beat_miss
+        name: Beat/Miss Assessment
+        description: Comparison vs consensus estimates
+
+  - id: business_breakdown
+    name: Segment Analysis
+    required: true
+    description: Revenue by segment, gross margin changes and reasons
+    sub_sections:
+      - id: segment_revenue
+        name: Segment Revenue
+        description: Revenue contribution by business segment
+      - id: margin_analysis
+        name: Margin Analysis
+        description: Gross margin changes by segment and drivers
+
+  - id: cost_analysis
+    name: Cost & Expense Analysis
+    required: false
+    description: Changes in selling expenses, administrative expenses, R&D expenses
+    sub_sections:
+      - id: expense_breakdown
+        name: Expense Breakdown
+        description: Selling, G&A, R&D expense changes
+      - id: efficiency_metrics
+        name: Efficiency Metrics
+        description: Expense ratios and operational efficiency trends
+
+  - id: cashflow
+    name: Cash Flow Analysis
+    required: true
+    description: Operating cash flow, financial health assessment
+    sub_sections:
+      - id: operating_cf
+        name: Operating Cash Flow
+        description: OCF trends and quality of earnings
+      - id: balance_sheet
+        name: Balance Sheet Health
+        description: Debt levels, liquidity ratios
+
+  - id: outlook
+    name: Performance Outlook
+    required: true
+    description: Management guidance, industry trends
+    sub_sections:
+      - id: guidance
+        name: Management Guidance
+        description: Forward guidance and consensus comparison
+      - id: industry_trends
+        name: Industry Trends
+        description: Macro and sector outlook affecting performance
+
+  - id: rating_adjustment
+    name: Rating Adjustment
+    required: true
+    description: Earnings forecast revision, investment rating change
+    sub_sections:
+      - id: earnings_revision
+        name: Earnings Revision
+        description: EPS forecast changes and rationale
+      - id: rating_change
+        name: Rating Change
+        description: Investment rating adjustment and target price
+
+  - id: risks
+    name: Risk Factors
+    required: false
+    description: Performance uncertainty factors
+    sub_sections:
+      - id: downside_risks
+        name: Downside Risks
+        description: Key risk factors to monitor
+      - id: mitigants
+        name: Risk Mitigants
+        description: Factors that could offset downside risks

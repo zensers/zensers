@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>{{title}}</title>
+    <style>
+        /* ============================================
+           zensers 专业研究报告模板 v3.0
+           Professional Research Report Template
+           
+           设计参考：德勤（Deloitte）咨询公司风格
+           配色方案：德勤蓝 (#0076A8) + 深蓝 (#003366) + 金色 (#C9A227)
+           字体方案：思源黑体(标题) / 思源宋体(正文)
+           优化：Word文档转换兼容性
+           ============================================ */
+
+        /* --- 页面布局 --- */
+        @page {
+            size: A4;
+            margin: 2.54cm 2.54cm 3.17cm 2.54cm;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Source Han Serif SC', 'Noto Serif CJK SC', 'SimSun', serif;
+            font-size: 10.5pt;
+            line-height: 1.8;
+            color: #333333;
+            background: #fff;
+        }
+
+        /* ============================================
+           封面页 - 德勤风格专业设计
+           ============================================ */
+        .cover-page {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            padding: 60px 80px;
+            page-break-after: always;
+            position: relative;
+            background: linear-gradient(135deg, #003366 0%, #0076A8 100%);
+            color: #fff;
+        }
+
+        .cover-page::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="1"/></svg>');
+            opacity: 0.5;
+        }
+
+        .cover-badge {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 11pt;
+            letter-spacing: 12pt;
+            text-transform: uppercase;
+            color: #C9A227;
+            margin-bottom: 60px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-title {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 36pt;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.3;
+            margin-bottom: 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-subtitle {
+            font-family: 'Source Han Serif SC', 'SimSun', serif;
+            font-size: 16pt;
+            color: rgba(255,255,255,0.85);
+            line-height: 1.6;
+            margin-bottom: 60px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-divider {
+            width: 80px;
+            height: 3px;
+            background: #C9A227;
+            margin: 0 auto 60px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-meta {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 11pt;
+            color: rgba(255,255,255,0.7);
+            line-height: 2;
+            position: relative;
+            z-index: 1;
+        }
+
+        .cover-meta .label {
+            color: rgba(255,255,255,0.5);
+            margin-right: 8px;
+        }
+
+        .cover-logo {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 14pt;
+            font-weight: 700;
+            color: #C9A227;
+            letter-spacing: 4pt;
+            z-index: 1;
+        }
+
+        .cover-github {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 9pt;
+            color: rgba(255,255,255,0.4);
+            z-index: 1;
+        }
+
+        /* ============================================
+           目录页 - 德勤风格
+           ============================================ */
+        div.toc-page {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 60px 48px;
+            page-break-after: always;
+        }
+
+        .toc-header {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 24pt;
+            font-weight: 700;
+            color: #003366;
+            margin-bottom: 40px;
+            padding-bottom: 15px;
+            border-bottom: 3px solid #C9A227;
+        }
+
+        .toc-list {
+            list-style: none;
+            line-height: 1.6;
+        }
+
+        .toc-item-level1 {
+            display: flex;
+            align-items: baseline;
+            padding: 8px 0;
+            line-height: 1.6;
+            border-bottom: 1px solid #ddd;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 12pt;
+            font-weight: 700;
+            color: #003366;
+        }
+
+        .toc-item-level1 .toc-num {
+            flex-shrink: 0;
+            min-width: 3em;
+            color: #C9A227;
+        }
+
+        .toc-item-level1 .toc-title {
+            flex-shrink: 1;
+        }
+
+        .toc-item-level1 .toc-dots {
+            flex: 1;
+            border-bottom: 1px dotted #999;
+            margin: 0 10px;
+            min-width: 24px;
+        }
+
+        .toc-item-level1 .toc-page {
+            flex-shrink: 0;
+            font-weight: 700;
+            color: #003366;
+            text-align: right;
+            min-width: 2em;
+        }
+
+        .toc-item-level2 {
+            display: flex;
+            align-items: baseline;
+            padding: 5px 0 5px 40px;
+            line-height: 1.6;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 10.5pt;
+            color: #555;
+            border-bottom: 1px dotted #eee;
+        }
+
+        .toc-item-level2 .toc-num {
+            flex-shrink: 0;
+            min-width: 3.5em;
+            color: #0076A8;
+        }
+
+        .toc-item-level2 .toc-title {
+            flex-shrink: 1;
+        }
+
+        .toc-item-level2 .toc-dots {
+            flex: 1;
+            border-bottom: 1px dotted #ccc;
+            margin: 0 10px;
+            min-width: 24px;
+        }
+
+        .toc-item-level2 .toc-page {
+            flex-shrink: 0;
+            color: #555;
+            text-align: right;
+            min-width: 2em;
+        }
+
+        /* ============================================
+           正文页面 - 德勤风格
+           ============================================ */
+        .document {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 40px 48px;
+        }
+
+        /* --- 图表 --- */
+        figure.chart-block,
+        figure.chart-container {
+            margin: 28px auto;
+            padding: 20px 24px;
+            max-width: 760px;
+            background: #FAFBFC;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            page-break-inside: avoid;
+            text-align: center;
+        }
+
+        figure.chart-block img,
+        figure.chart-container img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 0 auto 12px;
+        }
+
+        figure.chart-block figcaption,
+        figure.chart-container figcaption,
+        figcaption.figure-caption {
+            font-size: 9pt;
+            line-height: 1.7;
+            color: #4a5568;
+            text-align: center;
+            margin-top: 8px;
+        }
+
+        /* --- 正文美化 --- */
+        .section-content {
+            max-width: 760px;
+            margin: 0 auto;
+        }
+
+        .section-content p {
+            line-height: 1.9;
+            letter-spacing: 0.02em;
+            margin-bottom: 14px;
+        }
+
+        /* --- 章节标题 --- */
+        .chapter-title {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 22pt;
+            font-weight: 700;
+            color: #003366;
+            margin: 40px 0 20px;
+            padding-bottom: 12px;
+            border-bottom: 3px solid #C9A227;
+            page-break-before: always;
+        }
+
+        .chapter-title:first-child {
+            page-break-before: auto;
+        }
+
+        .section-title {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 16pt;
+            font-weight: 700;
+            color: #0076A8;
+            margin: 30px 0 15px;
+            padding-left: 16px;
+            border-left: 4px solid #C9A227;
+        }
+
+        .subsection-title {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 13pt;
+            font-weight: 700;
+            color: #003366;
+            margin: 24px 0 12px;
+        }
+
+        .sub-subsection-title {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 11pt;
+            font-weight: 700;
+            color: #0076A8;
+            margin: 18px 0 10px;
+        }
+
+        /* --- 段落 --- */
+        p {
+            margin-bottom: 12px;
+            text-align: justify;
+            text-indent: 2em;
+        }
+
+        p.no-indent {
+            text-indent: 0;
+        }
+
+        /* --- 列表 --- */
+        ul, ol {
+            margin: 12px 0;
+            padding-left: 2em;
+        }
+
+        li {
+            margin-bottom: 6px;
+            line-height: 1.7;
+        }
+
+        /* --- 关键发现框 --- */
+        .key-findings {
+            background: #F0F8FF;
+            border-left: 4px solid #0076A8;
+            padding: 20px 24px;
+            margin: 24px 0;
+            border-radius: 0 4px 4px 0;
+        }
+
+        .key-findings h2 {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 14pt;
+            font-weight: 700;
+            color: #003366;
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .key-findings ul {
+            margin: 0;
+            padding-left: 1.5em;
+        }
+
+        .key-findings li {
+            margin-bottom: 10px;
+            line-height: 1.7;
+        }
+
+        /* --- 数据表格 --- */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 10pt;
+        }
+
+        caption {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 10pt;
+            font-weight: 700;
+            color: #003366;
+            text-align: left;
+            margin-bottom: 10px;
+        }
+
+        thead th {
+            background: #003366;
+            color: #fff;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 10pt;
+            font-weight: 700;
+            padding: 10px 12px;
+            text-align: left;
+            border: none;
+        }
+
+        tbody td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            vertical-align: top;
+        }
+
+        tbody tr:nth-child(even) {
+            background: #f7fafc;
+        }
+
+        tbody tr:hover {
+            background: #edf2f7;
+        }
+
+        /* --- 数据指标卡片 --- */
+        .metric-card {
+            display: inline-block;
+            background: #F0F8FF;
+            border: 1px solid #0076A8;
+            border-radius: 4px;
+            padding: 16px 20px;
+            margin: 8px;
+            min-width: 150px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 24pt;
+            font-weight: 700;
+            color: #003366;
+            line-height: 1.2;
+        }
+
+        .metric-label {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 9pt;
+            color: #718096;
+            margin-top: 4px;
+        }
+
+        /* --- 引用框 --- */
+        blockquote {
+            background: #FFFEF0;
+            border-left: 4px solid #C9A227;
+            padding: 16px 20px;
+            margin: 20px 0;
+            font-style: italic;
+            color: #744210;
+        }
+
+        /* --- 警告框 --- */
+        .warning-box {
+            background: #FFF5F5;
+            border: 1px solid #fc8181;
+            border-radius: 4px;
+            padding: 16px 20px;
+            margin: 20px 0;
+        }
+
+        .warning-box h4 {
+            color: #c53030;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            margin-bottom: 8px;
+        }
+
+        /* --- 信息框 --- */
+        .info-box {
+            background: #F0F8FF;
+            border: 1px solid #0076A8;
+            border-radius: 4px;
+            padding: 16px 20px;
+            margin: 20px 0;
+        }
+
+        .info-box h4 {
+            color: #003366;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            margin-bottom: 8px;
+        }
+
+        /* ============================================
+           页眉页脚 - 德勤风格
+           ============================================ */
+        .page-header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            padding: 0 2.54cm;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 8pt;
+            color: #718096;
+            border-bottom: 1px solid #e2e8f0;
+            background: #fff;
+            z-index: 100;
+        }
+
+        .page-header .logo {
+            font-weight: 700;
+            color: #003366;
+        }
+
+        .page-footer {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 40px;
+            padding: 0 2.54cm;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 8pt;
+            color: #718096;
+            border-top: 1px solid #e2e8f0;
+            background: #fff;
+            z-index: 100;
+        }
+
+        .page-footer .github {
+            color: #003366;
+            font-weight: 700;
+        }
+
+        /* ============================================
+           水印 - 德勤风格
+           ============================================ */
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 14pt;
+            color: rgba(0, 51, 102, 0.04);
+            pointer-events: none;
+            z-index: -1;
+            white-space: nowrap;
+        }
+
+        /* ============================================
+           打印样式
+           ============================================ */
+        @media print {
+            body {
+                font-size: 10pt;
+            }
+            
+            .cover-page {
+                height: auto;
+                min-height: 100vh;
+            }
+            
+            .page-header,
+            .page-footer {
+                position: fixed;
+            }
+            
+            .chapter-title {
+                page-break-before: always;
+            }
+            
+            table {
+                page-break-inside: avoid;
+            }
+        }
+
+        /* ============================================
+           封底免责声明
+           ============================================ */
+        div.disclaimer-page {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 60px 48px;
+            page-break-before: always;
+            border-top: 3px solid #003366;
+        }
+
+        .disclaimer-page h2 {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 18pt;
+            font-weight: 700;
+            color: #003366;
+            margin-bottom: 30px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #C9A227;
+        }
+
+        .disclaimer-page h3 {
+            font-family: 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+            font-size: 14pt;
+            font-weight: 700;
+            color: #0076A8;
+            margin: 30px 0 15px;
+        }
+
+        .disclaimer-page p {
+            font-size: 10.5pt;
+            line-height: 1.8;
+            color: #333;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 水印 -->
+    <div class="watermark">github.com/zensers/zensers</div>
+
+    <!-- 页眉 -->
+    <div class="page-header">
+        <span class="logo">ZENSERS</span>
+        <span>{{title}}</span>
+        <span>机密</span>
+    </div>
+
+    <!-- 页脚 -->
+    <div class="page-footer">
+        <span>© 2026 zensers. 保留所有权利。</span>
+        <span class="github">github.com/zensers/zensers</span>
+        <span>第 {{page_num}} 页</span>
+    </div>
+
+    <!-- 封面页 -->
+    <div class="cover-page">
+        <p class="cover-badge">RESEARCH REPORT</p>
+        <h1 class="cover-title">{{title}}</h1>
+        <p class="cover-divider">━━━━━━━━━━━━━━━━━━━━━━━━━━</p>
+        <p class="cover-subtitle">{{subtitle}}</p>
+        <p class="cover-meta"><span class="label">发布日期：</span>{{date}}</p>
+        <p class="cover-meta"><span class="label">报告类型：</span>{{report_type}}</p>
+        <p class="cover-meta"><span class="label">研究机构：</span>zensers Research</p>
+        <p class="cover-logo">ZENSERS</p>
+        <p class="cover-github">github.com/zensers/zensers</p>
+    </div>
+
+    <!-- 目录页 -->
+    <div class="toc-page">
+        <h2 class="toc-header">目 录</h2>
+        <ul class="toc-list">
+            {{toc_items}}
+        </ul>
+    </div>
+
+    <!-- 正文 -->
+    <article class="document">
+        {{content}}
+    </article>
+
+    <!-- 封底免责声明 -->
+    <div class="disclaimer-page">
+        <h2>免责声明</h2>
+        <p>本报告由zensers Research自动生成，仅供参考。报告中的数据和分析基于公开信息，不构成任何投资建议或商业决策依据。</p>
+        <p>数据来源包括但不限于：中国汽车工业协会、行业调研机构、公开新闻报道等。数据准确性以原始来源为准。</p>
+        <h3>关于zensers</h3>
+        <p>zensers是一个AI驱动的自动化行业研究平台，致力于提供高质量的行业分析报告。</p>
+        <p>GitHub仓库：https://github.com/zensers/zensers</p>
+        <p>欢迎star、fork和贡献代码。</p>
+    </div>
+
+</body>
+</html>

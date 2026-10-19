@@ -1,0 +1,7 @@
+{
+  "id": "vertical_integration_assessment",
+  "name": "纵向整合评估",
+  "priority": 4,
+  "aspects": ["industry_chain", "industry_analysis", "enterprise_analysis"],
+  "content": "请按以下维度评估纵向整合:\n1. 整合现状: 产业链各环节的自制/外包比例\n2. 整合动机: 成本控制/质量控制/供应保障/技术保护\n3. 整合效果: 已整合企业的财务表现 vs 未整合者\n4. 风险分析: 过度整合的灵活性损失和资本负担\n5. 趋势判断: 行业整合方向（前向/后向）和关键驱动因素"
+}

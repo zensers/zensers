@@ -1,0 +1,62 @@
+{
+  "meta": {
+    "region": "usa",
+    "name_en": "United States",
+    "sources": {
+      "age_gender": {
+        "name": "UN World Population Prospects 2024",
+        "url": "https://population.un.org/wpp/"
+      },
+      "education": {
+        "name": "World Bank Gender Statistics",
+        "url": "https://databank.worldbank.org/source/gender-statistics/"
+      },
+      "income": {
+        "name": "World Bank PIP",
+        "url": "https://pip.worldbank.org/country-profiles/USA"
+      },
+      "urbanization": {
+        "name": "UN World Urbanization Prospects",
+        "url": "https://population.un.org/wup/"
+      }
+    },
+    "source_url": "https://population.un.org/wpp/",
+    "data_notes": "Age/gender: UN WPP 2024. Education: World Bank 2023 population 25+. Income: World Bank PIP consumption quintiles 2022. Urban: UN WUP 2024.",
+    "updated": "2024-01-01"
+  },
+  "age": {
+    "18_24": 0.112,
+    "25_34": 0.161,
+    "35_44": 0.152,
+    "45_54": 0.145,
+    "55_59": 0.074,
+    "60_69": 0.168,
+    "70_79": 0.121,
+    "80_plus": 0.067
+  },
+  "gender": {
+    "male": 0.495,
+    "female": 0.505
+  },
+  "education": {
+    "no_formal": 0.01,
+    "primary": 0.036,
+    "lower_secondary": 0.079,
+    "upper_secondary": 0.274,
+    "post_secondary": 0.285,
+    "bachelor": 0.215,
+    "graduate": 0.101
+  },
+  "income": {
+    "note": "Household income per capita quintiles. Source: World Bank PIP 2022.",
+    "lowest_20": 0.054,
+    "second_20": 0.106,
+    "third_20": 0.158,
+    "fourth_20": 0.234,
+    "highest_20": 0.448
+  },
+  "urbanization": {
+    "urban": 0.83,
+    "rural": 0.17
+  }
+}

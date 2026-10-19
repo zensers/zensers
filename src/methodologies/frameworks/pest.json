@@ -1,0 +1,7 @@
+{
+  "id": "pest",
+  "name": "PEST分析",
+  "priority": 3,
+  "aspects": ["policy_analysis", "macro_environment"],
+  "content": "请按以下四个维度分析:\n1. 政治环境 (Political)\n2. 经济环境 (Economic)\n3. 社会环境 (Social)\n4. 技术环境 (Technological)"
+}

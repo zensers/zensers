@@ -1,0 +1,756 @@
+// hooks/useResearch.ts
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useResearchStore } from '@/store/useResearchStore';
+import { useChatStore } from '@/store/useChatStore';
+import { useSettingsStore } from '@/store/useSettingsStore';
+import { useSessionStore } from '@/store/useSessionStore';
+import { api, ApiError } from '@/lib/api';
+import { collectTemplateContext } from '@/lib/templates';
+import { normalizeChatMessage } from '@/lib/normalize-message';
+import { withSelectedConfig } from '@/lib/mimo-config';
+import { nanoid } from 'nanoid';
+
+/**
+ * Research task Hook
+ * Handles all research step interactions
+ */
+export function useResearch() {
+  const {
+    sessionId,
+    currentStep,
+    setSessionId,
+    setStep,
+    setTaskId,
+    setStatus,
+    setSummary,
+    setFramework: setFrameworkAction,
+    reset,
+  } = useResearchStore();
+
+  const { addMessage } = useChatStore();
+  const { llm } = useSettingsStore();
+
+  const [isNetworkBusy, setIsNetworkBusy] = useState(false);
+  const [isWaitingForReply, setIsWaitingForReply] = useState(false);
+  const isProcessing = isNetworkBusy || isWaitingForReply; // backward compat
+  const [error, setError] = useState<ApiError | null>(null);
+  const currentRequestRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => {
+    currentRequestRef.current?.abort();
+    currentRequestRef.current = null;
+  }, []);
+
+  const stopCurrentResponse = useCallback(() => {
+    currentRequestRef.current?.abort();
+    currentRequestRef.current = null;
+    setIsNetworkBusy(false);
+    setIsWaitingForReply(false);
+  }, []);
+
+  const isActiveSession = (expectedId: string | null) =>
+    !!expectedId && useSessionStore.getState().activeId === expectedId;
+
+  /**
+   * Quick start research (using preset template)
+   * v6: C4/I8/C8/S14 fixes applied
+   */
+  const quickStartResearch = useCallback(async (
+    input: string,
+    templateId: string,
+    attachments?: File[],
+    selectedModel?: string,
+    customParams?: Record<string, any>
+  ) => {
+    setIsNetworkBusy(true);
+    setError(null);
+    const originSessionId = useSessionStore.getState().activeId;
+
+    try {
+      const llmConfig = withSelectedConfig({
+        provider: llm.provider,
+        model: selectedModel || llm.model,
+        apiKey: llm.apiKey,
+        apiEndpoint: llm.apiEndpoint,
+        temperature: llm.temperature,
+        maxTokens: llm.maxTokens,
+        topP: llm.topP,
+        frequencyPenalty: llm.frequencyPenalty,
+        presencePenalty: llm.presencePenalty,
+      });
+
+      // S14: strip control/context fields from parameters
+      const { autoConfirm: _flag, templateContext: _ctx, ...paramValues } = customParams || {};
+      const autoConfirm = !!_flag;
+
+      const data = await api.quickStart(input, templateId, {
+        llmConfig,
+        parameters: paramValues,
+        autoConfirm,
+      });
+
+      if (useSessionStore.getState().activeId !== originSessionId) return null;
+
+      useResearchStore.getState().setSessionId(data.session_id);
+      // Quick start creates a new research session; never inherit the active
+      // conversation. Only the current request's own messages are eligible.
+      useSessionStore.getState().createSession(data.session_id, input, []);
+
+      setTaskId(data.task_id);
+
+      if (autoConfirm && data.step === 6) {
+        setStatus('running');
+        setStep(6, undefined);
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: `Starting research with template **${templateId}**.`,
+          timestamp: new Date().toISOString(),
+        });
+      } else if (data.step === 4) {
+        setStatus('idle');
+        setStep(data.step, undefined);
+        if (data.parameters) {
+          useResearchStore.getState().setParameterConfig(data.parameters);
+        }
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message) || `Template loaded. Configure parameters to continue.`,
+          timestamp: new Date().toISOString(),
+        });
+      } else {
+        setStatus('running');
+        setStep(6, undefined);
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message) || `Quick start successful.`,
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return data;
+    } catch (e) {
+      setError(e as ApiError);
+      throw e;
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [setSessionId, setTaskId, setStatus, setStep, addMessage, llm]);
+
+  /**
+   * Start research
+   * Supports LLM config and file attachments
+   */
+  const startResearch = useCallback(async (
+    input: string,
+    attachments?: File[],
+    selectedModel?: string
+  ) => {
+    setIsNetworkBusy(true);
+    setError(null);
+    const originSessionId = useSessionStore.getState().activeId;
+
+    try {
+      // If there are files, upload first
+      let fileIds: string[] | undefined;
+      if (attachments && attachments.length > 0) {
+        const uploadResult = await api.uploadFiles(attachments);
+        fileIds = uploadResult.files.map(f => f.id);
+      }
+
+      // Build LLM config
+      const llmConfig = withSelectedConfig({
+        provider: llm.provider,
+        model: selectedModel || llm.model,
+        apiKey: llm.apiKey,
+        apiEndpoint: llm.apiEndpoint,
+        temperature: llm.temperature,
+        maxTokens: llm.maxTokens,
+        topP: llm.topP,
+        frequencyPenalty: llm.frequencyPenalty,
+        presencePenalty: llm.presencePenalty,
+      });
+
+      const data = await api.startResearch(input, undefined, llmConfig, fileIds);
+
+      if (useSessionStore.getState().activeId !== originSessionId) return null;
+
+      const sessionStore = useSessionStore.getState();
+      const pendingMessages = sessionStore.activeId === '__pending__'
+        ? sessionStore.sessions.__pending__?.messages || []
+        : [];
+      const initialMsgs = pendingMessages.length > 0 ? pendingMessages : [
+        { id: nanoid(), role: 'user' as const, content: input, timestamp: new Date().toISOString() },
+      ];
+
+      setSessionId(data.session_id);
+      useSessionStore.getState().createSession(data.session_id, input, initialMsgs);
+      setTaskId(data.session_id);  // Break isLocalOnly loop: without taskId, sendMessage redirects back to startResearch
+
+        // Async tool execution path: returns processing status, SSE pushes results later
+      if ((data as any).status === 'processing') {
+        setStep(0, undefined);
+        setIsNetworkBusy(false);
+        setIsWaitingForReply(true); // Enter waiting-for-reply state (Issue 4)
+        return data;
+      }
+
+      setStep(data.step, data.options);
+
+      const respTimestamp = (data as any).timestamp || new Date().toISOString();
+      addMessage({
+        id: nanoid(),
+        role: 'assistant',
+        content: normalizeChatMessage(data.message),
+        ...(data.thinking_content ? { thinkingContent: data.thinking_content } : {}),
+        timestamp: respTimestamp,
+      });
+
+      return data;
+    } catch (e) {
+      setError(e as ApiError);
+      setIsWaitingForReply(false);
+      throw e;
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [setSessionId, setStep, addMessage, llm]);
+
+  /**
+   * Step 1: Select output type
+   */
+  const selectOutputType = useCallback(async (outputType: string) => {
+    if (!sessionId) return;
+
+    setIsNetworkBusy(true);
+    setError(null);
+
+    try {
+      const data = await api.selectOutputType(sessionId, outputType);
+      if (!isActiveSession(sessionId)) return null;
+      setStep(
+        data.step,
+        data.options ||
+          data.templates?.map((t) => ({
+            id: t.id,
+            label: t.name,
+            description: t.description,
+          }))
+      );
+
+      if (data.message) {
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message),
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return data;
+    } catch (e) {
+      setError(e as ApiError);
+      throw e;
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [sessionId, setStep, addMessage]);
+
+  /**
+   * Step 2: Select template
+   */
+  const selectTemplate = useCallback(async (templateId: string) => {
+    if (!sessionId) return;
+
+    setIsNetworkBusy(true);
+    setError(null);
+
+    try {
+      const data = await api.selectTemplate(sessionId, templateId);
+      if (!isActiveSession(sessionId)) return null;
+      // Preserve required field for SectionSelector
+      setStep(
+        data.step,
+        data.sections?.map((s) => ({
+          id: s.id,
+          label: s.title,
+          description: s.description,
+          selected: s.selected,
+          disabled: s.required,
+          required: s.required,
+        }))
+      );
+
+      if (data.message) {
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message),
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return data;
+    } catch (e) {
+      setError(e as ApiError);
+      throw e;
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [sessionId, setStep, addMessage]);
+
+  /**
+   * Step 3: Select sections (multi-select)
+   */
+  const selectSections = useCallback(async (sectionIds: string[]) => {
+    if (!sessionId) return;
+
+    setIsNetworkBusy(true);
+    setError(null);
+
+    try {
+      const data = await api.selectSections(sessionId, sectionIds);
+      if (!isActiveSession(sessionId)) return null;
+
+      if (data.parameters) {
+        setStep(data.step, undefined);
+        useResearchStore.getState().setParameterConfig(data.parameters);
+      } else {
+        setStep(data.step, data.options);
+      }
+
+      if (data.message) {
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message),
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return data;
+    } catch (e) {
+      setError(e as ApiError);
+      throw e;
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [sessionId, setStep, addMessage]);
+
+  /**
+   * Step 4: Set parameters
+   */
+  const setParameters = useCallback(
+    async (params: Record<string, any>) => {
+      if (!sessionId) return;
+
+      setIsNetworkBusy(true);
+      setError(null);
+
+      try {
+      const data = await api.setParameters(sessionId, params);
+      if (!isActiveSession(sessionId)) return null;
+
+        if (data.summary) {
+          setSummary(data.summary);
+        }
+
+        setStep(data.step, [
+          { id: 'confirm', label: 'Confirm Start', description: 'Start executing the research task' },
+          { id: 'back', label: 'Go Back', description: 'Adjust parameter settings' },
+        ]);
+
+        if (data.message) {
+          addMessage({
+            id: nanoid(),
+            role: 'assistant',
+            content: normalizeChatMessage(data.message),
+            timestamp: new Date().toISOString(),
+          });
+        }
+
+        return data;
+      } catch (e) {
+        setError(e as ApiError);
+        throw e;
+      } finally {
+        setIsNetworkBusy(false);
+      }
+    },
+    [sessionId, setStep, setSummary, addMessage]
+  );
+
+  /**
+   * Step 5: Confirm research
+   */
+  const confirmResearch = useCallback(async (confirmed: boolean) => {
+    if (!sessionId) return;
+
+    setIsNetworkBusy(true);
+    setError(null);
+
+    try {
+      const data = await api.confirmResearch(sessionId, confirmed);
+      if (!isActiveSession(sessionId)) return null;
+
+      if (confirmed && data.step === 6 && data.status === 'running') {
+        setTaskId(data.session_id);
+        setStatus('running');
+      }
+
+      // If user clicks "go back", restart
+      if (!confirmed && data.step === 6 && data.status === 'cancelled') {
+        reset();
+        return data;
+      }
+
+      setStep(data.step, undefined);
+
+      if (data.message) {
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message),
+          timestamp: new Date().toISOString(),
+        });
+      }
+
+      return data;
+    } catch (e) {
+      setError(e as ApiError);
+      throw e;
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [sessionId, setTaskId, setStatus, setStep, reset, addMessage]);
+
+  /**
+   * Start research from template customization flow
+   */
+  const handleStartResearch = useCallback(async () => {
+    const active = useResearchStore.getState().activeTemplate;
+    const topic = useResearchStore.getState().researchTopic || active?.name || '';
+    if (!active) return;
+
+    try {
+      const allMessages = useChatStore.getState().messages;
+      const context = collectTemplateContext(active, allMessages, topic);
+
+      setIsNetworkBusy(true);
+      await quickStartResearch(topic, active.id, undefined, undefined, {
+        templateContext: context,
+        ...active.parameters,
+        autoConfirm: true,
+      });
+
+      useResearchStore.getState().setActiveTemplate(null);
+      useResearchStore.getState().setResearchTopic(null);
+    } catch (error) {
+      setError(error as ApiError);
+      addMessage({
+        id: nanoid(),
+        role: 'assistant',
+        content: 'Failed to start research. Please try again.',
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      setIsNetworkBusy(false);
+    }
+  }, [quickStartResearch, addMessage]);
+
+  /**
+   * Unified send message entry - for RuntimeProvider
+   */
+  const sendMessage = useCallback(async (text: string) => {
+    const currentSessionId = useResearchStore.getState().sessionId;
+    const { taskId: rsTaskId } = useResearchStore.getState();
+
+    if (!currentSessionId) {
+      if (rsTaskId) {
+        // A task id can recover the session identity, but must not implicitly
+        // resume the task. The user's message must first go through the
+        // backend intent router (resume / modify / re-plan / chat).
+        useResearchStore.getState().setSessionId(rsTaskId);
+        const recoveredSessionId = rsTaskId;
+        if (recoveredSessionId) {
+          try {
+            setIsNetworkBusy(true);
+            const requestController = new AbortController();
+            currentRequestRef.current?.abort();
+            currentRequestRef.current = requestController;
+            const data = await api.sendChatMessage(recoveredSessionId, text, withSelectedConfig({
+              provider: llm.provider,
+              model: llm.model,
+              apiKey: llm.apiKey,
+              apiEndpoint: llm.apiEndpoint,
+              temperature: llm.temperature,
+              maxTokens: llm.maxTokens,
+              topP: llm.topP,
+              frequencyPenalty: llm.frequencyPenalty,
+              presencePenalty: llm.presencePenalty,
+            }), requestController.signal);
+            if (!isActiveSession(recoveredSessionId)) return null;
+            if ((data as any).status === 'processing') {
+              setStep(0, undefined);
+              setIsNetworkBusy(false);
+              setIsWaitingForReply(true);
+              return data;
+            }
+            const mode = data.mode || 'chat';
+        const controlStatus = (data as any).status;
+        if (controlStatus === 'resumed' || controlStatus === 'running') {
+          setStatus('running');
+          setStep(6, undefined);
+        } else if (controlStatus === 'paused') {
+          setStatus('paused');
+        } else if (controlStatus === 'cancelled') {
+          setStatus('cancelled');
+        }
+        if (mode === 'framework') {
+          setStatus('idle');
+          setStep(0, data.suggestions || data.options);
+              if (data.framework) {
+                setFrameworkAction(data.framework);
+              }
+        } else if (mode === 'research' && data.step === 6) {
+          setTaskId(data.session_id);
+          setStatus('running');
+          setStep(6, undefined);
+            } else {
+              setStep(0, data.suggestions || data.options);
+            }
+            if (data.session_id && data.session_id !== recoveredSessionId) {
+              useResearchStore.getState().setSessionId(data.session_id);
+            }
+            addMessage({
+              id: nanoid(),
+              role: 'assistant',
+              content: normalizeChatMessage(data.message),
+              ...(data.thinking_content ? { thinkingContent: data.thinking_content } : {}),
+              timestamp: (data as any).timestamp || new Date().toISOString(),
+            });
+            return data;
+          } catch (e) {
+            setError(e as ApiError);
+          } finally {
+            setIsNetworkBusy(false);
+          }
+        }
+      }
+      return startResearch(text);
+    }
+
+    if (!currentSessionId) {
+      return startResearch(text);
+    }
+
+    // Locally created empty session (via "+" tab), no backend counterpart yet
+    const cache = useSessionStore.getState().sessions[currentSessionId];
+    const isLocalOnly = cache && !cache.taskId;
+    if (isLocalOnly) {
+      return startResearch(text);
+    }
+
+    // Existing session: send message (works for both chat mode and research mode)
+    // In research mode (currentStep=6), backend _handle_user_message routes via _llm_converse
+    if (currentStep === null || currentStep === 0 || currentStep === 6) {
+      // Chat mode: send message
+      try {
+        setIsNetworkBusy(true);
+         const requestController = new AbortController();
+         currentRequestRef.current?.abort();
+         currentRequestRef.current = requestController;
+         const data = await api.sendChatMessage(currentSessionId, text, withSelectedConfig({
+          provider: llm.provider,
+          model: llm.model,
+          apiKey: llm.apiKey,
+          apiEndpoint: llm.apiEndpoint,
+          temperature: llm.temperature,
+          maxTokens: llm.maxTokens,
+          topP: llm.topP,
+          frequencyPenalty: llm.frequencyPenalty,
+          presencePenalty: llm.presencePenalty,
+         }), requestController.signal);
+        if (!isActiveSession(currentSessionId)) return null;
+        
+      // Async tool execution path: returns processing status, SSE pushes results later
+        if ((data as any).status === 'processing') {
+          setStep(0, undefined);
+          setIsNetworkBusy(false);
+          setIsWaitingForReply(true); // Enter waiting-for-reply state (Issue 4)
+          return data;
+        }
+
+        // Update state based on returned mode
+        const mode = data.mode || 'chat';
+        const controlStatus = (data as any).status;
+        if (controlStatus === 'resumed' || controlStatus === 'running') {
+          setStatus('running');
+          setStep(6, undefined);
+        } else if (controlStatus === 'paused') {
+          setStatus('paused');
+        } else if (controlStatus === 'cancelled') {
+          setStatus('cancelled');
+        }
+        
+        if (mode === 'framework') {
+          setStatus('idle');
+          setStep(0, data.suggestions || data.options);
+          if (data.framework) {
+            setFrameworkAction(data.framework);
+          }
+        } else if (mode === 'research' && data.step === 6) {
+          setTaskId(data.session_id);
+          setStatus('running');
+          setStep(6, undefined);
+        } else {
+          // Still in chat mode
+          setStep(0, data.suggestions || data.options);
+        }
+        
+        // D-1 fix: sync sessionId from backend response (handles auto-create path)
+        if (data.session_id && data.session_id !== currentSessionId) {
+          setSessionId(data.session_id);
+        }
+        
+        addMessage({
+          id: nanoid(),
+          role: 'assistant',
+          content: normalizeChatMessage(data.message),
+          ...(data.thinking_content ? { thinkingContent: data.thinking_content } : {}),
+          timestamp: (data as any).timestamp || new Date().toISOString(),
+        });
+        
+        return data;
+      } catch (e) {
+        if ((e as any)?.code === 'ERR_CANCELED' || (e as any)?.name === 'CanceledError' || (e as any)?.name === 'AbortError') {
+          return null;
+        }
+        setError(e as ApiError);
+        throw e;
+      } finally {
+        currentRequestRef.current = null;
+        setIsNetworkBusy(false);
+      }
+    }
+    
+    console.warn('sendMessage called at unexpected step:', currentStep);
+    return null;
+  }, [sessionId, currentStep, startResearch, setSessionId, setStep, setTaskId, setStatus, addMessage, llm]);
+
+  /**
+   * Generic option handler - dispatches based on currentStep
+   */
+  const handleOptionSelect = useCallback(async (optionId: string, exampleText?: string) => {
+    // S11: start_research handled here, not in ChatPanel
+    if (optionId === 'start_research') {
+      return handleStartResearch();
+    }
+
+    // "view_report" — toggle preview panel, don't send message to LLM
+    if (optionId === 'view_report') {
+      const rs = useResearchStore.getState();
+      if (rs.status !== 'completed') {
+        rs.setStatus('completed');
+      }
+      // Ensure taskId is set (restored sessions may have taskId in sessionStore but not researchStore)
+      if (!rs.taskId && sessionId) {
+        rs.setTaskId(sessionId);
+      }
+      rs.triggerPreviewRefresh();
+      return;
+    }
+
+    // Chat mode: click suggestion
+    if (currentStep === null || currentStep === 0) {
+      try {
+        setIsNetworkBusy(true);
+        const targetSessionId = sessionId!;
+        const data = await api.clickSuggestion(targetSessionId, optionId, exampleText, withSelectedConfig({
+          provider: llm.provider,
+          model: llm.model,
+          apiKey: llm.apiKey,
+          apiEndpoint: llm.apiEndpoint,
+          temperature: llm.temperature,
+          maxTokens: llm.maxTokens,
+          topP: llm.topP,
+          frequencyPenalty: llm.frequencyPenalty,
+          presencePenalty: llm.presencePenalty,
+        }));
+        if (!isActiveSession(targetSessionId)) return null;
+        
+        // Update state based on returned mode
+        const mode = data.mode || 'chat';
+        
+        if (mode === 'framework') {
+          setStatus('idle');
+          setStep(0, data.suggestions || data.options);
+          if (data.framework) {
+            setFrameworkAction(data.framework);
+          }
+        } else if (mode === 'research' && data.step === 6) {
+          setTaskId(data.session_id);
+          setStatus('running');
+          setStep(6, undefined);
+        } else {
+          setStep(0, data.suggestions || data.options);
+        }
+        
+        if (data.message) {
+          addMessage({
+            id: nanoid(),
+            role: 'assistant',
+            content: normalizeChatMessage(data.message),
+            ...(data.thinking_content ? { thinkingContent: data.thinking_content } : {}),
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
+        return data;
+      } catch (e) {
+        setError(e as ApiError);
+        throw e;
+      } finally {
+        setIsNetworkBusy(false);
+      }
+    }
+    
+    switch (currentStep) {
+      case 1:
+        return selectOutputType(optionId);
+      case 2:
+        return selectTemplate(optionId);
+      case 5:
+        return confirmResearch(optionId === 'confirm');
+      default:
+        console.warn('handleOptionSelect called at unexpected step:', currentStep);
+        return null;
+    }
+  }, [currentStep, sessionId, selectOutputType, selectTemplate, confirmResearch,
+      handleStartResearch, setSessionId, setStep, setTaskId, setStatus, addMessage, llm]);
+
+  return {
+    quickStartResearch,
+    startResearch,
+    selectOutputType,
+    selectTemplate,
+    selectSections,
+    setParameters,
+    confirmResearch,
+    reset,
+    sendMessage,
+    handleOptionSelect,
+    handleStartResearch,
+    isProcessing,
+    isNetworkBusy,
+    isWaitingForReply,
+    setIsWaitingForReply,
+    stopCurrentResponse,
+    error,
+    sessionId,
+    currentStep,
+  };
+}

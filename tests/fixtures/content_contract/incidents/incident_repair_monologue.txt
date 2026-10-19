@@ -1,0 +1,15 @@
+The task is to repair the chapter. The main issue: quantitative claims in the body text are "unbound" — they aren't tied to structured data points. So I need to add source attributions and ensure the metrics are labeled with epistemic levels, and split scope collisions (global vs China mixed in same paragraph).
+
+Let me look at the current chapter content:
+
+1. Title heading "全球市场规模与增速"
+2.2万亿元
+3. 论证与分析
+4.
+5. 二、结构性增速 with 301.8亿, 5703.26万亿... and text cuts off "预计到2040"
+
+Wait, the content is truncated at "预计到2040". The chapter content ends there. Hmm, the given "当前章节内容" ends abruptly. Let me re-read.
+
+
+
+It seems cut off. I need to produce the full repaired chapter. But I shouldn't add new content beyond what's there... Actually the chapter appears incomplete. Hmm. But the instructions say to 

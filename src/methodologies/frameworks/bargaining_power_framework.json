@@ -1,0 +1,7 @@
+{
+  "id": "bargaining_power_framework",
+  "name": "产业链议价能力分析",
+  "priority": 3,
+  "aspects": ["industry_chain", "industry_analysis", "supply_chain"],
+  "content": "请按以下维度评估产业链各环节议价能力:\n1. 上游集中度: 供应商数量及CR3集中度\n2. 下游集中度: 买家数量及购买集中度\n3. 转换成本: 上下游切换供应商/客户的技术成本\n4. 可替代性: 产品或服务被替代的难易程度\n5. 垂直整合: 各环节纵向整合的动机和已发生程度"
+}

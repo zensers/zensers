@@ -1,0 +1,1479 @@
+# -*- coding: utf-8 -*-
+"""FastAPI Main Application - Zensers API."""
+import asyncio
+import sys
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+import json
+import logging, os, uuid
+from pathlib import Path
+from datetime import datetime
+from src.core.orchestrator.execution.task_utils import safe_create_task as safe_create_task_main
+from typing import List, Optional, Dict, Any
+
+from fastapi import FastAPI, File, UploadFile, Form, HTTPException
+from src.core.preview_storage import PreviewStorage
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", force=True)
+from logging.handlers import RotatingFileHandler
+_log_file = Path(__file__).parent.parent.parent / "logs" / "app.log"
+_log_file.parent.mkdir(parents=True, exist_ok=True)
+_handler = RotatingFileHandler(str(_log_file), maxBytes=50*1024*1024, backupCount=5, encoding="utf-8", delay=True)
+_handler.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
+logging.getLogger().addHandler(_handler)
+
+logger = logging.getLogger(__name__)
+
+
+def _build_message_entry(msg: dict, fallback_id: str, fallback_ts: str = "") -> dict:
+    entry = {
+        "id": msg.get("id") or fallback_id,
+        "role": msg.get("role", msg.get("type", "unknown")),
+        "content": msg["content"],
+        "timestamp": msg.get("timestamp", fallback_ts),
+    }
+    if msg.get("response_id"):
+        entry["response_id"] = msg["response_id"]
+    if msg.get("_type"):
+        entry["_type"] = msg["_type"]
+    if msg.get("agent_id") or msg.get("agent_name") or msg.get("action"):
+        entry["agent_id"] = msg.get("agent_id", "")
+        entry["agent_name"] = msg.get("agent_name", "")
+        entry["action"] = msg.get("action", "")
+        if msg.get("completedCount") is not None:
+            entry["completedCount"] = msg["completedCount"]
+        if msg.get("totalCount") is not None:
+            entry["totalCount"] = msg["totalCount"]
+    return entry
+
+
+from src.core.version import get_version_info, get_local_version
+from src.core.session_manager import SessionManager
+_session_manager = SessionManager.get_instance()
+_recovered = _session_manager.recover_all()
+logger.info(f"Zensers API starting... (recovered {_recovered} sessions)")
+
+# Attach history compressor to global SessionManager
+try:
+    from src.core.compress_adapter import SessionHistoryCompressor
+    _history_compressor = SessionHistoryCompressor()
+    _session_manager.set_history_compressor(_history_compressor)
+    logger.info("History compressor attached to SessionManager")
+except Exception as e:
+    logger.warning(f"History compressor not available: {e}")
+
+def _parse_heartbeat(last_hb: str) -> datetime:
+    """安全解析心跳时间戳，统一返回 naive datetime 用于比较。
+
+    支持三种格式：
+    - "2024-01-01T12:00:00Z"        → UTC
+    - "2024-01-01T12:00:00+08:00"   → 带时区偏移
+    - "2024-01-01T12:00:00"         → 无时区，假设 UTC
+    """
+    hb_time = datetime.fromisoformat(last_hb)
+    if hb_time.tzinfo is not None:
+        from datetime import timezone
+        hb_time = hb_time.astimezone(timezone.utc).replace(tzinfo=None)
+    return hb_time
+
+# Recover ProgressStreamer states from persisted session data.  A process
+# restart is an ownership event: unfinished work becomes recoverable
+# ``interrupted``.  Heartbeat age is telemetry only and is not a deadline.
+from src.core.progress_streamer import ProgressStreamer
+from src.core.task_persistence import TaskPersistenceManager, TaskState
+_task_persistence = TaskPersistenceManager()
+_recovered_tasks = 0
+for _sid, _session in list(_session_manager._sessions.items()):
+    _task_state = ProgressStreamer._restore_from_session(_sid)
+    if _task_state:
+        if _task_state.status == "running":
+            _task_state.status = "paused"
+            try:
+                _session["interrupted"] = True
+                _session["interrupted_reason"] = "Server restarted - background execution lost"
+                _persisted_task = _task_persistence.load_task(_sid)
+                if _persisted_task and _persisted_task.status and not _persisted_task.status.state.is_terminal():
+                    _task_persistence.mark_interrupted(_sid, "Server restarted - background execution lost")
+            except Exception:
+                pass
+        ProgressStreamer._task_states[_sid] = _task_state
+        ProgressStreamer._subscribers[_sid] = set()
+        _recovered_tasks += 1
+
+# Recover persisted tasks even when no ProgressStreamer snapshot exists.
+# This is keyed by process restart/ownership, never by elapsed time.
+try:
+    for _persisted_task in _task_persistence.recover_all_tasks():
+        if _persisted_task.status and _persisted_task.status.state in (
+            TaskState.RUNNING, TaskState.INITIALIZING,
+        ):
+            _task_persistence.mark_interrupted(
+                _persisted_task.task_id,
+                "Server restarted - execution owner lost",
+            )
+except Exception as _recovery_error:
+    logger.warning("Task persistence startup recovery failed: %s", type(_recovery_error).__name__)
+
+logger.info(f"ProgressStreamer recovered {_recovered_tasks} task states from disk")
+
+app = FastAPI(title="Zensers API", description="AI Market Research Platform RESTful API",
+              version="3.6.0", openapi_url="/api/v1/openapi.json",
+              docs_url="/api/v1/docs", redoc_url="/api/v1/redoc")
+
+_cors_origins = os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001").split(",")
+app.add_middleware(CORSMiddleware,
+                   allow_origins=_cors_origins,
+                   allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+PreviewStorage.ensure_dirs()
+app.mount("/api/v1/html-reports", StaticFiles(directory=str(PreviewStorage.NEW_DIR)), name="previews")
+
+# Download endpoint: serves generated documents as file downloads
+from fastapi.responses import FileResponse as _FastAPIFileResponse
+@app.get("/api/v1/download/{task_id}")
+async def download_document(task_id: str, format: str = None):
+    logger.info(f"[DOWNLOAD] ========== Download request for task_id={task_id}, format={format} ==========")
+    
+    task_dir = Path("data/reports") / task_id
+    logger.info(f"[DOWNLOAD] Checking primary location: {task_dir}")
+    logger.info(f"[DOWNLOAD] Directory exists: {task_dir.is_dir()}")
+    
+    MEDIA_TYPES = {
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "pdf": "application/pdf",
+    }
+    EXTENSIONS = {"docx": "*.docx", "pptx": "*.pptx", "pdf": "*.pdf"}
+    
+    if format and format in EXTENSIONS:
+        search_ext = EXTENSIONS[format]
+        media_type = MEDIA_TYPES[format]
+    else:
+        search_ext = "*"
+        media_type = None
+    
+    if task_dir.is_dir():
+        if format and format in EXTENSIONS:
+            docs = sorted(task_dir.glob(EXTENSIONS[format]))
+        else:
+            all_docs = sorted(task_dir.glob("*"))
+            priority_exts = [".docx", ".pptx", ".pdf"]
+            docs = [d for d in all_docs if d.suffix in priority_exts]
+            if not docs:
+                docs = all_docs
+        
+        logger.info(f"[DOWNLOAD] Found {len(docs)} files matching '{search_ext}' in primary location")
+        if docs:
+            file_path = docs[-1]
+            file_size = file_path.stat().st_size if file_path.exists() else 0
+            ext = file_path.suffix.lower().lstrip(".")
+            mt = MEDIA_TYPES.get(ext, "application/octet-stream")
+            logger.info(f"[DOWNLOAD] Serving {ext}: {file_path.name}, size={file_size} bytes")
+            logger.info(f"[DOWNLOAD] ========== Download SUCCESS ({ext} from primary) ==========")
+            return _FastAPIFileResponse(
+                str(file_path),
+                filename=file_path.name,
+                media_type=mt,
+            )
+
+    legacy_dir = Path("data") / task_id
+    logger.info(f"[DOWNLOAD] Checking legacy location: {legacy_dir}")
+    
+    if legacy_dir.is_dir() and legacy_dir != task_dir:
+        if format and format in EXTENSIONS:
+            docs = sorted(legacy_dir.glob(EXTENSIONS[format]))
+        else:
+            docs = sorted(legacy_dir.glob("*.pptx")) + sorted(legacy_dir.glob("*.docx"))
+        
+        logger.info(f"[DOWNLOAD] Found {len(docs)} files in legacy location")
+        if docs:
+            file_path = docs[-1]
+            file_size = file_path.stat().st_size if file_path.exists() else 0
+            ext = file_path.suffix.lower().lstrip(".")
+            mt = MEDIA_TYPES.get(ext, "application/octet-stream")
+            logger.info(f"[DOWNLOAD] Serving {ext} from legacy: {file_path.name}, size={file_size} bytes")
+            logger.info(f"[DOWNLOAD] ========== Download SUCCESS ({ext} from legacy) ==========")
+            return _FastAPIFileResponse(
+                str(file_path),
+                filename=file_path.name,
+                media_type=mt,
+            )
+
+    # Fallback to HTML preview
+    preview_path = Path("data/previews") / f"{task_id}.html"
+    logger.info(f"[DOWNLOAD] Checking HTML preview: {preview_path}")
+    logger.info(f"[DOWNLOAD] Preview exists: {preview_path.is_file()}")
+    
+    if preview_path.is_file():
+        file_size = preview_path.stat().st_size
+        logger.info(f"[DOWNLOAD] Serving HTML preview, size={file_size} bytes")
+        logger.info(f"[DOWNLOAD] ========== Download SUCCESS (HTML preview) ==========")
+        return _FastAPIFileResponse(
+            str(preview_path),
+            filename=f"{task_id}.html",
+            media_type="text/html",
+        )
+
+    logger.error(f"[DOWNLOAD] ========== Download FAILED ==========")
+    logger.error(f"[DOWNLOAD] No document found for task_id={task_id}")
+    logger.error(f"[DOWNLOAD] Searched locations:")
+    logger.error(f"[DOWNLOAD]   - Primary: {task_dir} (exists: {task_dir.is_dir()})")
+    logger.error(f"[DOWNLOAD]   - Legacy: {legacy_dir} (exists: {legacy_dir.is_dir()})")
+    logger.error(f"[DOWNLOAD]   - Preview: {preview_path} (exists: {preview_path.is_file()})")
+    
+    raise HTTPException(status_code=404, detail="Document not found")
+
+_upload_dir = Path("data/uploads")
+_upload_dir.mkdir(parents=True, exist_ok=True)
+
+# ============ Container & Memory ============
+from src.core.container import configure_container, get_container
+from src.core.memory import KnowledgeManager
+
+_container = configure_container()
+_knowledge_manager: Optional[KnowledgeManager] = None
+try:
+    if get_container().has(KnowledgeManager):
+        _knowledge_manager = get_container().resolve(KnowledgeManager)
+        logger.info("KnowledgeManager initialized and registered")
+except Exception as e:
+    logger.warning(f"KnowledgeManager initialization skipped: {e}")
+
+# ============ Research API ============
+from src.api.research_api import ResearchAPI
+from src.core.orchestrator.orchestrator import ResearchOrchestrator
+_research_orchestrator = ResearchOrchestrator(
+    use_intelligent_routing=True,
+    knowledge_manager=_knowledge_manager,
+)
+research_api = ResearchAPI(
+    orchestrator=_research_orchestrator,
+    knowledge_manager=_knowledge_manager,
+)
+
+
+@app.post("/api/v1/research/start")
+async def start_research(user_input: str = Form(...), user_id: Optional[str] = Form(None),
+                         llm_provider: Optional[str] = Form(None), llm_model: Optional[str] = Form(None),
+                         llm_api_key: Optional[str] = Form(None), llm_api_endpoint: Optional[str] = Form(None),
+                         llm_temperature: Optional[float] = Form(None), llm_max_tokens: Optional[int] = Form(None),
+                         llm_top_p: Optional[float] = Form(None),
+                         llm_frequency_penalty: Optional[float] = Form(None),
+                         llm_presence_penalty: Optional[float] = Form(None),
+                         file_ids: Optional[str] = Form(None)):
+    from src.config.settings import settings
+    llm_config: Dict[str, Any] = {}
+    if llm_provider:
+        llm_config["provider"] = llm_provider
+    if llm_model:
+        llm_config["model"] = llm_model
+    if llm_api_key:
+        llm_config["api_key"] = llm_api_key
+    if llm_api_endpoint:
+        llm_config["api_endpoint"] = llm_api_endpoint
+    if llm_temperature is not None:
+        llm_config["temperature"] = llm_temperature
+    if llm_max_tokens is not None:
+        llm_config["max_tokens"] = llm_max_tokens
+    if llm_top_p is not None:
+        llm_config["top_p"] = llm_top_p
+    if llm_frequency_penalty is not None:
+        llm_config["frequency_penalty"] = llm_frequency_penalty
+    if llm_presence_penalty is not None:
+        llm_config["presence_penalty"] = llm_presence_penalty
+
+    settings.update_from_request(llm_config)
+
+    parsed_file_ids = None
+    if file_ids:
+        try:
+            fid_list = json.loads(file_ids)
+            if not isinstance(fid_list, list):
+                raise HTTPException(status_code=400, detail="file_ids must be a JSON array")
+            parsed_file_ids = []
+            for fid in fid_list:
+                candidates = list(_upload_dir.glob(f"{fid}.*"))
+                if not candidates:
+                    raise HTTPException(status_code=400, detail=f"File not found: {fid}")
+                candidate = candidates[0]
+                file_size_mb = candidate.stat().st_size / (1024 * 1024)
+                if file_size_mb > 100:
+                    raise HTTPException(status_code=413, detail=f"File {candidate.name} too large: {file_size_mb:.1f}MB (max 100MB)")
+                parsed_file_ids.append({
+                    "id": fid,
+                    "path": str(candidate),
+                    "filename": candidate.name,
+                    "size_mb": round(file_size_mb, 1),
+                })
+            total_size_mb = sum(f["size_mb"] for f in parsed_file_ids)
+            if total_size_mb > 300:
+                raise HTTPException(status_code=413, detail=f"Total file size too large: {total_size_mb:.1f}MB (max 300MB)")
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid file_ids JSON")
+
+    return await research_api.start_research(user_input, user_id, llm_config, parsed_file_ids)
+
+
+@app.post("/api/v1/research/{task_id}/pause")
+async def pause_research(task_id: str):
+    return await research_api.pause_research(task_id)
+
+
+@app.post("/api/v1/research/{task_id}/resume")
+async def resume_research(task_id: str):
+    return await research_api.resume_research(task_id)
+
+
+@app.post("/api/v1/research/{task_id}/cancel")
+async def cancel_research(task_id: str):
+    return await research_api.cancel_research(task_id)
+
+
+@app.post("/api/v1/research/{task_id}/modify")
+async def modify_requirements(task_id: str, aspects: str = Form(...),
+                               topic: Optional[str] = Form(None)):
+    import json
+    try:
+        aspects_list = json.loads(aspects)
+        if not isinstance(aspects_list, list):
+            raise ValueError("aspects must be a list")
+    except (json.JSONDecodeError, ValueError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid aspects JSON: {e}")
+    return await research_api.modify_requirements(task_id, aspects_list, topic)
+
+
+@app.get("/api/v1/research/{task_id}/status")
+async def get_research_status(task_id: str):
+    """研究任务状态查询（扩展版）
+
+    用于 SSE 断开后的轮询回退，以及心跳过期检测。
+    返回阶段状态 + agent 消息 + 中断标记。
+    """
+    try:
+        from src.core.progress_streamer import ProgressStreamer
+
+        state = ProgressStreamer.get_task_state(task_id)
+
+        if state is None:
+            try:
+                from src.core.task_persistence import TaskPersistenceManager
+                tp = TaskPersistenceManager()
+                task = tp.load_task(task_id)
+                if task and task.status:
+                    return {"task_id": task_id, "status": task.status.state.value,
+                            "progress": task.status.progress, "message": task.status.message,
+                            "created_at": task.status.created_at, "updated_at": task.status.updated_at}
+            except Exception:
+                pass
+            state = ProgressStreamer.get_or_create_task(task_id)
+
+        response = {
+            "task_id": task_id,
+            "status": state.status if state.status != "running" else "running",
+            "progress": state.progress,
+            "current_phase": state.current_phase,
+            "error": state.error,
+            "phases": [
+                {"id": p.id, "name": p.name, "status": p.status, "progress": p.progress}
+                for p in (state.phases or [])
+            ],
+        }
+
+        # Heartbeat staleness check + agent messages from SessionManager
+        sm = SessionManager.get_instance()
+        session = sm.get(task_id)
+        if session:
+            # Only apply staleness check if task is genuinely running
+            # (not if research_result already indicates a terminal state)
+            rr = session.get("research_result")
+            rr_status = rr.get("status") if isinstance(rr, dict) else None
+            _terminal_rr = ("completed", "completed_with_warnings", "failed", "cancelled", "error")
+            if session.get("interrupted") and response.get("status") == "running":
+                response["status"] = "paused"
+                response["interrupted"] = True
+
+            # SSE/heartbeat age is transport telemetry, not a business
+            # deadline.  It must never pause or rewrite a running task.
+
+            # Persisted agent messages (last 10)
+            events = session.get("recent_events", [])
+            response["agent_messages"] = [
+                e["data"] for e in events
+                if e.get("event") == "agent_message"
+            ][-10:]
+
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get research status for {task_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+
+
+@app.post("/api/v1/research/quick-start")
+async def quick_start(user_input: str = Form(...), template_id: str = Form(...),
+                       user_id: Optional[str] = Form(None),
+                       llm_provider: Optional[str] = Form(None), llm_model: Optional[str] = Form(None),
+                       llm_api_key: Optional[str] = Form(None), llm_api_endpoint: Optional[str] = Form(None),
+                       llm_temperature: Optional[float] = Form(None), llm_max_tokens: Optional[int] = Form(None),
+                       llm_top_p: Optional[float] = Form(None),
+                       llm_frequency_penalty: Optional[float] = Form(None),
+                       llm_presence_penalty: Optional[float] = Form(None),
+                       region: Optional[str] = Form(None), time_range: Optional[str] = Form(None),
+                       depth: Optional[str] = Form(None),
+                       parameters: Optional[str] = Form(None),
+                       auto_confirm: str = Form("false"),
+                       template_context: Optional[str] = Form(None),
+                       file_ids: Optional[str] = Form(None)):
+    from src.config.settings import settings
+    llm_config: Dict[str, Any] = {}
+    if llm_provider:
+        llm_config["provider"] = llm_provider
+    if llm_model:
+        llm_config["model"] = llm_model
+    if llm_api_key:
+        llm_config["api_key"] = llm_api_key
+    if llm_api_endpoint:
+        llm_config["api_endpoint"] = llm_api_endpoint
+    if llm_temperature is not None:
+        llm_config["temperature"] = llm_temperature
+    if llm_max_tokens is not None:
+        llm_config["max_tokens"] = llm_max_tokens
+    if llm_top_p is not None:
+        llm_config["top_p"] = llm_top_p
+    if llm_frequency_penalty is not None:
+        llm_config["frequency_penalty"] = llm_frequency_penalty
+    if llm_presence_penalty is not None:
+        llm_config["presence_penalty"] = llm_presence_penalty
+
+    settings.update_from_request(llm_config)
+    # Parse dynamic parameters: prefer parameters JSON, fallback to individual fields
+    custom_params = {}
+    if parameters:
+        try:
+            parsed = json.loads(parameters)
+            if isinstance(parsed, dict):
+                custom_params.update(parsed)
+        except (json.JSONDecodeError, TypeError):
+            pass
+    if region and "region" not in custom_params:
+        custom_params["region"] = region
+    if time_range and "time_range" not in custom_params:
+        custom_params["time_range"] = time_range
+    if depth and "depth" not in custom_params:
+        custom_params["depth"] = depth
+    # Validate and resolve file_ids for annual report analysis
+    if file_ids:
+        try:
+            fid_list = json.loads(file_ids)
+            if not isinstance(fid_list, list):
+                raise HTTPException(status_code=400, detail="file_ids must be a JSON array")
+            parsed_file_ids = []
+            for fid in fid_list:
+                candidate = _upload_dir / f"{fid}.pdf"
+                if candidate.exists() and candidate.is_file():
+                    file_size_mb = candidate.stat().st_size / (1024 * 1024)
+                    if file_size_mb > 100:
+                        raise HTTPException(status_code=413, detail=f"File {fid}.pdf too large: {file_size_mb:.1f}MB (max 100MB)")
+                    parsed_file_ids.append({
+                        "id": fid,
+                        "path": str(candidate),
+                        "filename": candidate.name,
+                        "size_mb": round(file_size_mb, 1),
+                    })
+            missing = set(fid_list) - {f["id"] for f in parsed_file_ids}
+            if missing:
+                raise HTTPException(status_code=400, detail=f"Files not found or not PDF: {missing}")
+            if parsed_file_ids:
+                total_size_mb = sum(f["size_mb"] for f in parsed_file_ids)
+                if total_size_mb > 300:
+                    raise HTTPException(status_code=413, detail=f"Total file size too large: {total_size_mb:.1f}MB (max 300MB)")
+                custom_params["file_ids"] = parsed_file_ids
+                custom_params["analysis_mode"] = "annual_report"
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid file_ids JSON")
+    return await research_api.quick_start(user_input=user_input, template_id=template_id,
+                                           user_id=user_id, llm_config=llm_config,
+                                           custom_params=custom_params if custom_params else None,
+                                           auto_confirm=auto_confirm.lower() == "true",
+                                           template_context=template_context)
+
+
+@app.post("/api/v1/research/interact")
+async def interact(session_id: str = Form(...), step: int = Form(...), response: str = Form(...),
+                   llm_provider: Optional[str] = Form(None), llm_model: Optional[str] = Form(None),
+                   llm_api_key: Optional[str] = Form(None), llm_api_endpoint: Optional[str] = Form(None),
+                   llm_temperature: Optional[float] = Form(None), llm_max_tokens: Optional[int] = Form(None),
+                   llm_top_p: Optional[float] = Form(None),
+                   llm_frequency_penalty: Optional[float] = Form(None),
+                   llm_presence_penalty: Optional[float] = Form(None)):
+    import json
+    try:
+        response_dict = json.loads(response)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON in response")
+    llm_config: Dict[str, Any] = {}
+    if llm_provider:
+        llm_config["provider"] = llm_provider
+    if llm_model:
+        llm_config["model"] = llm_model
+    if llm_api_key:
+        llm_config["api_key"] = llm_api_key
+    if llm_api_endpoint:
+        llm_config["api_endpoint"] = llm_api_endpoint
+    if llm_temperature is not None:
+        llm_config["temperature"] = llm_temperature
+    if llm_max_tokens is not None:
+        llm_config["max_tokens"] = llm_max_tokens
+    if llm_top_p is not None:
+        llm_config["top_p"] = llm_top_p
+    if llm_frequency_penalty is not None:
+        llm_config["frequency_penalty"] = llm_frequency_penalty
+    if llm_presence_penalty is not None:
+        llm_config["presence_penalty"] = llm_presence_penalty
+    if llm_config:
+        from src.config.settings import settings
+        settings.update_from_request(llm_config)
+    return await research_api.handle_interact(session_id, step, response_dict, llm_config=llm_config)
+
+
+@app.post("/api/v1/research/quality/action")
+async def quality_action(request: dict):
+    from src.api.research_api import QualityActionRequest
+    req = QualityActionRequest(**request)
+    return await research_api.handle_quality_action(req)
+
+
+@app.post("/api/v1/research/ppt/revise")
+async def revise_ppt(request: dict):
+    from src.api.research_api import PptRevisionAPIRequest
+    req = PptRevisionAPIRequest(**request)
+    return await research_api.handle_ppt_revision(req)
+
+
+@app.post("/api/v1/research/ppt/{session_id}/confirm-export")
+async def confirm_ppt_export(session_id: str):
+    return await research_api.confirm_ppt_export(session_id)
+
+
+@app.get("/api/v1/research/quality/{session_id}")
+async def get_quality_state(session_id: str):
+    return await research_api.get_quality_state(session_id)
+
+
+@app.post("/api/v1/research/feedback")
+async def feedback(session_id: str = Form(...), action: str = Form(...),
+                    section: Optional[str] = Form(None), adjustment: Optional[str] = Form(None)):
+    return await research_api.handle_feedback(session_id, action, section, adjustment)
+
+
+@app.get("/api/v1/research/preview/{task_id}")
+async def get_preview(task_id: str, format: str = "html"):
+    return await research_api.get_preview(task_id, format)
+
+
+@app.get("/api/v1/research/sections/{task_id}")
+async def get_sections(task_id: str):
+    return await research_api.get_sections(task_id)
+
+
+@app.post("/api/v1/research/revise")
+async def revise_sections(task_id: str = Form(...), aspects: str = Form(...),
+                           adjustment: Optional[str] = Form(None),
+                           base_report_version: Optional[int] = Form(None)):
+    import json
+    try:
+        aspects_list = json.loads(aspects)
+        if not isinstance(aspects_list, list):
+            raise ValueError("aspects must be a list")
+    except (json.JSONDecodeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid aspects format")
+    return await research_api.revise_sections(task_id, aspects_list, adjustment, base_report_version)
+
+
+@app.get("/api/v1/research/completed")
+async def list_completed_research(limit: int = 50):
+    from src.api.document_api import DocumentAPI
+    return await DocumentAPI().list_completed_research(limit)
+
+
+def _resolve_history_status(session: dict, task_id: str) -> str:
+    """Resolve one canonical status for both history list and detail views.
+
+    ProgressStreamer is the live/recovered execution source.  The persisted
+    state machine is only the fallback because it can lag behind a pause or a
+    process restart.  Keeping this in one helper prevents list/detail drift.
+    """
+    rr = session.get("research_result") or {}
+    rr_status = rr.get("status") if isinstance(rr, dict) else None
+    terminal_results = ("completed", "completed_with_warnings", "failed", "cancelled", "error")
+    if rr_status in terminal_results:
+        return "completed" if rr_status in ("completed", "completed_with_warnings") else "paused"
+
+    progress_state = ProgressStreamer.get_task_state(task_id)
+    progress_status = getattr(progress_state, "status", None)
+    if progress_status in ("paused", "error", "cancelled"):
+        return "paused"
+    if progress_status == "completed":
+        return "completed"
+    if progress_status in ("running", "reporting"):
+        phase = getattr(progress_state, "current_phase", None)
+        return "reporting" if phase in ("report_generation", "quality_check") else "analyzing"
+
+    state_machine = session.get("state_machine")
+    current_state = getattr(state_machine, "current_state", None)
+    if current_state is None and isinstance(state_machine, dict):
+        current_state = state_machine.get("current_state")
+    state_value = getattr(current_state, "value", current_state)
+    status_map = {
+        "understanding": "paused", "clarifying": "paused",
+        "framework_confirm": "analyzing", "executing": "reporting",
+        "paused": "paused", "previewing": "completed",
+        "completed": "completed", "cancelled": "paused",
+        "data_extracted": "analyzing", "requirement_confirm": "analyzing",
+        "data_supplement": "analyzing",
+    }
+    if state_value:
+        return status_map.get(state_value, "paused")
+
+    current_step = session.get("current_step", 0)
+    if current_step == 6:
+        return "reporting"
+    return "analyzing" if current_step and current_step > 0 else "paused"
+
+
+@app.get("/api/v1/research/sessions")
+def list_all_sessions(limit: int = 20, offset: int = 0):
+    try:
+        from src.core.session_manager import SessionManager
+        from datetime import datetime
+        from pathlib import Path
+        import json as json_mod
+
+        sm = SessionManager.get_instance()
+        sessions_dir = Path("data/sessions")
+        if not sessions_dir.exists():
+            return {"sessions": [], "total": 0, "has_more": False}
+
+        # Collect all session IDs with created_at (lightweight read, no full parsing)
+        sessions_info = []
+        for f in sessions_dir.glob("*.json"):
+            if f.stem.startswith("test_"):
+                continue
+            created_at = None
+            try:
+                with open(f, "r", encoding="utf-8") as fh:
+                    data = json_mod.load(fh)
+                    created_at = data.get("created_at")
+                    if isinstance(created_at, str):
+                        created_at = datetime.fromisoformat(created_at)
+            except Exception:
+                pass  # corrupted file, created_at stays None
+            sessions_info.append((created_at, f.stem))
+
+        # Sort by created_at descending (None at end)
+        sessions_info.sort(key=lambda x: (x[0] is not None, x[0] or datetime.min), reverse=True)
+
+        # Process ALL sessions first, then paginate the results
+        all_results = []
+        for created_at, sid in sessions_info:
+            try:
+                session = sm.get(sid)
+                if not session:
+                    continue
+
+                if isinstance(created_at, datetime):
+                    created_at = created_at.isoformat()
+
+                research_context = session.get("research_context", {})
+                topic = (research_context.get("topic") if isinstance(research_context, dict) else None) or session.get("user_input", "")
+
+                state = _resolve_history_status(session, sid)
+
+                all_results.append({
+                    "task_id": sid, "title": topic or session.get("user_input", "Unnamed Research"),
+                    "topic": topic, "query": session.get("user_input", ""),
+                    "status": state, "created_at": created_at, "completed_at": None,
+                    "output_format": session.get("output_format") or session.get("output_type"), "generated_formats": [],
+                })
+            except Exception as e:
+                logger.warning(f"Failed to process session {sid}: {e}")
+
+        valid_total = len(all_results)
+        page_results = all_results[offset:offset + limit]
+        return {"sessions": page_results, "total": valid_total, "has_more": offset + limit < valid_total}
+    except Exception as e:
+        logger.error(f"list_all_sessions failed: {e}", exc_info=True)
+        return {"sessions": [], "total": 0, "has_more": False}
+
+
+@app.get("/api/v1/research/{task_id}")
+async def get_research_detail(task_id: str):
+    from src.core.session_manager import SessionManager
+    from datetime import datetime
+    from pathlib import Path
+
+    sm = SessionManager.get_instance()
+    session = sm.get(task_id)
+
+    if not session:
+        raise HTTPException(status_code=404, detail="Research not found")
+
+    created_at = session.get("created_at")
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat()
+
+    research_context = session.get("research_context", {})
+    topic = research_context.get("topic") or session.get("user_input", "")
+
+    state = _resolve_history_status(session, task_id)
+
+    # P1 fix: Include preview and download URLs for completed tasks
+    preview_url = None
+    download_url = None
+    research_result = session.get("research_result", {})
+    has_valid_result = bool(research_result and research_result.get("status") in ("completed", "completed_with_warnings"))
+    
+    # Check for preview HTML file (only for sessions with valid completed research)
+    if has_valid_result:
+        preview_path = PreviewStorage.path(task_id)
+        if preview_path.exists():
+            preview_url = PreviewStorage.url(task_id)
+        else:
+            output_path = research_result.get("output_path") or research_result.get("document_path")
+            if output_path and Path(output_path).exists():
+                preview_url = PreviewStorage.url(task_id)
+    
+    # Check for downloadable document
+    task_dir = Path("data/reports") / task_id
+    if not task_dir.exists():
+        task_dir = Path("data") / task_id  # Fallback to legacy location
+    session_output_format = session.get("output_format") or session.get("output_type") or "docx"
+    if task_dir.exists():
+        docs = sorted(task_dir.glob("*.pptx")) + sorted(task_dir.glob("*.docx")) + sorted(task_dir.glob("*.html"))
+        if docs:
+            download_url = f"/api/v1/download/{task_id}?format={session_output_format}"
+
+    meta = {
+        "task_id": task_id,
+        "title": topic or "Unnamed Research",
+        "topic": topic,
+        "query": session.get("user_input", ""),
+        "status": state,
+        "created_at": created_at,
+        "completed_at": None,
+        "output_format": session.get("output_format") or session.get("output_type"),
+        "preview_url": preview_url,
+        "download_url": download_url,
+        "result": research_result,  # Include full research result
+        # P1 fix: signal when preview needs regeneration
+        "needs_regenerate": not preview_url and bool(research_result.get("report", {}).get("sections")),
+    }
+
+    # Include persisted phases so frontend can restore agent progress
+    task_phases_data = session.get("task_phases", [])
+    phases = [
+        {"id": p.get("id", ""), "name": p.get("name", ""), "status": p.get("status", "pending"), "progress": p.get("progress", 0)}
+        for p in (task_phases_data if isinstance(task_phases_data, list) else [])
+    ]
+    # For completed tasks, fix stale phase statuses (engine may not have updated all phases)
+    if state == "completed":
+        phases = [
+            {**p, "status": "completed" if p["status"] in ("running", "pending") else p["status"], "progress": 100 if p["status"] in ("running", "completed") else p["progress"]}
+            for p in phases
+        ]
+    task_progress_data = session.get("task_progress", {})
+    raw_progress = task_progress_data.get("progress")
+    if state == "completed":
+        progress_val = 100
+    elif raw_progress is not None:
+        progress_val = raw_progress
+    else:
+        progress_val = 0
+
+    messages = []
+    history = session.get("conversation_history", [])
+    for i, msg in enumerate(history):
+        if isinstance(msg, dict) and msg.get("type") != "context_summary" and ("role" in msg or "type" in msg) and "content" in msg:
+            messages.append(_build_message_entry(msg, f"msg-{i}", created_at or ""))
+
+    report_context = session.get("report_context")
+    if not isinstance(report_context, dict):
+        try:
+            from src.core.report_context import update_report_context
+            report_context = update_report_context(task_id, session, publish=False)
+        except Exception:
+            report_context = None
+
+    agent_messages = [
+        event.get("data", {}) for event in session.get("recent_events", [])
+        if isinstance(event, dict) and event.get("event") == "agent_message"
+        and isinstance(event.get("data"), dict)
+    ]
+
+    return {**meta, "messages": messages, "agent_messages": agent_messages,
+            "report_context": report_context, "config": {
+        "output_type": meta.get("output_type", "report"),
+        "template": "consulting", "sections": [],
+    }, "framework": research_context.get("framework"),
+     "suggestions": research_context.get("suggestions", []),
+     "step": session.get("current_step", 0),
+     "output_type": session.get("output_type"),
+     "custom_params": session.get("custom_params"),
+     "selected_sections": session.get("selected_sections"),
+     "phases": phases, "progress": progress_val}
+
+
+@app.get("/api/v1/research/{task_id}/report-context")
+async def get_report_context(task_id: str):
+    """Return the latest durable, user-visible report context snapshot."""
+    from src.core.session_manager import SessionManager
+    from src.core.report_context import update_report_context
+
+    session = SessionManager.get_instance().get(task_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Research not found")
+    context = session.get("report_context")
+    if not isinstance(context, dict):
+        context = update_report_context(task_id, session, publish=False)
+    return context
+
+
+@app.get("/api/v1/research/{task_id}/messages")
+async def get_research_messages(
+    task_id: str,
+    offset: int = 0,
+    limit: int = 50,
+):
+    """Paginated message history for a research session.
+    
+    Reads from conversation_history (always complete, never compressed).
+    """
+    from src.core.session_manager import SessionManager
+    sm = SessionManager.get_instance()
+    session = sm.get(task_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    
+    created_at = session.get("created_at", "")
+    offset = max(0, offset)
+    limit = max(1, limit)
+    
+    source = [m for m in session.get("conversation_history", []) if isinstance(m, dict) and m.get("type") != "context_summary"]
+    total = len(source)
+    page = source[offset:offset + limit]
+    
+    messages = []
+    for i, msg in enumerate(page):
+        if isinstance(msg, dict) and ("role" in msg or "type" in msg) and "content" in msg:
+            messages.append(_build_message_entry(msg, f"msg-{offset + i}", created_at or ""))
+    
+    return {
+        "messages": messages,
+        "total": total,
+        "offset": offset,
+        "limit": limit,
+        "has_more": offset + limit < total,
+    }
+
+
+@app.post("/api/v1/upload")
+async def upload_files(files: List[UploadFile] = File(...), session_id: Optional[str] = Form(None)):
+    uploaded = []
+    for file in files:
+        file_id = f"file_{uuid.uuid4().hex[:8]}"
+        ext = os.path.splitext(file.filename)[1]
+        path = _upload_dir / f"{file_id}{ext}"
+        content = await file.read()
+        with open(path, "wb") as f:
+            f.write(content)
+        uploaded.append({"id": file_id, "filename": file.filename,
+                          "size": len(content), "type": file.content_type, "path": str(path)})
+    return {"session_id": session_id, "files": uploaded, "count": len(uploaded)}
+
+
+@app.delete("/api/v1/upload/{file_id}")
+async def delete_file(file_id: str):
+    removed = 0
+    for path in _upload_dir.glob(f"{file_id}.*"):
+        os.remove(path)
+        removed += 1
+    if removed == 0:
+        raise HTTPException(status_code=404, detail="File not found")
+    return {"status": "deleted", "file_id": file_id, "removed": removed}
+
+
+@app.get("/api/v1/stream/{task_id}")
+async def stream_progress(task_id: str):
+    from src.core.progress_streamer import ProgressStreamer
+    streamer = ProgressStreamer(task_id)
+    return StreamingResponse(streamer.generate(), media_type="text/event-stream",
+                              headers={"Cache-Control": "no-cache", "Connection": "keep-alive",
+                                       "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/v1/session-stream/{session_id}")
+async def session_stream(session_id: str):
+    """
+    Persistent session SSE stream.
+
+    Unlike /api/v1/stream/{task_id} which terminates on task complete,
+    this stream stays alive for the entire session lifetime.
+    Used for chat_response and agent_message events.
+    """
+    from src.core.session_streamer import SessionStreamer
+    streamer = SessionStreamer(session_id)
+    return StreamingResponse(streamer.generate(), media_type="text/event-stream",
+                              headers={"Cache-Control": "no-cache", "Connection": "keep-alive",
+                                       "X-Accel-Buffering": "no"})
+
+
+@app.get("/api/v1/llm/models")
+async def list_llm_models():
+    from src.config.llm_profiles import load_llm_catalog
+    from src.config.settings import get_settings
+    catalog = load_llm_catalog()
+    s = get_settings()
+
+    providers = {}
+    for pid, pinfo in catalog.get("providers", {}).items():
+        providers[pid] = {
+            "id": pid,
+            "name": pinfo.name,
+            "description": pinfo.description,
+            "default_endpoint": pinfo.default_endpoint,
+        }
+
+    for profile in s.llm_profiles.profiles.values():
+        pid = profile.provider
+        if pid not in providers:
+            providers[pid] = {
+                "id": pid,
+                "name": pid,
+                "description": "",
+                "default_endpoint": profile.base_url,
+            }
+
+    # Dedupe by (provider, id): the same model id can legitimately exist under
+    # multiple providers (e.g. deepseek-v4-flash via DeepSeek and via 火山引擎
+    # Ark). The response `id` stays the REAL model name the frontend sends
+    # back; `key` is a provider-scoped unique identifier for UI selects.
+    models = {}
+    for m in catalog.get("models", []):
+        mkey = f"{m.provider}:{m.id}"
+        models[mkey] = {
+            "key": mkey,
+            "id": m.id,
+            "name": m.name,
+            "provider": m.provider,
+            "max_tokens": m.max_tokens,
+            "supports_vision": m.supports_vision,
+        }
+
+    for profile in s.llm_profiles.profiles.values():
+        mid = profile.model
+        mkey = f"{profile.provider}:{mid}" if mid else None
+        if mid and mkey not in models:
+            models[mkey] = {
+                "key": mkey,
+                "id": mid,
+                "name": mid,
+                "provider": profile.provider,
+                "max_tokens": profile.max_context_tokens,
+            }
+        fmid = profile.fallback_model
+        fkey = f"{profile.provider}:{fmid}" if fmid else None
+        if fmid and fkey not in models:
+            models[fkey] = {
+                "key": fkey,
+                "id": fmid,
+                "name": fmid,
+                "provider": profile.provider,
+                "max_tokens": profile.max_context_tokens,
+            }
+
+    return {
+        "providers": list(providers.values()),
+        "models": list(models.values()),
+    }
+
+
+@app.get("/api/v1/llm/config")
+async def get_llm_config():
+    from src.config.settings import settings
+    return {"provider": settings.llm.provider,
+            "model": settings.llm.model, "apiEndpoint": settings.llm.base_url,
+            "apiKey": settings.llm.api_key,
+            "temperature": settings.llm.temperature, "maxTokens": settings.llm.max_tokens,
+            "topP": settings.llm.top_p,
+            "frequencyPenalty": settings.llm.frequency_penalty,
+            "presencePenalty": settings.llm.presence_penalty,
+            "hasApiKey": bool(settings.llm.api_key)}
+
+
+@app.post("/api/v1/llm/config")
+async def update_llm_config(config: Dict[str, Any]):
+    """I3：设置面板显式保存 = settings.llm 的唯一显式写路径。
+
+    显式携带的空 api_key 是面板"重置 key"手势，经 clear_fields 声明清除
+    （保留既有空串清除语义，但仅在此显式端点生效；research/start 等请求
+    路径不再隐式清除）。
+    """
+    from src.config.settings import settings
+    clear_fields = [
+        field for field in ("api_key",)
+        if field in config and config.get(field) == ""
+    ]
+    settings.update_from_request(config, clear_fields=clear_fields)
+    return {"provider": settings.llm.provider,
+            "model": settings.llm.model, "apiEndpoint": settings.llm.base_url,
+            "apiKey": settings.llm.api_key,
+            "temperature": settings.llm.temperature, "maxTokens": settings.llm.max_tokens,
+            "topP": settings.llm.top_p,
+            "frequencyPenalty": settings.llm.frequency_penalty,
+            "presencePenalty": settings.llm.presence_penalty,
+            "hasApiKey": bool(settings.llm.api_key)}
+
+
+@app.post("/api/v1/llm/config/reset")
+async def reset_llm_config():
+    """从 .env 重新加载 LLM 配置"""
+    from src.config.settings import settings
+    settings.reset_llm_to_env()
+    return {"provider": settings.llm.provider,
+            "model": settings.llm.model, "apiEndpoint": settings.llm.base_url,
+            "apiKey": settings.llm.api_key,
+            "temperature": settings.llm.temperature, "maxTokens": settings.llm.max_tokens,
+            "topP": settings.llm.top_p,
+            "frequencyPenalty": settings.llm.frequency_penalty,
+            "presencePenalty": settings.llm.presence_penalty,
+            "hasApiKey": bool(settings.llm.api_key)}
+
+
+@app.get("/api/v1/llm/health")
+async def llm_health():
+    """Quick diagnostic: test LLM connectivity (no API key transmitted)"""
+    from src.config.settings import settings
+    from urllib.parse import urlparse
+    import socket as _socket
+    result = {"model": settings.llm.model, "has_key": bool(settings.llm.api_key)}
+
+    try:
+        parsed = urlparse(settings.llm.base_url)
+        host = parsed.hostname
+        if not host:
+            result["reachable"] = False
+            result["error"] = "Invalid base_url configuration"
+            return result
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        _socket.create_connection((host, port), timeout=5)
+        result["reachable"] = True
+    except Exception:
+        result["reachable"] = False
+        result["error"] = "Connection failed"
+
+    return result
+
+
+# ============ LLM Profile API ============
+
+@app.get("/api/v1/llm/profiles")
+async def list_llm_profiles():
+    from src.config.settings import get_settings
+    settings = get_settings()
+    settings._load_llm_profiles_from_disk()
+    from dataclasses import asdict
+    profiles = {}
+    for name, p in settings.llm_profiles.profiles.items():
+        d = asdict(p)
+        d.pop("api_key", None)
+        d["hasApiKey"] = bool(p.api_key)
+        d["apiKey"] = "***" if p.api_key else ""
+        profiles[name] = d
+    return {
+        "profiles": profiles,
+        "default_profile": settings.llm_profiles.default_profile,
+        "fallback_chain": settings.llm_profiles.fallback_chain,
+    }
+
+
+@app.get("/api/v1/llm/profiles/{profile_name}")
+async def get_llm_profile(profile_name: str):
+    from src.config.settings import get_settings
+    settings = get_settings()
+    from dataclasses import asdict
+    p = settings.llm_profiles.profiles.get(profile_name)
+    if not p:
+        raise HTTPException(status_code=404, detail=f"Profile '{profile_name}' not found")
+    d = asdict(p)
+    d.pop("api_key", None)
+    d["hasApiKey"] = bool(p.api_key)
+    d["apiKey"] = "***" if p.api_key else ""
+    return d
+
+
+@app.post("/api/v1/llm/profiles")
+async def create_llm_profile(profile_data: Dict[str, Any]):
+    from src.config.settings import get_settings
+    settings = get_settings()
+    from src.config.llm_profiles import LLMProfile
+    from dataclasses import fields as dc_fields
+    name = profile_data.get("name")
+    if not name:
+        raise HTTPException(status_code=400, detail="Profile name is required")
+    try:
+        valid_keys = {f.name for f in dc_fields(LLMProfile)}
+        filtered = {k: v for k, v in profile_data.items() if k in valid_keys and not (k == "api_key" and v == "***")}
+        p = LLMProfile(**filtered)
+        settings.add_llm_profile(p)
+        settings._persist_llm_profiles()
+        return {"success": True, "profile_name": name}
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@app.put("/api/v1/llm/profiles/{profile_name}")
+async def update_llm_profile(profile_name: str, updates: Dict[str, Any]):
+    from src.config.settings import get_settings
+    settings = get_settings()
+    filtered = {k: v for k, v in updates.items() if not (k == "api_key" and v == "***")}
+    try:
+        settings.update_llm_profile(profile_name, **filtered)
+        settings._sync_llm_config_from_profiles()
+        settings._persist_llm_profiles()
+        return {"success": True, "profile_name": profile_name}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/v1/llm/profiles/{profile_name}")
+async def delete_llm_profile(profile_name: str):
+    from src.config.settings import get_settings
+    settings = get_settings()
+    try:
+        settings.delete_llm_profile(profile_name)
+        settings._persist_llm_profiles()
+        return {"success": True, "deleted": profile_name}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/v1/llm/profiles/{profile_name}/default")
+async def set_default_llm_profile(profile_name: str):
+    from src.config.settings import get_settings
+    settings = get_settings()
+    try:
+        settings.set_default_llm_profile(profile_name)
+        settings._persist_llm_profiles()
+        return {"success": True, "default_profile": profile_name}
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/v1/llm/routing")
+async def get_llm_routing():
+    from src.config.settings import get_settings
+    settings = get_settings()
+    return {
+        "fixed_agent_routing": settings.llm_profiles.fixed_agent_routing,
+        "action_routing": settings.llm_profiles.action_routing,
+        "fallback_chain": settings.llm_profiles.fallback_chain,
+    }
+
+
+@app.put("/api/v1/llm/routing")
+async def update_llm_routing(routing_data: Dict[str, Any]):
+    from src.config.settings import get_settings
+    settings = get_settings()
+    existing = set(settings.llm_profiles.profiles.keys())
+    if "fixed_agent_routing" in routing_data:
+        for agent, pname in routing_data["fixed_agent_routing"].items():
+            if pname not in existing:
+                raise HTTPException(status_code=400, detail=f"Profile '{pname}' not found (referenced in fixed_agent_routing.{agent})")
+        settings.llm_profiles.fixed_agent_routing = routing_data["fixed_agent_routing"]
+    if "action_routing" in routing_data:
+        for action, pname in routing_data["action_routing"].items():
+            if pname not in existing:
+                raise HTTPException(status_code=400, detail=f"Profile '{pname}' not found (referenced in action_routing.{action})")
+        settings.llm_profiles.action_routing = routing_data["action_routing"]
+    if "fallback_chain" in routing_data:
+        for pname in routing_data["fallback_chain"]:
+            if pname not in existing:
+                raise HTTPException(status_code=400, detail=f"Profile '{pname}' not found (referenced in fallback_chain)")
+        settings.llm_profiles.fallback_chain = routing_data["fallback_chain"]
+    settings._persist_llm_profiles()
+    return {"success": True}
+
+
+# ============ Document API ============
+from src.api.document_api import DocumentAPI, DocumentAPIRouter
+
+async def _knowledge_deposit_callback(task_id, aggregated_dict):
+    """Post-export knowledge deposit — triggered after user downloads final report"""
+    try:
+        topic = aggregated_dict.get("topic", task_id)
+        await _research_orchestrator._phase5_deposit_knowledge(
+            aggregated_dict=aggregated_dict,
+            task_id=task_id,
+            topic=topic,
+        )
+        logger.info(f"[EXPORT] Knowledge deposit completed for {task_id}")
+    except Exception as e:
+        logger.warning(f"[EXPORT] Knowledge deposit failed for {task_id}: {e}")
+
+document_api = DocumentAPI(knowledge_deposit_callback=_knowledge_deposit_callback)
+document_router = DocumentAPIRouter(document_api).get_router()
+if document_router:
+    app.include_router(document_router, prefix="/api/v1")
+
+# ============ Prompt API ============
+try:
+    from src.api.prompt_api import PromptAPIRouter, prompt_api as _prompt_api_instance
+    _prompt_router = PromptAPIRouter(_prompt_api_instance)
+    _prompt_routers = _prompt_router.get_routers()
+    for _name, _r in _prompt_routers.items():
+        app.include_router(_r, prefix="/api/v1")
+    logger.info(f"Prompt API mounted ({len(_prompt_routers)} routers)")
+except ImportError as e:
+    logger.warning(f"Prompt API unavailable: {e}")
+
+# ============ MCP API ============
+try:
+    from src.api.mcp_api import router as mcp_router
+    app.include_router(mcp_router, prefix="/api/v1")
+except ImportError:
+    pass
+
+# ============ Survey API ============
+try:
+    from src.survey.task_api import router as survey_router
+    app.include_router(survey_router)
+    logger.info("Survey API mounted at /api/v1/surveys/")
+except ImportError as e:
+    logger.warning(f"Survey API unavailable: {e}")
+
+# ============ Version ============
+@app.get("/api/v1/version")
+async def version():
+    info = await get_version_info()
+    return info.to_dict()
+
+
+# ============ Changelog ============
+CHANGELOG_PATH = Path(__file__).resolve().parent.parent.parent / "docs" / "CHANGELOG.md"
+
+
+@app.get("/api/v1/changelog")
+async def changelog(
+    format: str = "text",
+    max_lines: int = 50,
+):
+    if not CHANGELOG_PATH.exists():
+        return {"changelog": "", "error": "CHANGELOG.md not found"}
+
+    content = CHANGELOG_PATH.read_text(encoding="utf-8")
+
+    if format == "json":
+        import re
+        versions = re.split(r"\n(?=## \[)", content)
+        entries = []
+        for block in versions:
+            if not block.strip():
+                continue
+            lines = block.strip().split("\n")
+            header = lines[0] if lines else ""
+            entries.append({
+                "header": header,
+                "body": "\n".join(lines[1:]).strip(),
+            })
+        return {"changelog": entries, "count": len(entries)}
+    else:
+        lines = content.strip().split("\n")
+        truncated = lines[:max_lines]
+        return {"changelog": "\n".join(truncated)}
+
+
+# ============ Health ============
+@app.get("/api/v1/health")
+async def health():
+    return {"status": "ok", "version": get_local_version(),
+            "search": getattr(app.state, "search_provider_health", {
+                "healthy": False, "providers": {
+                    "anysearch": {"healthy": False, "provider": "anysearch", "error_class": "not_checked"}
+                }
+            })}
+
+@app.get("/")
+async def root():
+    return {"message": "Zensers API", "docs": "/api/v1/docs"}
+
+_scheduled_dream_task = None
+
+
+def _repair_ghost_sessions():
+    """Detect and repair ghost sessions on startup.
+
+    A ghost session is one where mode=research but the executor task is dead
+    (server restarted) and research_result.status is not terminal.
+    These sessions would otherwise appear stuck in 'running' or 'paused' forever.
+    """
+    sm = _session_manager
+    _terminal = ('completed', 'completed_with_warnings', 'failed', 'cancelled', 'error')
+    repaired = 0
+
+    for sid in sm.keys():
+        try:
+            session = sm.get(sid)
+            if not session:
+                continue
+            if session.get('mode') != 'research':
+                continue
+            rr = session.get('research_result')
+            if not rr:
+                session['mode'] = 'chat'
+                session['current_step'] = 0
+                repaired += 1
+                logger.info(f"Ghost session repaired (no research_result): {sid}")
+                continue
+            if rr.get('status') not in _terminal:
+                rr['status'] = 'failed'
+                rr['error'] = 'Server restarted while research was in progress'
+                session['mode'] = 'chat'
+                session['current_step'] = 0
+                # Reset state_machine to avoid stale "executing" status in list APIs
+                sm_state = session.get('state_machine')
+                if sm_state and hasattr(sm_state, 'current_state'):
+                    try:
+                        from src.core.dialogue.state_machine import ConversationState
+                        sm_state.transition(ConversationState.CANCELLED)
+                    except Exception:
+                        pass
+                repaired += 1
+                logger.info(f"Ghost session repaired (status={rr.get('status')}): {sid}")
+        except Exception as e:
+            logger.warning(f"Failed to repair session {sid}: {e}")
+
+    if repaired:
+        logger.info(f"Ghost session repair: {repaired} sessions fixed on startup")
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Zensers API started")
+
+    # Record safe search-provider health at startup.  The key and provider
+    # response body are intentionally never logged or attached to the state.
+    try:
+        from src.core.search import AnySearchProvider
+        app.state.search_provider_health = await AnySearchProvider(timeout=3).health_check()
+        logger.info("Search provider health checked: anysearch healthy=%s",
+                    app.state.search_provider_health.get("healthy", False))
+    except Exception as exc:
+        app.state.search_provider_health = {
+            "healthy": False, "providers": {
+                "anysearch": {"healthy": False, "provider": "anysearch", "error_class": "provider_error"}
+            }
+        }
+        logger.warning("Search provider health check failed: %s", type(exc).__name__)
+
+    from src.core.orchestrator.execution.task_utils import register_global_exception_handler
+    register_global_exception_handler()
+
+    from src.core.akshare_transport import patch_akshare_requests
+    patch_akshare_requests()
+
+    from src.config.settings import settings
+    from src.core.llm_client import init_llm_infrastructure
+    init_llm_infrastructure(settings.llm_profiles)
+    logger.info("LLM infrastructure initialized with %d profiles", len(settings.llm_profiles.profiles))
+
+    _repair_ghost_sessions()
+
+    global _scheduled_dream_task, _dream_scheduler, _dream_cfg
+
+    # DreamModeScheduler 后台循环（始终启动，驱动研究提取 + 可选目录扫描）
+    if _dream_scheduler:
+        _dream_scheduler.start_background()
+        if _dream_cfg and _dream_cfg.knowledge_source_dirs:
+            logger.info(
+                f"DreamModeScheduler started with source dirs: "
+                f"{_dream_cfg.knowledge_source_dirs}, "
+                f"scan_interval={_dream_cfg.knowledge_scan_interval}s"
+            )
+        else:
+            logger.info("DreamModeScheduler started (research extraction only, no source dirs)")
+
+    # Scheduled DreamMode (background memory consolidation every 24 hours)
+    if _knowledge_manager:
+        async def _scheduled_dream():
+            try:
+                while True:
+                    await asyncio.sleep(24 * 3600)
+                    await _knowledge_manager.run_dream_mode(trigger="scheduled")
+            except asyncio.CancelledError:
+                logger.info("Scheduled DreamMode task cancelled")
+            except Exception as e:
+                logger.warning(f"Scheduled DreamMode failed: {e}")
+
+        _scheduled_dream_task = safe_create_task_main(_scheduled_dream(), name="scheduled_dream")
+        logger.info("Scheduled DreamMode task created (every 24h)")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    global _scheduled_dream_task, _dream_scheduler
+    logger.info("Zensers API shutting down")
+
+    # 停止 DreamModeScheduler
+    if _dream_scheduler:
+        await _dream_scheduler.shutdown()
+        logger.info("DreamModeScheduler shut down")
+
+    # Cancel scheduled DreamMode
+    if _scheduled_dream_task:
+        _scheduled_dream_task.cancel()
+        logger.info("Scheduled DreamMode task cancelled")
+
+    # Cancel all ResearchAPI background tasks (prevent shutdown from blocking on LLM calls)
+    try:
+        from src.api.research_api import ResearchAPI
+        bg_tasks = ResearchAPI._background_tasks
+        if bg_tasks:
+            count = 0
+            for sid, task in list(bg_tasks.items()):
+                if not task.done():
+                    task.cancel()
+                    count += 1
+            bg_tasks.clear()
+            ResearchAPI._background_task_gen.clear()
+            if count > 0:
+                logger.info(f"Cancelled {count} pending ResearchAPI background tasks")
+    except Exception as e:
+        logger.warning(f"Failed to cancel ResearchAPI background tasks: {e}")
+
+    if _knowledge_manager:
+        try:
+            _knowledge_manager.close()
+            logger.info("KnowledgeManager closed")
+        except Exception as e:
+            logger.warning(f"KnowledgeManager close failed: {e}")
+
+# ============ DreamModeScheduler ============
+from src.core.memory.dream.dream_scheduler import DreamModeScheduler, DreamModeConfig
+from src.core.memory.dream.raw_data_store import RawResearchDataStore
+
+_dream_scheduler: Optional[DreamModeScheduler] = None
+_dream_cfg: Optional[DreamModeConfig] = None
+if _knowledge_manager:
+    _dream_cfg = DreamModeConfig.from_env()
+    _dream_scheduler = DreamModeScheduler(
+        knowledge_bank=_knowledge_manager.knowledge_bank,
+        raw_data_store=RawResearchDataStore(user_id=_knowledge_manager.user_id),
+        config=_dream_cfg,
+    )
+
+

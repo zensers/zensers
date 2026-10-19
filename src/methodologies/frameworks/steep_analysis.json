@@ -1,0 +1,7 @@
+{
+  "id": "steep_analysis",
+  "name": "STEEP宏观分析框架",
+  "priority": 2,
+  "aspects": ["trend", "macro_analysis", "policy"],
+  "content": "请按STEEP五个维度分析宏观环境:\n1. Social 社会: 人口结构/消费习惯/社会价值观变化\n2. Technological 技术: 技术突破/创新扩散/数字化转型\n3. Economic 经济: 经济增长/通胀/利率/产业结构调整\n4. Environmental 环境: 气候变化/资源约束/可持续性要求\n5. Political 政治: 地缘政治/贸易政策/产业政策方向"
+}

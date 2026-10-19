@@ -1,0 +1,66 @@
+# Market Brief Template
+# Professional use: Quick overview of core market data
+
+id: market_brief_onepager
+name: Market Brief (1-Pager)
+description: Quick overview of core market data, suitable for decision reference
+output_type: market_brief
+estimated_pages: 1-2 pages
+suitable_for:
+  - Quick Decisions
+  - Meeting Materials
+  - Initial Understanding
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: market-analysis
+
+sections:
+  - id: key_numbers
+    name: Key Data
+    required: true
+    description: Market size, growth rate, CR5
+    sub_sections:
+      - id: market_size
+        name: Market Size & Growth
+        description: Total market size and YoY growth rate
+      - id: concentration
+        name: Market Concentration
+        description: CR5/CR10 concentration ratios
+
+  - id: key_players
+    name: Key Players
+    required: true
+    description: TOP5 companies, market share
+    sub_sections:
+      - id: top5_ranking
+        name: TOP5 Ranking
+        description: Top 5 companies by market share
+      - id: share_changes
+        name: Market Share Changes
+        description: Notable share shifts vs prior period
+
+  - id: key_trends
+    name: Key Trends
+    required: true
+    description: 3-5 key trends
+    sub_sections:
+      - id: trend_list
+        name: Trend Summary
+        description: 3-5 key industry trends
+      - id: trend_implications
+        name: Trend Implications
+        description: Business implications of each trend
+
+  - id: key_opportunities
+    name: Opportunities
+    required: true
+    description: 3-5 key opportunities
+    sub_sections:
+      - id: opportunity_list
+        name: Opportunity Summary
+        description: 3-5 key investment opportunities
+      - id: action_items
+        name: Action Items
+        description: Recommended next steps

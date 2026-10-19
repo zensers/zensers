@@ -1,0 +1,500 @@
+# Broker-Style In-depth Industry Report Template
+# Professional use: Benchmarking against top broker research reports (CICC, CITIC, etc.)
+# 
+# Multi-language support: name and description fields support multi-language
+# Format: direct string (backward compatible) or multi-language dictionary
+
+id: industry_report_broker
+name: Broker-Style In-depth Industry Report
+description: In-depth industry analysis benchmarked against broker research standards, covering investment thesis, financial analysis, valuation and ratings
+output_type: industry_report
+estimated_pages: 30-50 pages
+suitable_for:
+  - Investment Decisions
+  - Strategic Planning
+  - In-depth Industry Research
+  - Broker Research Report Output
+supported_formats:
+  - docx
+  - pdf
+category_name: market-analysis
+
+sections:
+  # ===== Investment Essentials (Required) =====
+  - id: investment_summary
+    name:
+      zh: Investment Highlights
+      en: Investment Summary
+    required: true
+    description:
+      zh: Core investment thesis, rating, earnings forecast, target price (summary of the entire report's core conclusions)
+      en: Core investment thesis, rating, earnings forecast, target price
+    sub_sections:
+      - id: core_thesis
+        name:
+          zh: Core Investment Thesis
+          en: Core Investment Thesis
+        points:
+          - zh: 核心投资逻辑与推荐理由
+            en: Core investment logic and recommendation rationale
+          - zh: 关键催化因素与时间节点
+            en: Key catalysts and timeline
+      - id: rating_target
+        name:
+          zh: Rating & Target Price
+          en: Rating & Target Price
+        points:
+          - zh: 投资评级与目标价格
+            en: Investment rating and target price
+          - zh: 评级依据与估值方法
+            en: Rating rationale and valuation methodology
+      - id: earnings_summary
+        name:
+          zh: Earnings Forecast Summary
+          en: Earnings Forecast Summary
+        points:
+          - zh: 核心财务指标预测
+            en: Core financial metrics forecast
+          - zh: 预期差异与关键假设
+            en: Expectation gap and key assumptions
+
+  - id: industry_overview
+    name:
+      zh: Industry Overview
+      en: Industry Overview
+    required: true
+    description:
+      zh: Industry definition, value chain position, development history, lifecycle stage, industry size (TAM/SAM/SOM)
+      en: Industry definition, value chain position, development history, lifecycle, TAM/SAM/SOM
+    sub_sections:
+      - id: industry_definition
+        name:
+          zh: Industry Definition & Scope
+          en: Industry Definition & Scope
+        points:
+          - zh: 行业定义与分类标准
+            en: Industry definition and classification criteria
+          - zh: 产业链定位与上下游关系
+            en: Value chain position and upstream/downstream relationships
+      - id: development_history
+        name:
+          zh: Development History & Lifecycle
+          en: Development History & Lifecycle
+        points:
+          - zh: 行业发展历程与关键节点
+            en: Industry development milestones
+          - zh: 生命周期阶段判断
+            en: Lifecycle stage assessment
+      - id: market_size_tam
+        name:
+          zh: Market Size (TAM/SAM/SOM)
+          en: Market Size (TAM/SAM/SOM)
+        points:
+          - zh: 总可寻址市场(TAM)规模
+            en: Total Addressable Market (TAM) size
+          - zh: 可服务市场(SAM)与可获得市场(SOM)
+            en: Serviceable Available Market (SAM) and Obtainable Market (SOM)
+
+  - id: market_size
+    name:
+      zh: Market Size & Growth
+      en: Market Size & Growth
+    required: false
+    description:
+      zh: Global/China market size, historical growth rate, future forecasts, driver decomposition, penetration analysis
+      en: Global/China market size, historical growth, forecasts, driver decomposition, penetration
+    sub_sections:
+      - id: historical_growth
+        name:
+          zh: Historical Market Growth
+          en: Historical Market Growth
+        points:
+          - zh: 全球/中国市场规模历史数据
+            en: Global/China market size historical data
+          - zh: 增长率变化趋势与拐点分析
+            en: Growth rate trends and inflection point analysis
+      - id: future_forecast
+        name:
+          zh: Future Market Forecast
+          en: Future Market Forecast
+        points:
+          - zh: 市场规模预测模型与假设
+            en: Market size forecast model and assumptions
+          - zh: 增长驱动因素分解
+            en: Growth driver decomposition
+      - id: penetration_analysis
+        name:
+          zh: Penetration & Adoption Analysis
+          en: Penetration & Adoption Analysis
+        points:
+          - zh: 渗透率现状与提升空间
+            en: Current penetration rate and upside potential
+          - zh: 替代效应与市场天花板
+            en: Substitution effects and market ceiling
+
+  - id: competitive_landscape
+    name:
+      zh: Competitive Landscape
+      en: Competitive Landscape
+    required: true
+    description:
+      zh: Market concentration (CRn/HHI), key player shares, competitive barriers, Porter Five Forces, SWOT comparison
+      en: Market concentration (CRn/HHI), key player shares, barriers, Porter Five Forces, SWOT
+    sub_sections:
+      - id: market_concentration
+        name:
+          zh: Market Concentration
+          en: Market Concentration
+        points:
+          - zh: CR4/CR8/CR10 集中度指标及变化趋势
+            en: CR4/CR8/CR10 concentration metrics and trends
+          - zh: 头部企业市场份额及变化
+            en: Top players' market share and changes
+      - id: competitive_barriers
+        name:
+          zh: Competitive Barriers
+          en: Competitive Barriers
+        points:
+          - zh: 技术壁垒与专利护城河
+            en: Technology barriers and patent moats
+          - zh: 资金壁垒与规模效应
+            en: Capital barriers and economies of scale
+          - zh: 政策准入与牌照壁垒
+            en: Regulatory entry and licensing barriers
+      - id: porter_five_forces
+        name:
+          zh: Porter's Five Forces
+          en: Porter's Five Forces
+        points:
+          - zh: 供应商议价能力
+            en: Bargaining power of suppliers
+          - zh: 买方议价能力
+            en: Bargaining power of buyers
+          - zh: 替代品威胁
+            en: Threat of substitutes
+
+  - id: value_chain
+    name:
+      zh: Value Chain Analysis
+      en: Value Chain Analysis
+    required: false
+    description:
+      zh: Upstream/downstream structure, profit distribution, bargaining power, core links, key suppliers/customers
+      en: Upstream/downstream structure, profit distribution, bargaining power, key nodes
+    sub_sections:
+      - id: upstream_analysis
+        name:
+          zh: Upstream Analysis
+          en: Upstream Analysis
+        points:
+          - zh: 上游原材料/零部件供应格局
+            en: Upstream raw material/component supply landscape
+          - zh: 关键供应商与议价能力
+            en: Key suppliers and bargaining power
+      - id: midstream_core
+        name:
+          zh: Core Value Chain Links
+          en: Core Value Chain Links
+        points:
+          - zh: 产业链核心环节与附加值分布
+            en: Core value chain links and value-add distribution
+          - zh: 利润分配格局
+            en: Profit distribution pattern
+      - id: downstream_analysis
+        name:
+          zh: Downstream Analysis
+          en: Downstream Analysis
+        points:
+          - zh: 下游客户结构与需求特征
+            en: Downstream customer structure and demand characteristics
+          - zh: 终端市场渠道与议价能力
+            en: End-market channels and bargaining power
+
+  - id: growth_drivers
+    name:
+      zh: Growth Drivers
+      en: Growth Drivers
+    required: false
+    description:
+      zh: Demand drivers (policy/technology/consumption upgrade/domestic substitution), supply drivers, catalysts
+      en: Demand drivers (policy/tech/upgrade/substitution), supply drivers, catalysts
+    sub_sections:
+      - id: demand_drivers
+        name:
+          zh: Demand Drivers
+          en: Demand Drivers
+        points:
+          - zh: 政策驱动因素
+            en: Policy-driven factors
+          - zh: 技术驱动与消费升级
+            en: Technology-driven and consumption upgrade
+          - zh: 国产替代需求
+            en: Domestic substitution demand
+      - id: supply_drivers
+        name:
+          zh: Supply Drivers
+          en: Supply Drivers
+        points:
+          - zh: 产能扩张与供给格局变化
+            en: Capacity expansion and supply landscape changes
+          - zh: 成本下降与规模效应
+            en: Cost decline and scale effects
+      - id: catalysts
+        name:
+          zh: Catalysts
+          en: Catalysts
+        points:
+          - zh: 短期催化事件与时间节点
+            en: Short-term catalyst events and timeline
+          - zh: 中长期趋势性机会
+            en: Medium-to-long-term trend opportunities
+
+  - id: policy_environment
+    name:
+      zh: Policy & Regulation
+      en: Policy & Regulation
+    required: false
+    description:
+      zh: Relevant policy review, regulatory trends, industry support, tax incentives, compliance requirements, PEST analysis
+      en: Policy review, regulatory trends, industry support, tax incentives, PEST analysis
+    sub_sections:
+      - id: policy_review
+        name:
+          zh: Policy Review
+          en: Policy Review
+        points:
+          - zh: 已出台政策梳理与影响评估
+            en: Enacted policies review and impact assessment
+          - zh: 政策支持力度与方向
+            en: Policy support intensity and direction
+      - id: regulatory_trends
+        name:
+          zh: Regulatory Trends
+          en: Regulatory Trends
+        points:
+          - zh: 监管趋势与合规要求
+            en: Regulatory trends and compliance requirements
+          - zh: 税收优惠与补贴政策
+            en: Tax incentives and subsidy policies
+      - id: pest_analysis
+        name:
+          zh: PEST Analysis
+          en: PEST Analysis
+        points:
+          - zh: 政治/经济/社会/技术宏观环境
+            en: Political/Economic/Social/Technological macro environment
+          - zh: 宏观环境对行业的影响路径
+            en: Macro environment impact pathways on industry
+
+  - id: technology_trends
+    name:
+      zh: Technology Trends
+      en: Technology Trends
+    required: false
+    description:
+      zh: Technology roadmap evolution, R&D investment, patent analysis, technology barriers, innovation directions
+      en: Technology roadmap, R&D investment, patent analysis, tech barriers, innovation
+    sub_sections:
+      - id: tech_roadmap
+        name:
+          zh: Technology Roadmap
+          en: Technology Roadmap
+        points:
+          - zh: 技术路线演进与代际更替
+            en: Technology roadmap evolution and generational shifts
+          - zh: 关键技术突破与瓶颈
+            en: Key technology breakthroughs and bottlenecks
+      - id: rd_patent
+        name:
+          zh: R&D Investment & Patent Analysis
+          en: R&D Investment & Patent Analysis
+        points:
+          - zh: 行业研发投入强度与趋势
+            en: Industry R&D investment intensity and trends
+          - zh: 专利布局与技术壁垒
+            en: Patent landscape and technology barriers
+      - id: innovation_directions
+        name:
+          zh: Innovation Directions
+          en: Innovation Directions
+        points:
+          - zh: 新兴技术方向与产业化前景
+            en: Emerging technology directions and commercialization prospects
+          - zh: 颠覆性技术风险评估
+            en: Disruptive technology risk assessment
+
+  - id: company_analysis
+    name:
+      zh: Key Company Analysis
+      en: Key Company Analysis
+    required: false
+    description:
+      zh: Listed company business breakdown, financial analysis, competitive advantages, growth strategy, valuation comparison
+      en: Listed company business breakdown, financials, competitive advantage, valuation
+    sub_sections:
+      - id: business_breakdown
+        name:
+          zh: Business Breakdown
+          en: Business Breakdown
+        points:
+          - zh: 主营业务构成与收入拆分
+            en: Main business composition and revenue breakdown
+          - zh: 各业务板块盈利能力对比
+            en: Profitability comparison across business segments
+      - id: financial_comparison
+        name:
+          zh: Financial Comparison
+          en: Financial Comparison
+        points:
+          - zh: 核心财务指标横向对比
+            en: Core financial metrics cross-comparison
+          - zh: 成长性与盈利质量评估
+            en: Growth and earnings quality assessment
+      - id: competitive_positioning
+        name:
+          zh: Competitive Positioning
+          en: Competitive Positioning
+        points:
+          - zh: 核心竞争优势与护城河
+            en: Core competitive advantages and moats
+          - zh: 增长战略与扩张路径
+            en: Growth strategy and expansion path
+
+  - id: financial_forecast
+    name:
+      zh: Earnings Forecast & Valuation
+      en: Financial Forecast & Valuation
+    required: false
+    description:
+      zh: Revenue/profit forecasts, key assumptions, DCF/PE/PB valuation, sensitivity analysis, comparable companies
+      en: Revenue/profit forecasts, key assumptions, DCF/PE/PB, sensitivity, comps
+    sub_sections:
+      - id: revenue_forecast
+        name:
+          zh: Revenue & Profit Forecast
+          en: Revenue & Profit Forecast
+        points:
+          - zh: 收入/利润预测模型与关键假设
+            en: Revenue/profit forecast model and key assumptions
+          - zh: 分业务收入预测
+            en: Segment revenue forecast
+      - id: valuation_methods
+        name:
+          zh: Valuation Methods
+          en: Valuation Methods
+        points:
+          - zh: DCF/PE/PB 估值分析
+            en: DCF/PE/PB valuation analysis
+          - zh: 可比公司估值对比
+            en: Comparable company valuation comparison
+      - id: sensitivity_analysis
+        name:
+          zh: Sensitivity Analysis
+          en: Sensitivity Analysis
+        points:
+          - zh: 关键假设敏感性分析
+            en: Key assumption sensitivity analysis
+          - zh: 情景分析(乐观/中性/悲观)
+            en: Scenario analysis (optimistic/base/pessimistic)
+
+  - id: risk_analysis
+    name:
+      zh: Risk Analysis
+      en: Risk Analysis
+    required: true
+    description:
+      zh: Industry risks, company risks, policy risks, market risks, valuation risks, upside/downside scenarios
+      en: Industry/company/policy/market/valuation risks, upside/downside scenarios
+    sub_sections:
+      - id: industry_risks
+        name:
+          zh: Industry Risks
+          en: Industry Risks
+        points:
+          - zh: 行业周期性风险
+            en: Industry cyclicality risk
+          - zh: 竞争加剧风险
+            en: Intensifying competition risk
+      - id: policy_market_risks
+        name:
+          zh: Policy & Market Risks
+          en: Policy & Market Risks
+        points:
+          - zh: 政策变动风险
+            en: Policy change risk
+          - zh: 宏观经济与市场风险
+            en: Macroeconomic and market risk
+      - id: valuation_risks
+        name:
+          zh: Valuation & Downside Risks
+          en: Valuation & Downside Risks
+        points:
+          - zh: 估值下行风险
+            en: Valuation downside risk
+          - zh: 上行/下行情景分析
+            en: Upside/downside scenario analysis
+
+  - id: strategic_intent
+    name:
+      zh: Strategic Intent Inference
+      en: Strategic Intent Inference
+    required: false
+    description:
+      zh: Strategic intent inference of key participants, entry/exit signals, resource allocation intent, M&A direction, policymaker implicit goals
+      en: Strategic intent inference, entry/exit signals, resource allocation intent, M&A direction, policymaker implicit goals
+    sub_sections:
+      - id: participant_intent
+        name:
+          zh: Key Participant Intent
+          en: Key Participant Intent
+        points:
+          - zh: 核心企业战略意图推断
+            en: Core company strategic intent inference
+          - zh: 进出信号与资源配置意图
+            en: Entry/exit signals and resource allocation intent
+      - id: ma_direction
+        name:
+          zh: M&A Direction
+          en: M&A Direction
+        points:
+          - zh: 并购整合方向与潜在标的
+            en: M&A consolidation direction and potential targets
+          - zh: 政策制定者隐含目标
+            en: Policymaker implicit goals
+
+  - id: rating_target
+    name:
+      zh: Rating & Target Price
+      en: Rating & Target Price
+    required: false
+    description:
+      zh: Investment rating, target price, rating rationale, catalysts, time horizon
+      en: Investment rating, target price, rationale, catalysts, time horizon
+    sub_sections:
+      - id: investment_rating
+        name:
+          zh: Investment Rating
+          en: Investment Rating
+        points:
+          - zh: 投资评级与目标价格
+            en: Investment rating and target price
+          - zh: 评级依据与逻辑
+            en: Rating rationale and logic
+      - id: catalysts_timeline
+        name:
+          zh: Catalysts & Timeline
+          en: Catalysts & Timeline
+        points:
+          - zh: 关键催化因素
+            en: Key catalyst factors
+          - zh: 时间窗口与投资节奏
+            en: Time horizon and investment pacing
+
+  - id: appendix
+    name:
+      zh: Appendix
+      en: Appendix
+    required: false
+    description:
+      zh: Financial data tables, peer valuation comparison table, research methodology description, disclaimer
+      en: Financial data tables, peer comparison, methodology, disclaimer

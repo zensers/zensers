@@ -1,0 +1,44 @@
+# LLM Routing Configuration
+# Maps agents and actions to LLM profiles.
+
+# Fixed agent routing: agent_type -> profile_name
+fixed_agent_routing:
+  quality_check: mimo
+  data_collection: mimo
+  report_generation: mimo
+  requirement_analysis: mimo
+  survey_simulation: mimo
+
+# Action routing: action_name -> profile_name
+action_routing:
+  analyze: mimo
+  generate: mimo
+  write: mimo
+  review: mimo
+  judge: mimo
+  evaluate: mimo
+  search: mimo
+  scrape: mimo
+  extract: mimo
+  classify: mimo
+  translate: mimo
+  format: mimo
+  vision: mimo
+
+  quality_judge: mimo
+  framework_match: mimo
+  claim_extraction: mimo
+
+  keyword_expand: mimo
+  decision_assist: mimo
+  task_structure: mimo
+  intent_analysis: mimo
+  revision_intent: mimo
+
+  framework_modify: mimo
+  section_inference: mimo
+  param_extraction: mimo
+
+  translation: mimo
+  batch_revision: mimo
+  entity_extraction: mimo

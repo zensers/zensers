@@ -1,0 +1,7 @@
+{
+  "id": "dupont_analysis",
+  "name": "杜邦分析 (DuPont Analysis)",
+  "priority": 2,
+  "aspects": ["financial_analysis", "enterprise_analysis"],
+  "content": "请按杜邦分析框架拆解ROE:\n1. 净利率: 净利润/营收，反映盈利能力和成本控制\n2. 资产周转率: 营收/总资产，反映运营效率\n3. 财务杠杆: 总资产/净资产，反映资本结构\n4. 驱动因素: 识别三项中驱动ROE变化的主要因素\n5. 趋势比较: 三项指标的历史趋势和同业对比"
+}

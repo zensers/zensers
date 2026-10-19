@@ -1,0 +1,76 @@
+{
+  "meta": {
+    "name": "kpi_highlight",
+    "display_name": "KPI指标看板",
+    "description": "3-4个KPI大数字卡片+图表+底部洞察",
+    "min_kpis": 2,
+    "max_kpis": 4
+  },
+  "background": {
+    "type": "solid",
+    "color": "white"
+  },
+  "slots": [
+    {
+      "id": "title",
+      "type": "text",
+      "source": "title",
+      "position": { "left": 0.8, "top": 0.3, "width": 11.7, "height": 0.6 },
+      "style": {
+        "font_size": 24,
+        "font_weight": "bold",
+        "color": "navy",
+        "font": "Microsoft YaHei"
+      }
+    },
+    {
+      "id": "kpi_row",
+      "type": "kpi_cards",
+      "source": "kpi_data",
+      "position": { "left": 0.8, "top": 1.2, "width": 11.7, "height": 1.8 },
+      "style": {
+        "card_bg": "navy",
+        "card_gap": 0.3,
+        "number_size": 28,
+        "number_color": "gold",
+        "label_size": 12,
+        "label_color": "white",
+        "trend_up": "↑",
+        "trend_down": "↓",
+        "trend_color_up": "4CAF50",
+        "trend_color_down": "F44336",
+        "max_cards": 4,
+        "layout_mode": "row"
+      }
+    },
+    {
+      "id": "chart",
+      "type": "image",
+      "source": "images",
+      "position": { "left": 1.5, "top": 3.3, "width": 10.0, "height": 3.5 },
+      "style": {
+        "preserve_aspect": true,
+        "index": 0
+      }
+    },
+    {
+      "id": "insight",
+      "type": "insight_bar",
+      "source": "insight_text",
+      "position": { "left": 0.8, "top": 6.9, "width": 11.7, "height": 0.5 },
+      "style": {
+        "bg_color": "navy",
+        "icon": "💡",
+        "font_size": 11,
+        "color": "white"
+      }
+    }
+  ],
+  "decorations": [
+    { "type": "side_accent", "layer": "bottom", "color": "gold", "width": 0.06 },
+    { "type": "footer_bar", "layer": "bottom", "color": "gold", "height": 0.11 },
+    { "type": "title_underline", "layer": "bottom", "color": "gold", "width": 4.0, "offset_top": 0.95 },
+    { "type": "page_number", "layer": "top", "position": "bottom_right", "color": "text_light", "font_size": 10 },
+    { "type": "source_text", "layer": "top", "text": "", "position": "bottom_left", "color": "text_light", "font_size": 9 }
+  ]
+}

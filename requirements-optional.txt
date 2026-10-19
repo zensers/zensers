@@ -1,0 +1,6 @@
+# 可选依赖 — 未安装时对应功能自动降级，不影响核心流程
+#
+# 安装:
+#   pip install -r requirements-optional.txt
+
+pyahocorasick>=0.9.0  # EntityResolver 反向匹配加速 (O(text_length) vs O(5000×N))

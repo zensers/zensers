@@ -1,0 +1,62 @@
+{
+    "metadata": {
+        "description": "AI生成报告样本",
+        "version": "1.0",
+        "created_at": "2025-01-15",
+        "target": "达到专业分析师85%水平"
+    },
+    "reports": [
+        {
+            "id": "ai_001",
+            "title": "2025年中国新能源汽车市场研究报告",
+            "type": "market_research",
+            "model": "gpt-4-turbo",
+            "quality_score": 86,
+            "metrics": {
+                "accuracy": 0.97,
+                "completeness": 0.94,
+                "consistency": 0.91,
+                "format": 0.96,
+                "language": 0.87
+            },
+            "content_summary": {
+                "word_count": 4200,
+                "sections": 7,
+                "data_points": 40,
+                "sources": 4
+            },
+            "comparison": {
+                "analyst_report_id": "analyst_001",
+                "accuracy_ratio": 0.98,
+                "completeness_ratio": 0.97,
+                "overall_ratio": 0.93
+            }
+        },
+        {
+            "id": "ai_002",
+            "title": "半导体行业分析报告",
+            "type": "industry_analysis",
+            "model": "gpt-4-turbo",
+            "quality_score": 82,
+            "metrics": {
+                "accuracy": 0.95,
+                "completeness": 0.91,
+                "consistency": 0.88,
+                "format": 0.94,
+                "language": 0.85
+            },
+            "content_summary": {
+                "word_count": 3800,
+                "sections": 5,
+                "data_points": 32,
+                "sources": 3
+            },
+            "comparison": {
+                "analyst_report_id": "analyst_002",
+                "accuracy_ratio": 0.97,
+                "completeness_ratio": 0.97,
+                "overall_ratio": 0.93
+            }
+        }
+    ]
+}

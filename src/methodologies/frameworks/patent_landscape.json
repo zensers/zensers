@@ -1,0 +1,7 @@
+{
+  "id": "patent_landscape",
+  "name": "专利景观分析",
+  "priority": 5,
+  "aspects": ["technology", "technology_analysis", "competitive_landscape"],
+  "content": "请按以下维度进行专利分析:\n1. 申请趋势: 全球专利申请量的年度变化趋势\n2. 地理分布: 主要专利布局区域（中美日欧等）\n3. 主要申请人: 核心专利持有者及其市场份额\n4. 引用分析: 高被引专利和技术热点方向\n5. 技术聚类: 专利技术分类图谱和交叉领域"
+}

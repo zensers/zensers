@@ -1,0 +1,58 @@
+{
+  "meta": {
+    "region": "deu",
+    "name_en": "Germany",
+    "sources": {
+      "age_gender": {
+        "name": "UN World Population Prospects 2024",
+        "url": "https://population.un.org/wpp/"
+      },
+      "education": {
+        "name": "World Bank Gender Statistics",
+        "url": "https://databank.worldbank.org/source/gender-statistics/"
+      },
+      "income": {
+        "name": "World Bank PIP",
+        "url": "https://pip.worldbank.org/country-profiles/DEU"
+      }
+    },
+    "source_url": "https://population.un.org/wpp/",
+    "data_notes": "Age/gender: UN WPP 2024. Education: World Bank 2023 population 25+. Income: World Bank PIP 2019.",
+    "updated": "2024-01-01"
+  },
+  "age": {
+    "18_24": 0.089,
+    "25_34": 0.149,
+    "35_44": 0.144,
+    "45_54": 0.158,
+    "55_59": 0.082,
+    "60_69": 0.171,
+    "70_79": 0.129,
+    "80_plus": 0.078
+  },
+  "gender": {
+    "male": 0.493,
+    "female": 0.507
+  },
+  "education": {
+    "no_formal": 0.029,
+    "primary": 0.085,
+    "lower_secondary": 0.17,
+    "upper_secondary": 0.292,
+    "post_secondary": 0.168,
+    "bachelor": 0.164,
+    "graduate": 0.092
+  },
+  "income": {
+    "note": "Household income per capita quintiles. Source: World Bank PIP 2019.",
+    "lowest_20": 0.078,
+    "second_20": 0.123,
+    "third_20": 0.162,
+    "fourth_20": 0.217,
+    "highest_20": 0.42
+  },
+  "urbanization": {
+    "urban": 0.773,
+    "rural": 0.227
+  }
+}

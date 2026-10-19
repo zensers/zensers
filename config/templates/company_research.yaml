@@ -1,0 +1,226 @@
+# Company Deep Research Report Template
+# Professional use: Comprehensive analysis of listed company investment value
+
+id: company_research_standard
+name: Company Deep Research Report
+description: Comprehensive analysis of listed company investment value, including financial models, valuation analysis, competitive advantages
+output_type: company_research
+estimated_pages: 15-40 pages
+suitable_for:
+  - Value Investing
+  - In-depth Research
+  - Long-term Holding
+supported_formats:
+  - docx
+  - pptx
+  - pdf
+category_name: financial-analysis
+
+sections:
+  - id: summary
+    name: Key Investment Points Summary
+    required: true
+    description: Earnings forecast, target price, core investment thesis
+    sub_sections:
+      - id: core_thesis
+        name: Core Investment Thesis
+        points:
+          - zh: 核心投资逻辑与推荐理由
+            en: Core investment logic and recommendation rationale
+          - zh: 关键催化因素
+            en: Key catalysts
+      - id: forecast_summary
+        name: Forecast & Target Summary
+        points:
+          - zh: 盈利预测摘要
+            en: Earnings forecast summary
+          - zh: 目标价格与投资评级
+            en: Target price and investment rating
+
+  - id: company_overview
+    name: Company Overview
+    required: true
+    description: Basic information, development history, shareholding structure
+    sub_sections:
+      - id: basic_info
+        name: Basic Information
+        points:
+          - zh: 公司基本信息与股权结构
+            en: Company basic information and shareholding structure
+          - zh: 发展历程与重要里程碑
+            en: Development history and key milestones
+      - id: shareholding
+        name: Shareholding Structure
+        points:
+          - zh: 控股股东与实际控制人
+            en: Controlling shareholders and ultimate controllers
+          - zh: 机构投资者持股变化
+            en: Institutional investor holding changes
+
+  - id: business_analysis
+    name: Business Analysis
+    required: true
+    description: Main business, product analysis, business model
+    sub_sections:
+      - id: main_business
+        name: Main Business Breakdown
+        points:
+          - zh: 主营业务构成与收入拆分
+            en: Main business composition and revenue breakdown
+          - zh: 各业务板块盈利贡献
+            en: Profit contribution by business segment
+      - id: product_analysis
+        name: Product & Service Analysis
+        points:
+          - zh: 核心产品/服务竞争力
+            en: Core product/service competitiveness
+          - zh: 新产品/服务管线与前景
+            en: New product/service pipeline and prospects
+      - id: business_model
+        name: Business Model
+        points:
+          - zh: 商业模式与盈利模式
+            en: Business model and profit model
+          - zh: 客户结构与渠道分析
+            en: Customer structure and channel analysis
+
+  - id: industry_analysis
+    name: Industry Analysis
+    required: true
+    description: Industry lifecycle, competitive landscape, policy environment
+    sub_sections:
+      - id: industry_position
+        name: Industry Position & Lifecycle
+        points:
+          - zh: 行业生命周期阶段
+            en: Industry lifecycle stage
+          - zh: 公司在行业中的地位
+            en: Company's position in the industry
+      - id: competitive_landscape
+        name: Competitive Landscape
+        points:
+          - zh: 竞争格局与市场份额
+            en: Competitive landscape and market share
+          - zh: 行业进入壁垒
+            en: Industry entry barriers
+      - id: policy_impact
+        name: Policy Impact
+        points:
+          - zh: 相关政策对公司的影响
+            en: Impact of relevant policies on the company
+          - zh: 监管环境变化趋势
+            en: Regulatory environment change trends
+
+  - id: competitive_advantage
+    name: Competitive Advantage
+    required: true
+    description: Technology advantages, regional advantages, moat analysis
+    sub_sections:
+      - id: moat_analysis
+        name: Moat Analysis
+        points:
+          - zh: 核心护城河来源
+            en: Core moat sources
+          - zh: 护城河宽度与可持续性
+            en: Moat width and sustainability
+      - id: tech_advantage
+        name: Technology & Resource Advantages
+        points:
+          - zh: 技术优势与研发能力
+            en: Technology advantages and R&D capability
+          - zh: 区域优势与资源禀赋
+            en: Regional advantages and resource endowment
+
+  - id: financial_analysis
+    name: Financial Analysis
+    required: true
+    description: Financial position, operational quality, key indicators
+    sub_sections:
+      - id: income_statement
+        name: Income Statement Analysis
+        points:
+          - zh: 收入增长趋势与驱动因素
+            en: Revenue growth trends and drivers
+          - zh: 利润率变化与成本结构
+            en: Margin changes and cost structure
+      - id: balance_sheet
+        name: Balance Sheet Analysis
+        points:
+          - zh: 资产结构与质量
+            en: Asset structure and quality
+          - zh: 负债水平与偿债能力
+            en: Debt level and solvency
+      - id: operational_quality
+        name: Operational Quality
+        points:
+          - zh: ROE/ROIC 分解分析
+            en: ROE/ROIC decomposition analysis
+          - zh: 运营效率指标
+            en: Operational efficiency metrics
+
+  - id: valuation
+    name: Valuation & Forecast
+    required: true
+    description: DCF model, PE/PB valuation, earnings forecast
+    sub_sections:
+      - id: dcf_valuation
+        name: DCF Valuation
+        points:
+          - zh: DCF模型关键假设
+            en: DCF model key assumptions
+          - zh: 自由现金流预测
+            en: Free cash flow forecast
+      - id: relative_valuation
+        name: Relative Valuation
+        points:
+          - zh: PE/PB/PS 估值对比
+            en: PE/PB/PS valuation comparison
+          - zh: 可比公司选择与估值倍数
+            en: Comparable company selection and multiples
+      - id: earnings_forecast
+        name: Earnings Forecast
+        points:
+          - zh: 核心盈利指标预测
+            en: Core earnings metrics forecast
+          - zh: 敏感性分析
+            en: Sensitivity analysis
+
+  - id: investment_logic
+    name: Investment Logic
+    required: true
+    description: Investment catalysts, key drivers
+    sub_sections:
+      - id: catalysts
+        name: Investment Catalysts
+        points:
+          - zh: 短期催化因素
+            en: Short-term catalysts
+          - zh: 中长期增长驱动
+            en: Medium-to-long-term growth drivers
+      - id: key_drivers
+        name: Key Drivers
+        points:
+          - zh: 核心增长逻辑
+            en: Core growth logic
+          - zh: 潜在超预期因素
+            en: Potential upside surprise factors
+
+  - id: risks
+    name: Risk Factors
+    required: true
+    description: Key risk factors and impacts
+    sub_sections:
+      - id: business_risks
+        name: Business Risks
+        points:
+          - zh: 经营风险与竞争风险
+            en: Operational and competitive risks
+          - zh: 客户集中度与依赖风险
+            en: Customer concentration and dependency risks
+      - id: financial_risks
+        name: Financial & Market Risks
+        points:
+          - zh: 财务风险与流动性风险
+            en: Financial and liquidity risks
+          - zh: 估值风险与市场风险
+            en: Valuation and market risks

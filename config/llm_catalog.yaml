@@ -1,0 +1,184 @@
+providers:
+  openai:
+    name: OpenAI
+    description: GPT-4o, GPT-4, GPT-3.5 and other models
+    default_endpoint: https://api.openai.com/v1
+  deepseek:
+    name: DeepSeek
+    description: DeepSeek V4 Pro, V4 Flash, Chat, Reasoner
+    default_endpoint: https://api.deepseek.com
+  kimi:
+    name: Kimi (月之暗面)
+    description: Kimi K2.7 Code, K2.6, K2.5, Moonshot
+    default_endpoint: https://api.moonshot.cn/v1
+  zhipu:
+    name: 智谱 (GLM)
+    description: GLM-4.7, GLM-5.1, GLM-5.2
+    default_endpoint: https://open.bigmodel.cn/api/paas/v4
+  qwen:
+    name: 阿里千问
+    description: Qwen-Max, Qwen-Plus, Qwen-Turbo
+    default_endpoint: https://dashscope.aliyuncs.com/compatible-mode/v1
+  volcengine:
+    name: 火山引擎
+    description: Doubao 系列模型
+    # 用户 Ark key 为 coding 计划（仅 coding 端点可用），普通 v3 端点会 404
+    default_endpoint: https://ark.cn-beijing.volces.com/api/coding/v3
+  xiaomi:
+    name: 小米
+    description: MiMo 系列模型
+    default_endpoint: https://xiaomi.ai/api/v1
+  local:
+    name: 本地模型 (Ollama)
+    description: Ollama, LocalAI and other local deployments
+    default_endpoint: http://localhost:11434/v1
+  custom:
+    name: 自定义
+    description: 任何 OpenAI 兼容 API
+    default_endpoint: ""
+
+models:
+  - id: gpt-5.5
+    name: GPT-5.5
+    provider: openai
+    max_tokens: 128000
+    supports_vision: true
+  - id: gpt-5.5-pro
+    name: GPT-5.5 Pro
+    provider: openai
+    max_tokens: 128000
+    supports_vision: true
+  - id: gpt-5.4
+    name: GPT-5.4
+    provider: openai
+    max_tokens: 128000
+    supports_vision: true
+  - id: gpt-5.4-pro
+    name: GPT-5.4 Pro
+    provider: openai
+    max_tokens: 128000
+    supports_vision: true
+  - id: gpt-5.4-mini
+    name: GPT-5.4 Mini
+    provider: openai
+    max_tokens: 128000
+    supports_vision: true
+  - id: gpt-5.4-nano
+    name: GPT-5.4 Nano
+    provider: openai
+    max_tokens: 128000
+
+  - id: deepseek-v4-pro
+    name: DeepSeek V4 Pro
+    provider: deepseek
+    max_tokens: 128000
+  - id: deepseek-v4-flash
+    name: DeepSeek V4 Flash
+    provider: deepseek
+    max_tokens: 128000
+
+  - id: kimi-k2.7-code
+    name: Kimi K2.7 Code
+    provider: kimi
+    max_tokens: 256000
+  - id: kimi-k2.7-code-highspeed
+    name: Kimi K2.7 Code 高速版
+    provider: kimi
+    max_tokens: 256000
+  - id: kimi-k2.6
+    name: Kimi K2.6
+    provider: kimi
+    max_tokens: 256000
+  - id: kimi-k2.5
+    name: Kimi K2.5
+    provider: kimi
+    max_tokens: 256000
+  - id: moonshot-v1-8k
+    name: Moonshot V1 8K
+    provider: kimi
+    max_tokens: 8192
+  - id: moonshot-v1-32k
+    name: Moonshot V1 32K
+    provider: kimi
+    max_tokens: 32768
+  - id: moonshot-v1-128k
+    name: Moonshot V1 128K
+    provider: kimi
+    max_tokens: 131072
+
+  - id: glm-4.7
+    name: GLM-4.7
+    provider: zhipu
+    max_tokens: 128000
+  - id: glm-5.1
+    name: GLM-5.1
+    provider: zhipu
+    max_tokens: 128000
+  - id: glm-5.2
+    name: GLM-5.2
+    provider: zhipu
+    max_tokens: 128000
+
+  - id: qwen-max
+    name: Qwen Max
+    provider: qwen
+    max_tokens: 32000
+  - id: qwen-plus
+    name: Qwen Plus
+    provider: qwen
+    max_tokens: 131072
+  - id: qwen-turbo
+    name: Qwen Turbo
+    provider: qwen
+    max_tokens: 131072
+  - id: qwen-long
+    name: Qwen Long
+    provider: qwen
+    max_tokens: 10000000
+
+  - id: doubao-1.5-pro-32k
+    name: Doubao 1.5 Pro 32K
+    provider: volcengine
+    max_tokens: 32000
+  - id: doubao-1.5-pro-256k
+    name: Doubao 1.5 Pro 256K
+    provider: volcengine
+    max_tokens: 256000
+  - id: doubao-1.5-lite-32k
+    name: Doubao 1.5 Lite 32K
+    provider: volcengine
+    max_tokens: 32000
+  - id: deepseek-v4-flash
+    name: DeepSeek V4 Flash（火山引擎）
+    provider: volcengine
+    max_tokens: 128000
+  - id: kimi-k3
+    name: Kimi K3（火山引擎）
+    provider: volcengine
+    max_tokens: 128000
+
+  - id: mimo
+    name: MiMo
+    provider: xiaomi
+    max_tokens: 131072
+
+  - id: llama3.1
+    name: LLaMA 3.1
+    provider: local
+    max_tokens: 128000
+  - id: llama3.2
+    name: LLaMA 3.2
+    provider: local
+    max_tokens: 128000
+  - id: mistral
+    name: Mistral
+    provider: local
+    max_tokens: 32000
+  - id: codellama
+    name: CodeLLaMA
+    provider: local
+    max_tokens: 16000
+  - id: qwen2.5
+    name: Qwen 2.5
+    provider: local
+    max_tokens: 32000

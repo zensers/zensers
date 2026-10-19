@@ -1,0 +1,89 @@
+# Industry Weekly Report Template
+# Professional use: Regularly updated industry dynamics tracking report
+
+id: industry_weekly_standard
+name: Industry Weekly
+description: Regularly updated industry dynamics tracking report, covering market performance, key developments, and investment views
+output_type: industry_weekly
+estimated_pages: 3-8 pages
+suitable_for:
+  - Regular Tracking
+  - Dynamic Updates
+  - Investment Reference
+supported_formats:
+  - docx
+  - pdf
+category_name: market-analysis
+
+sections:
+  - id: summary
+    name: Summary & Investment Views
+    required: true
+    description: This week's key industry changes and investment recommendations
+    sub_sections:
+      - id: weekly_highlights
+        name: Weekly Highlights
+        description: Top 3-5 key developments this week
+      - id: investment_stance
+        name: Investment Stance
+        description: Overall investment recommendation
+
+  - id: market_performance
+    name: Market Performance Tracking
+    required: true
+    description: Industry index movements, constituent stock distribution, capital flows
+    sub_sections:
+      - id: index_tracking
+        name: Index Tracking
+        description: Industry index performance and comparison
+      - id: capital_flows
+        name: Capital Flows
+        description: Fund flows and foreign/institutional activity
+
+  - id: core_updates
+    name: Key Developments Analysis
+    required: true
+    description: Important news, policy interpretation, major company updates
+    sub_sections:
+      - id: policy_updates
+        name: Policy & Regulation
+        description: New policies and regulatory changes
+      - id: corporate_actions
+        name: Corporate Actions
+        description: Major company announcements and events
+
+  - id: data_monitor
+    name: Data Monitoring
+    required: false
+    description: Industry data changes, key metric tracking
+    sub_sections:
+      - id: price_data
+        name: Price Data
+        description: Commodity/product price changes
+      - id: volume_data
+        name: Volume & Capacity
+        description: Production, inventory, and capacity data
+
+  - id: outlook
+    name: Next Week Outlook
+    required: true
+    description: Forward-looking assessment, key events to watch
+    sub_sections:
+      - id: key_events
+        name: Key Events
+        description: Upcoming events and announcements
+      - id: forward_view
+        name: Forward View
+        description: Expected market direction and catalysts
+
+  - id: risks
+    name: Risk Factors
+    required: true
+    description: Potential risk factors
+    sub_sections:
+      - id: short_term_risks
+        name: Short-term Risks
+        description: Near-term risk factors
+      - id: monitoring_points
+        name: Monitoring Points
+        description: Key signals to watch
