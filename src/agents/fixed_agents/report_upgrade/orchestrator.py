@@ -771,7 +771,10 @@ class ReportOrchestrator:
                 topic,
                 self._merge_repair_sources(original_sources, self._repair_results),
                 quality_report=quality_report,
-                conflicts_summary=conflicts_summary,
+                # L5 状态取组装时刻的注册表实时值——conflicts_summary 参数
+                # 在防御轮之前计算（ses_f8f31c10 实证：冲突已被防御轮
+                # 解决，stale 摘要仍把 L5 烙进审计，报告被误判 blocked）。
+                conflicts_summary=self._data_registry.serialize_conflicts(),
                 llm_trace=self._llm_trace,
                 task_id=self._task_id,
             )

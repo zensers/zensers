@@ -165,19 +165,22 @@ Zensers 的约束层确保研究质量，而非盲目信任 LLM 输出：
 
 ## 案例画廊
 
-> 从行业深度研究到竞品分析，每一份报告都经过多智能体协作、数据交叉验证和专业排版。
+> 以下 6 份报告均由本系统端到端自动生成（多智能体协作 → 数据交叉验证 → 防御审计 → 交付签名），
+> 每份报告附带交付签名（formal/degraded）、口径与方法前置节、编号 Exhibit 与可溯源数据点。
 
-| 案例 | 类型 | 格式 | 字数 | 图表 |
-|------|------|------|------|------|
-| 中国新能源汽车行业深度研究 | 行业研究 | Word + PDF | 25,000+ | 8 |
-| 全球半导体行业深度研究报告 | 行业研究 | Word + HTML | 30,000+ | 10 |
-| 中国智能手机行业研究报告 | 行业研究 | Word | 18,000+ | 6 |
-| 全球锂电池产业链深度报告 | 行业研究 | Word + PDF | 30,000+ | 10 |
-| AI芯片行业竞争格局分析 | 竞品分析 | Word | 15,000+ | 7 |
-| 医疗AI政策环境与市场机遇 | 政策简报 | PDF | 12,000+ | 5 |
-| 动力电池技术路线对比研究 | 学术研究 | Word + PDF | 20,000+ | 9 |
+| # | 案例 | 章节 | 核心数据点 | Exhibit | 交付签名 | 在线预览 |
+|---|------|:---:|:---:|:---:|------|------|
+| 1 | [人形机器人行业分析报告](samples/humanoid-robot.html) | 5 | 70 | 5 | formal / degraded | [HTML](samples/humanoid-robot.html) |
+| 2 | [人工智能行业分析报告](samples/ai-industry.html) | 5 | 73 | 5 | formal / degraded | [HTML](samples/ai-industry.html) |
+| 3 | [半导体行业分析报告](samples/semiconductor.html) | 6 | 51 | 6 | formal / degraded | [HTML](samples/semiconductor.html) |
+| 4 | [固态电池行业分析报告](samples/solid-state-battery.html) | 5 | 78 | 5 | formal / degraded | [HTML](samples/solid-state-battery.html) |
+| 5 | [新能源汽车市场研究](samples/nev-market.html)（快速版） | 2 | 66 | 2 | formal / degraded | [HTML](samples/nev-market.html) |
+| 6 | [人工智能行业深度报告](samples/ai-industry-deep.html)（7 章深度版） | 7 | 30 | 13 | formal / degraded | [HTML](samples/ai-industry-deep.html) |
 
-**[浏览完整案例画廊 →](https://zensers.github.io/zensers/cases/)**
+**交付签名说明**：`formal` = 全部章节通过验收；`degraded` = 存在未完全核验的
+证据链（如实标注，不隐瞒）；每份报告的"口径、假设与方法"前置节集中声明统计口径，
+正文中所有关键数字均可溯源至 30+ 实名机构来源（IDC、Stanford HAI、Gartner、
+Fortune Business Insights、新华网等）。
 
 ---
 

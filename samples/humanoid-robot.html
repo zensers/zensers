@@ -1,0 +1,1045 @@
+﻿<!DOCTYPE html>
+
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<title>人形机器人行业</title>
+<style>
+        /* ============================================
+           国际出版物标准报告模板 v3.0
+           International Publication Standard Template
+           
+           配色方案：墨蓝 + 暖金 + 暖灰（专业出版物风格）
+           字体方案：黑体(标题) / 宋体(正文) / Times New Roman(数字)
+           字号方案：五号 10.5pt 为基准（中文出版物标准）
+           版心方案：A4 标准天头地脚
+           ============================================ */
+
+        /* --- 页面布局 --- */
+        @page {
+            size: A4;
+            margin: 2.5cm 2.5cm 3cm 2.5cm;
+        }
+
+        body {
+            font-family: 'SimSun', 'Noto Serif CJK SC', 'Source Han Serif SC', serif;
+            font-size: 11pt;
+            line-height: 1.8;
+            color: #2C2C2C;
+            margin: 0;
+            padding: 0;
+            text-align: justify;
+            orphans: 2;
+            widows: 2;
+        }
+
+        @media screen {
+            body {
+                padding: 0 40px;
+            }
+            article.document {
+                max-width: 210mm;
+                margin: 0 auto;
+            }
+            .cover-page, .toc {
+                max-width: 210mm;
+                margin-left: auto;
+                margin-right: auto;
+            }
+        }
+
+        /* ============================================
+           封面页
+           ============================================ */
+        .cover-page {
+            text-align: center;
+            padding-top: 200px;
+            page-break-after: always;
+        }
+
+        .cover-page .cover-badge {
+            font-family: 'Times New Roman', serif;
+            font-size: 10pt;
+            color: #B8975A;
+            letter-spacing: 8pt;
+            text-transform: uppercase;
+            margin-bottom: 48px;
+        }
+
+        .cover-page h1 {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 28pt;
+            font-weight: bold;
+            color: #1C2B36;
+            margin: 0 auto 24px;
+            max-width: 80%;
+            line-height: 1.35;
+        }
+
+        .cover-page .subtitle {
+            font-family: 'SimSun', 'Noto Serif CJK SC', serif;
+            font-size: 14pt;
+            color: #2C4A5A;
+            margin-bottom: 60px;
+            line-height: 1.6;
+            text-align: center;
+        }
+
+        .cover-page .meta {
+            font-family: 'SimSun', serif;
+            font-size: 11pt;
+            color: #888888;
+            margin-top: 120px;
+            line-height: 2;
+            text-align: center;
+        }
+
+        .cover-page .meta-separator {
+            width: 60px;
+            height: 2px;
+            background: #B8975A;
+            margin: 0 auto 40px;
+            border: none;
+        }
+
+        /* ============================================
+           目录页
+           ============================================ */
+        .toc {
+            page-break-after: always;
+        }
+
+        .toc h2 {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1C2B36;
+            text-align: center;
+            letter-spacing: 12pt;
+            margin-bottom: 48px;
+        }
+
+        .toc-item {
+            font-family: 'SimSun', serif;
+            font-size: 12pt;
+            color: #2C2C2C;
+            padding: 10pt 0;
+            border-bottom: 1px dotted #D6D2C9;
+        }
+
+        .toc-item a {
+            color: #2C2C2C;
+            text-decoration: none;
+        }
+
+        /* ============================================
+           正文 - 章标题（一级）
+           ============================================ */
+        h1.chapter-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 18pt;
+            font-weight: bold;
+            color: #1C2B36;
+            margin-top: 30pt;
+            margin-bottom: 16pt;
+            padding-bottom: 10pt;
+            border-bottom: 2px solid #B8975A;
+        }
+
+        /* ============================================
+           正文 - 节标题（二级）
+           ============================================ */
+        h2.section-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 14pt;
+            font-weight: bold;
+            color: #2C4A5A;
+            margin-top: 22pt;
+            margin-bottom: 10pt;
+        }
+
+        /* ============================================
+           正文 - 小节标题（三级）
+           ============================================ */
+        h3.subsection-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 12pt;
+            font-weight: bold;
+            color: #1C2B36;
+            margin-top: 16pt;
+            margin-bottom: 8pt;
+        }
+
+        h4.sub-subsection-title {
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 11pt;
+            font-weight: bold;
+            color: #3A3A3A;
+            margin-top: 12pt;
+            margin-bottom: 6pt;
+        }
+
+        /* ============================================
+            正文段落
+            ============================================ */
+        .section-content p,
+        p.para {
+            font-family: 'SimSun', 'Noto Serif CJK SC', serif;
+            font-size: 11pt;
+            line-height: 1.8;
+            color: #2C2C2C;
+            text-align: justify;
+            text-indent: 2em;
+            margin-bottom: 0;
+            orphans: 2;
+            widows: 2;
+        }
+
+        /* 段落间间距 */
+        .section-content p + p,
+        p.para + p.para {
+            margin-top: 0.5em;
+        }
+
+        /* ============================================
+            列表
+            ============================================ */
+        ul, ol {
+            font-family: 'SimSun', serif;
+            font-size: 10.5pt;
+            line-height: 1.8;
+            color: #2C2C2C;
+            margin: 8pt 0;
+            padding-left: 2.5em;
+        }
+
+        li {
+            margin-bottom: 2pt;
+        }
+
+        /* 嵌套列表缩进 */
+        ul ul, ol ol, ul ol, ol ul {
+            margin: 4pt 0;
+            padding-left: 2em;
+        }
+
+        /* ============================================
+            图片
+            ============================================ */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 12pt auto;
+        }
+
+        .section-content img {
+            max-width: 90%;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        /* ============================================
+           表格
+           ============================================ */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16pt 0;
+            font-size: 10pt;
+        }
+
+        caption.table-caption {
+            font-family: 'SimHei', sans-serif;
+            font-size: 10pt;
+            font-weight: bold;
+            color: #1C2B36;
+            text-align: center;
+            margin-bottom: 8pt;
+        }
+
+        thead th {
+            background: #1C2B36;
+            color: #FFFFFF;
+            font-family: 'SimHei', 'Microsoft YaHei', sans-serif;
+            font-size: 10pt;
+            font-weight: bold;
+            padding: 8pt 10pt;
+            text-align: left;
+            border: none;
+        }
+
+        tbody td {
+            padding: 6pt 10pt;
+            border-bottom: 1px solid #D6D2C9;
+            color: #2C2C2C;
+            font-size: 10pt;
+        }
+
+        tbody tr:nth-child(even) td {
+            background: #F5F3EF;
+        }
+
+        /* ============================================
+            关键发现 / 引用框
+            ============================================ */
+        .key-findings {
+            background: #F8F7F4;
+            border: 1px solid #E8E4DC;
+            border-radius: 6px;
+            padding: 20pt 24pt;
+            margin: 20pt 0;
+        }
+
+        .key-findings h2 {
+            font-family: 'SimHei', sans-serif;
+            font-size: 14pt;
+            color: #1C2B36;
+            margin-top: 0;
+            margin-bottom: 12pt;
+            padding-bottom: 8pt;
+            border-bottom: 2px solid #B8975A;
+        }
+
+        .key-findings ul {
+            margin: 0;
+            padding-left: 1.5em;
+        }
+
+        .key-findings li {
+            margin-bottom: 8pt;
+            line-height: 1.7;
+        }
+
+        .highlight-box {
+            background: #F8F7F4;
+            border-left: 4px solid #B8975A;
+            padding: 14pt 18pt;
+            margin: 16pt 0;
+            font-size: 10.5pt;
+            line-height: 1.7;
+            color: #2C2C2C;
+        }
+
+        .highlight-box strong {
+            color: #1C2B36;
+            font-family: 'SimHei', sans-serif;
+        }
+
+        .quote-block {
+            background: #F8F7F4;
+            border-left: 4px solid #2C4A5A;
+            padding: 12pt 16pt;
+            margin: 12pt 0;
+            font-style: italic;
+            color: #2C4A5A;
+        }
+
+        /* ============================================
+            图表说明
+            ============================================ */
+        .figure-caption {
+            font-size: 10pt;
+            color: #888888;
+            text-align: center;
+            margin-top: 6pt;
+        }
+
+        /* ============================================
+            代码块
+            ============================================ */
+        pre.code-block {
+            background: #F5F3EF;
+            border: 1px solid #E8E4DC;
+            border-radius: 4px;
+            padding: 12pt 16pt;
+            margin: 12pt 0;
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-size: 9pt;
+            line-height: 1.5;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        pre.code-block code {
+            font-family: inherit;
+        }
+
+        /* ============================================
+           Logo
+           ============================================ */
+        .logo {
+            width: 90px;
+            height: auto;
+            margin-bottom: 10px;
+            opacity: 0.85;
+        }
+
+        /* ============================================
+           水印（可选）
+           ============================================ */
+        .watermark {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 48pt;
+            color: rgba(153, 153, 153, 0.15);
+            pointer-events: none;
+            z-index: -1;
+            font-family: 'Times New Roman', serif;
+        }
+    </style>
+</head>
+<body><div class="report-delivery-status report-delivery-status-warning" role="status">诊断版 / 草稿版：本文件包含质量或渲染警告，不应作为正式报告使用。</div>
+<div class="cover-page">
+<h1>人形机器人行业</h1>
+<div class="meta-separator"></div>
+<p class="meta">2026-10-20</p>
+</div>
+<div class="toc">
+<h2>目 录</h2>
+<div class="toc-item">
+<a href="#section_0::sub_0_0">市场规模与增长预测</a>
+</div>
+<div class="toc-item">
+<a href="#section_1::sub_1_0">关键技术演进</a>
+</div>
+<div class="toc-item">
+<a href="#section_2::sub_2_0">厂商格局与份额</a>
+</div>
+<div class="toc-item">
+<a href="#section_3::sub_3_0">政策与标准</a>
+</div>
+<div class="toc-item">
+<a href="#section_4::sub_4_0">产业链结构与价值分布</a>
+</div>
+</div>
+<article class="document">
+<div class="key-findings">
+<h2>关键发现</h2>
+<ul>
+<li>2026年行业从动作展示向自主作业质变，整体处L3向L4过渡；产业链呈上游高价值、中游拼集成、下游定场景结构，上游核心零部件占整机成本超50%，是技术壁垒最高、降本潜力最大环节；未来1—2年具身智能大模型有望在受控工业场景率先实现L4级自主作业。</li><li>Fortune Business Insights：2025、2026、2034年全球人形机器人市场规模分别为48.9亿、62.4亿、1651.3亿美元（来源：市场规模章节）。</li><li>Straits Research预测2034年全球人形机器人市场规模为481.4亿美元（来源：市场规模章节）。</li><li>特斯拉2026年产量目标5万—10万台，量产目标成本2万—3万美元，与现有成本差距显著（来源：竞争格局章节）。</li><li>2026年上半年中国出货量超4万台；中国内地整机企业数量占全球一半以上（来源：竞争格局/产业链章节）。</li><li>市场远期规模预测口径差异明显，商业化落地节奏与实际可及空间存在较高不确定性。关键集中在全球及分厂商市场份额：公开数据有限，缺乏权威存量口径。竞争格局走向高度依赖特斯拉产量目标能否兑现：若兑现或呈“一超多强”，否则可能走向“多强均势”。未来竞争焦点在制造良率与成本曲线，行业正处于标准化补课期，标准文件密集起草、征求意见与首批发布是关键窗口；执行器与灵巧手成本下降曲线是否按预期启动，以及量产目标成本能否兑现，是后续关键观察点。</li>
+</ul>
+</div>
+<table>
+<caption class="table-caption">Key Data</caption>
+<thead>
+<tr>
+<th>Metric</th><th>Value</th><th>Unit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>全球人形机器人市场规模（2025年）</td><td>48.9</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模（预测，2026年）</td><td>62.4</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模（预测，2034年）</td><td>1651.3</td><td>亿美元</td>
+</tr><tr>
+<td>全球市场复合年增长率（预测，2026—2034年）</td><td>50.60</td><td>%</td>
+</tr><tr>
+<td>全球人形机器人市场规模（2025年，Straits Research）</td><td>47</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模（预测，2034年，Straits Research）</td><td>481.4</td><td>亿美元</td>
+</tr><tr>
+<td>全球市场复合年增长率（隐含推算，2025—2034年）</td><td>约29.5</td><td>%</td>
+</tr><tr>
+<td>中国人形机器人出货量（2026年上半年）</td><td>超4万</td><td>台</td>
+</tr><tr>
+<td>全球整机商业公司数量（截至2024年）</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国内地整机商业公司数量（截至2024年）</td><td>超80</td><td>家</td>
+</tr><tr>
+<td>中国内地通用人形机器人整机商业公司数量（截至2024年）</td><td>超80</td><td>家</td>
+</tr><tr>
+<td>特斯拉人形机器人产量目标（2026年）</td><td>5万—10万</td><td>台</td>
+</tr><tr>
+<td>全球工业机器人安装市场价值（未注明时间）</td><td>167</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模（预测）</td><td>62.4</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模（预测）</td><td>1651.3</td><td>亿美元</td>
+</tr><tr>
+<td>全球市场复合年增长率（预测）</td><td>50.60</td><td>%</td>
+</tr><tr>
+<td>全球人形机器人市场规模（预测）</td><td>481.4</td><td>亿美元</td>
+</tr><tr>
+<td>全球市场复合年增长率（隐含推算）</td><td>约29.5</td><td>%</td>
+</tr><tr>
+<td>中国人形机器人出货量</td><td>超4万</td><td>台</td>
+</tr><tr>
+<td>全球整机商业公司数量</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国内地整机商业公司数量</td><td>超80</td><td>家</td>
+</tr><tr>
+<td>特斯拉人形机器人产量目标</td><td>5万—10万</td><td>台</td>
+</tr><tr>
+<td>全球工业机器人安装市场价值</td><td>167</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模（2025年，全球）</td><td>48.9</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模预测（2026年，全球）</td><td>62.4</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模预测（2034年，全球）</td><td>1651.3</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场复合年增长率（2026—2034年，全球）</td><td>50.60</td><td>%</td>
+</tr><tr>
+<td>全球人形机器人市场规模（2025年，全球）</td><td>47</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场规模预测（2034年，全球）</td><td>481.4</td><td>亿美元</td>
+</tr><tr>
+<td>全球人形机器人市场复合年增长率（2025—2034年，隐含）</td><td>约29.5</td><td>%</td>
+</tr><tr>
+<td>中国人形机器人出货量（2026年上半年，中国）</td><td>超4万</td><td>台</td>
+</tr><tr>
+<td>全球通用人形机器人整机商业公司数量（截至2024年，全球）</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>特斯拉人形机器人产量目标（2026年，特斯拉全球）</td><td>5万—10万</td><td>台</td>
+</tr><tr>
+<td>全球工业机器人安装市场价值（时间未注明，全球）</td><td>167</td><td>亿美元</td>
+</tr><tr>
+<td>量产目标成本（speculative）</td><td>2万—3万</td><td>美元</td>
+</tr><tr>
+<td>全球通用人形机器人整机商业公司（截至2024年）</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国内地人形机器人整机商业公司（截至2024年）</td><td>超80</td><td>家</td>
+</tr><tr>
+<td>特斯拉2026年产量目标（speculative）</td><td>5万—10万</td><td>台</td>
+</tr><tr>
+<td>特斯拉2026年产量目标上限（speculative）</td><td>10万</td><td>台</td>
+</tr><tr>
+<td>2034年全球市场规模（降本不及预期）</td><td>481</td><td>亿美元</td>
+</tr><tr>
+<td>2034年全球市场规模（降本顺利）</td><td>1651</td><td>亿美元</td>
+</tr><tr>
+<td>全球通用人形机器人整机商业公司数量（截至2024年）</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国内地人形机器人整机商业公司数量（截至2024年）</td><td>超80</td><td>家</td>
+</tr><tr>
+<td>中国内地整机公司全球占比</td><td>超50</td><td>%</td>
+</tr><tr>
+<td>特斯拉2026年人形机器人产量目标</td><td>5万—10万</td><td>台</td>
+</tr><tr>
+<td>2026年上半年中国人形机器人出货量</td><td>超4万</td><td>台</td>
+</tr><tr>
+<td>全球通用人形机器人整机商业公司数量</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国内地人形机器人整机商业公司数量</td><td>超80</td><td>家</td>
+</tr><tr>
+<td>标准化技术委员会成立时间</td><td>2026年1月</td><td>—</td>
+</tr><tr>
+<td>行业标准完善预期</td><td>2026年</td><td>—</td>
+</tr><tr>
+<td>地方认证服务指南发布</td><td>2025年</td><td>项</td>
+</tr><tr>
+<td>地方场景案例集发布</td><td>2025年</td><td>项</td>
+</tr><tr>
+<td>特斯拉2026年产量目标</td><td>5万-10万</td><td>台</td>
+</tr><tr>
+<td>2034年全球市场规模预测（Straits Research）</td><td>481</td><td>亿美元</td>
+</tr><tr>
+<td>2034年全球市场规模预测（Fortune Business Insights）</td><td>1651</td><td>亿美元</td>
+</tr><tr>
+<td>中国人形机器人相关企业数量（截至新浪财经报告发布时）</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国人形机器人相关企业数量</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>中国人形机器人相关企业数量（截至新浪财经报告发布时，中国）</td><td>约150</td><td>家</td>
+</tr><tr>
+<td>人形机器人成本/售价（2025年）</td><td>超200</td><td>万美元</td>
+</tr><tr>
+<td>人形机器人成本/售价</td><td>超200</td><td>万美元</td>
+</tr><tr>
+<td>人形机器人成本/售价（2025年，全球）</td><td>超200万</td><td>美元</td>
+</tr><tr>
+<td>人形机器人整机成本/售价</td><td>超200</td><td>万美元</td>
+</tr><tr>
+<td>特斯拉人形机器人量产目标成本</td><td>2万—3万</td><td>美元</td>
+</tr><tr>
+<td>本田、NASA/通用汽车、波士顿动力等人形机器人单台成本/售价</td><td>超200万</td><td>美元</td>
+</tr><tr>
+<td>人形机器人单台成本/售价</td><td>超200万</td><td>美元</td>
+</tr><tr>
+<td>人形机器人量产目标成本</td><td>2万-3万</td><td>美元</td>
+</tr><tr>
+<td>产业基础报告发布</td><td>2026年8月</td><td>份</td>
+</tr><tr>
+<td>中国内地通用人形机器人整机商业公司数量（截至2024年，中国）</td><td>超过80</td><td>家</td>
+</tr><tr>
+<td>全球人形机器人市场规模</td><td>48.9</td><td>亿美元</td>
+</tr><tr>
+<td>上游核心零部件占整机成本比重</td><td>超50%</td><td>%</td>
+</tr>
+</tbody>
+</table>
+<section id="section_0::sub_0_0">
+<h1 class="chapter-title">市场规模与增长预测</h1>
+<div class="section-content">
+<p class="para">全球人形机器人市场正处于从技术验证迈向商业化量产的关键转折期，市场规模量级跃升的窗口已经打开。据Fortune Business Insights（全球口径）测算，全球人形机器人市场规模2025年为48.9亿美元，预计2026年增至62.4亿美元，并按50.60%的复合年增长率（2026—2034年）增长至2034年的1651.3亿美元；Straits Research的独立测算亦指向同一方向，预测2034年市场规模达481.4亿美元。</p>
+<h3 class="subsection-title">论证与分析</h3>
+<p class="para">全球市场进入爆发式增长通道，机构预测方向一致、绝对值存有分歧。Fortune Business Insights数据显示，2025年全球人形机器人市场规模为48.9亿美元，预计2026年增至62.4亿美元，2034年达1651.3亿美元，2026—2034年复合年增长率50.60%。两套预测的绝对值差异（2034年相差逾千亿美元）主要源于对量产时间表、应用场景渗透速度与单机价格下降曲线的假设不同，但"市场正从数十亿美元级向千亿美元级跃迁"的方向性判断高度一致。从更宏观的机器人产业视角看，国际机器人联合会（IFR）数据显示，全球工业机器人安装市场价值已达167亿美元；人形机器人作为具身智能的核心载体，其应用场景与工业机器人存在交叉，有望在工业机器人存量市场的基础上拓展新的增量空间（推理性判断）。</p>
+<p class="para">全球与中国市场统计口径不同，本文不将两者直接合并比较。 从产业主体与出货量两个维度可以部分验证这一判断（推理性判断）。</p>
+<p class="para">从产业主体数量与出货量增速来看，中国市场规模的中长期想象空间较大（推理性判断）。。</p>
+<p class="para">需要说明的是，以人民币计价的中国市场规模目前尚无统一的公开统计口径，出货量与产业主体数量是刻画其规模特征的最直接指标。</p>
+<p class="para">出货量预测指向规模化量产拐点（推测性判断）。叠加中国厂商的出货计划，行业2026年全球出货量有望实现规模化放量（推测性判断）。出货量预测的锚点已从实验室样机转向头部厂商已公布量产目标与已有出货量数据（推理性判断）。</p>
+<p class="para"><strong>成本下降是市场从"亿级"走向"千亿级"的核心变量。</strong> 各机构市场规模预测的分歧，可能主要来自对成本下降曲线、量产时间表、应用场景渗透速度与统计口径的不同假设。《2025年人形机器人产业发展蓝皮书》指出，目前本田、NASA与通用汽车、波士顿动力等人形机器人成本或售价均超过200万美元。若以2万—3万美元作为可量产的目标成本区间（此系作者情景假设），则意味着极为可观的压缩空间，这一路径的兑现速度将直接决定2034年全球市场规模落在481.4亿美元（Straits Research口径）还是1651.3亿美元（Fortune Business Insights口径）。零部件国产化替代与规模效应释放，将是短期内成本曲线下移的两大引擎。</p>
+<p class="para">未来一段时期将决定市场规模预测的验证方向。整机厂商的竞争重心应从样机演示转向量产良率与真实场景交付能力；投资者应以季度出货数据而非远期愿景作为跟踪锚点。</p>
+<h3 class="subsection-title">数据支撑</h3>
+<p class="para"><strong>Exhibit 1｜市场规模与增长预测</strong></p>
+<table class="data-table">
+<thead><tr>
+<th style="text-align:left">指标</th>
+<th style="text-align:left">数值</th>
+<th style="text-align:left">地理口径</th>
+<th style="text-align:left">时间口径</th>
+<th style="text-align:left">来源</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">全球人形机器人市场规模</td>
+<td style="text-align:left">48.9亿美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2025年</td>
+<td style="text-align:left">Fortune Business Insights</td>
+</tr>
+<tr>
+<td style="text-align:left">全球人形机器人市场规模（预测）</td>
+<td style="text-align:left">62.4亿美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2026年</td>
+<td style="text-align:left">Fortune Business Insights</td>
+</tr>
+<tr>
+<td style="text-align:left">全球人形机器人市场规模（预测）</td>
+<td style="text-align:left">1651.3亿美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2034年</td>
+<td style="text-align:left">Fortune Business Insights</td>
+</tr>
+<tr>
+<td style="text-align:left">全球市场复合年增长率（预测）</td>
+<td style="text-align:left">50.60%</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2026—2034年</td>
+<td style="text-align:left">Fortune Business Insights</td>
+</tr>
+<tr>
+<td style="text-align:left">全球人形机器人市场规模</td>
+<td style="text-align:left">47亿美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2025年</td>
+<td style="text-align:left">Straits Research</td>
+</tr>
+<tr>
+<td style="text-align:left">全球人形机器人市场规模（预测）</td>
+<td style="text-align:left">481.4亿美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2034年</td>
+<td style="text-align:left">Straits Research</td>
+</tr>
+<tr>
+<td style="text-align:left">全球市场复合年增长率（隐含推算）</td>
+<td style="text-align:left">约29.5%</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2025—2034年（隐含）</td>
+<td style="text-align:left">Straits Research（推算）</td>
+</tr>
+<tr>
+<td style="text-align:left">中国人形机器人出货量</td>
+<td style="text-align:left">超4万台</td>
+<td style="text-align:left">中国</td>
+<td style="text-align:left">2026年上半年</td>
+<td style="text-align:left">中国人形机器人与具身智能百人会</td>
+</tr>
+<tr>
+<td style="text-align:left">全球整机商业公司数量</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">截至2024年</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地整机商业公司数量</td>
+<td style="text-align:left">超80家</td>
+<td style="text-align:left">中国</td>
+<td style="text-align:left">截至2024年</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地通用人形机器人整机商业公司数量</td>
+<td style="text-align:left">超80家</td>
+<td style="text-align:left">中国</td>
+<td style="text-align:left">截至2024年</td>
+<td style="text-align:left">知乎专栏（https://zhuanlan.zhihu.com/p/1951970206575499155）</td>
+</tr>
+<tr>
+<td style="text-align:left">中国人形机器人相关企业数量</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">中国</td>
+<td style="text-align:left">截至新浪财经报告发布时</td>
+<td style="text-align:left">新浪财经</td>
+</tr>
+<tr>
+<td style="text-align:left">特斯拉人形机器人产量目标</td>
+<td style="text-align:left">5万—10万台</td>
+<td style="text-align:left">特斯拉（全球产量目标）</td>
+<td style="text-align:left">2026年</td>
+<td style="text-align:left">特斯拉（马斯克公开表态）</td>
+</tr>
+<tr>
+<td style="text-align:left">上游核心零部件占整机成本比重</td>
+<td style="text-align:left">超50%</td>
+<td style="text-align:left">产业链</td>
+<td style="text-align:left">2026年</td>
+<td style="text-align:left">全球人形机器人行业研究报告（2026）</td>
+</tr>
+<tr>
+<td style="text-align:left">人形机器人成本/售价</td>
+<td style="text-align:left">超200万美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">2025年</td>
+<td style="text-align:left">2025年人形机器人产业发展蓝皮书</td>
+</tr>
+<tr>
+<td style="text-align:left">全球工业机器人安装市场价值</td>
+<td style="text-align:left">167亿美元</td>
+<td style="text-align:left">全球</td>
+<td style="text-align:left">未注明</td>
+<td style="text-align:left">国际机器人联合会（IFR）</td>
+</tr>
+</tbody>
+</table>
+<h3 class="subsection-title">风险提示</h3>
+<p class="para">其二，出货量预测高度依赖特斯拉等头部企业的量产承诺兑现，量产时间表存在跳票风险；其三，成本从当前超过200万美元的水平降至情景假设的2万—3万美元区间的路径尚未被任何厂商完整验证，核心零部件降本速度存在不确定性；其四，中国市场规模目前缺乏以人民币计价的统一公开统计口径，本章以出货量和企业数量作为替代指标，待官方统计体系完善后相关结论需复核更新。</p>
+
+</div>
+<figure class="chart-container">
+<img alt="2025年基期两家机构测算接近（48.9亿 vs 47亿美元），分歧集中于2034年终值；Straits Research的隐含CAGR由2025年基期与2034年预测值推算得出，非原报告披露值。" src="charts/bar_6289_aa7ff8882c_1.png" style="max-width:100%"/>
+<figcaption class="figure-caption">2025年基期两家机构测算接近（48.9亿 vs 47亿美元），分歧集中于2034年终值；Straits Research的隐含CAGR由2025年基期与2034年预测值推算得出，非原报告披露值。</figcaption>
+</figure><figure class="chart-container">
+<img alt="当前成本“超200万美元”按200万美元下限取值，目标成本取2万—3万美元区间中值3万美元，故实际压缩幅度应不低于图中所示。" src="charts/waterfall_8048_aa7ff8882c_2.png" style="max-width:100%"/>
+<figcaption class="figure-caption">当前成本“超200万美元”按200万美元下限取值，目标成本取2万—3万美元区间中值3万美元，故实际压缩幅度应不低于图中所示。</figcaption>
+</figure>
+</section><section id="section_1::sub_1_0">
+<h1 class="chapter-title">关键技术演进</h1>
+<div class="section-content">
+<h3 class="subsection-title">核心结论</h3>
+<p class="para"><strong>2026年，人形机器人技术正经历从"动作展示"向"自主作业"的质变：具身智能大模型赋予机器人任务理解与泛化能力，灵巧手与执行器决定作业精度上限，运动控制算法实现动态平衡与复杂环境适应，行业整体处于L3向L4过渡阶段。</strong></p>
+<h3 class="subsection-title">论证与分析</h3>
+<p class="para">本章聚焦具身智能大模型、灵巧手与执行器、运动控制算法三条主线，感知（视觉/触觉/力觉）、仿真训练与软件中间件等关键技术环节的演进不在本章展开。</p>
+<h4 class="sub-subsection-title">1. 具身智能大模型：从"完成任务"走向"创造价值"的智能内核</h4>
+<p class="para">人形机器人的本质是AI系统的物理落地形态。在"大数据+高算力+强算法"的技术范式驱动下，具身智能大模型成为连接感知、决策与执行的枢纽：模型通过海量真实场景数据学习任务语义，将自然语言指令映射为可执行的动作序列，使机器人从"单一执行工具"升级为具备场景泛化能力的"数字劳动力"。这一转变的核心支撑，正是具身智能大模型带来的任务理解与迁移能力。</p>
+<p class="para">从产业演进节奏看，2026年是人形机器人行业具身智能落地的关键节点，行业正从技术探索迈入商业化量产前夜。人形机器人正在跨过从动作展示走向自主作业、从样机交付走向批量制造、从融资故事走向真实订单三道门槛。这意味着具身智能大模型的评估标准，已从实验室demo转向真实工位场景的任务完成率与运行稳定性。需说明的是，上述产业节点的公开量化数据有限，相关观察以行业定性判断为主。</p>
+<h4 class="sub-subsection-title">2. 灵巧手与执行器：占整机成本过半的高价值技术壁垒</h4>
+<p class="para">人形机器人的"肉身"质量直接决定作业能力的上限。当前行业整机成本与售价仍处于高位：据《2025年人形机器人产业发展蓝皮书》，本田、NASA与通用汽车、波士顿动力等人形机器人产品成本或售价均超过200万美元；马斯克则公开表示，人形机器人成本至少要控制在2万至3万美元之间才能实现量产。基于蓝皮书成本区间上限与马斯克目标成本下限推算，当前实验室/小批量机型与量产目标之间存在约几十倍至百倍的成本落差，意味着执行器与灵巧手在材料、工艺与规模效应方面仍有极大释放空间。</p>
+<p class="para">产业链层面，中国已形成从关键芯片、部组件到整机制造的较为完整的供应链体系（据中国人形机器人与具身智能百人会《2026年人形机器人产业发展报告》），上游环节的国产替代与工艺迭代，正推动核心部件从"精密定制"走向"批量制造"。</p>
+<h4 class="sub-subsection-title">3. 运动控制算法：从"能走"到"能干"的动态作业跨越</h4>
+<p class="para">运动控制是人形机器人从实验室走向真实场景的基础能力。该领域公开量化数据有限，动态平衡、步态规划与长时间运行可靠性的行业进展，目前多以定性观察形式呈现，尚缺乏统一的任务成功率、连续作业时间与故障间隔等指标披露。行业技术验证的焦点正从"空翻"等极限运动表现，转向"接住一片落叶"式的精细柔顺操作（行业定性观察，非数据事实），标志着运动控制算法与灵巧手执行器的协同正持续深化。</p>
+<p class="para">据《2025年人形机器人产业发展蓝皮书》，目前人形机器人正从L3向L4过渡：L3阶段机器人在特定场景具备自主作业能力，L4则要求在更广泛的非结构化环境中实现高度自主。中国内地整机厂商在双足、轮式等不同本体路线上的探索持续深化，构型呈多元并行态势，进一步加速了运动控制算法的场景适配。</p>
+<h4 class="sub-subsection-title">4. 技术路线对比：多元并行，尚未收敛</h4>
+<p class="para">全球人形机器人技术路线呈现"通用平台"与"场景专用"并行演进的格局。技术路线的分化主要体现在三个层面：本体构型（双足、轮式与复合式）、驱动方案（电驱动与液压驱动等）以及智能架构（云端大模型与端侧模型）。</p>
+<p class="para">中国整机厂商则呈现构型更多元、场景切入更分散的特征，真实工位场景的产线落地探索属于行业关注方向，但该领域公开数据有限，具体企业进展难以量化核实。不同路线尚未收敛，技术标准与评测体系仍在建立之中，预计行业标准将进一步完善，为技术路线收敛提供制度基础。</p>
+<h4 class="sub-subsection-title">前瞻性判断（未来一至两年）</h4>
+<p class="para">基于当前技术演进节奏，我们预计未来一至两年人形机器人技术将沿三条主线推进：其一，具身智能大模型有望在受控工业场景率先实现L4级自主作业，任务泛化能力从"单一工位"扩展至"产线级多工序"（假设前提：高质量训练数据采集规模持续扩大，模型泛化性能提升符合预期）；其二，执行器与灵巧手在规模量产带动下沿成本下降曲线实质性启动，量产机型与当前实验室/小批量机型之间约几十倍至百倍的成本落差（基于蓝皮书成本区间上限与马斯克目标成本下限推算）有望显著收窄，为2万—3万美元量产目标逐步兑现创造条件；其三，行业标准与评测体系完善将加速技术路线收敛。若降本不及预期，2034年全球市场规模更接近Straits Research的481亿美元预测值；若降本顺利，则接近Fortune Business Insights的1651亿美元预测值。</p>
+<h3 class="subsection-title">数据支撑</h3>
+<p class="para"><strong>Exhibit 2｜关键技术演进</strong></p>
+<table class="data-table">
+<thead><tr>
+<th style="text-align:left">指标</th>
+<th style="text-align:left">数值</th>
+<th style="text-align:left">来源</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">上游核心零部件占整机成本比重</td>
+<td style="text-align:left">超50%</td>
+<td style="text-align:left">全球人形机器人行业研究报告（2026）</td>
+</tr>
+<tr>
+<td style="text-align:left">人形机器人整机成本/售价</td>
+<td style="text-align:left">超200万美元</td>
+<td style="text-align:left">2025年人形机器人产业发展蓝皮书</td>
+</tr>
+<tr>
+<td style="text-align:left">量产目标成本</td>
+<td style="text-align:left">2万—3万美元</td>
+<td style="text-align:left">马斯克公开预测（2025年人形机器人产业发展蓝皮书引用）</td>
+</tr>
+<tr>
+<td style="text-align:left">全球通用人形机器人整机商业公司（截至2024年）</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地人形机器人整机商业公司（截至2024年）</td>
+<td style="text-align:left">超80家</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">特斯拉2026年产量目标</td>
+<td style="text-align:left">5万—10万台</td>
+<td style="text-align:left">马斯克公开预测</td>
+</tr>
+</tbody>
+</table>
+<h3 class="subsection-title">风险提示</h3>
+<p class="para">本章分析中的不确定性主要来自技术量化基准缺失与行业标准建设两方面：其一，具身智能大模型、运动控制算法与灵巧手等细分领域目前公开的量化评测基准有限，不同厂商披露的"自主作业能力""任务成功率"等指标口径不一，横向对比存在局限；其二，行业标准体系尚处建设初期，技术路线尚未收敛，L4级自主作业的落地时间表存在较大不确定性；其四，成本下降曲线的兑现速度取决于执行器工艺成熟度与上游规模效应，若降本进度不及预期，技术进步将难以同步转化为出货量增长，2034年全球市场规模将更接近Straits Research的481亿美元预测值；若降本顺利，则更接近Fortune Business Insights的1651亿美元预测值。</p>
+
+</div>
+<figure class="chart-container">
+<img alt="按蓝皮书披露成本区间上限与马斯克目标成本下限推算，实验室/小批量机型与量产目标之间存在约67—100倍成本落差；降本空间主要落在执行器与灵巧手的材料、工艺与规模效应上。" src="charts/waterfall_3389_aa7ff8882c_3.png" style="max-width:100%"/>
+<figcaption class="figure-caption">按蓝皮书披露成本区间上限与马斯克目标成本下限推算，实验室/小批量机型与量产目标之间存在约67—100倍成本落差；降本空间主要落在执行器与灵巧手的材料、工艺与规模效应上。</figcaption>
+</figure><figure class="chart-container">
+<img alt="全球约150家整机商业公司中，中国内地超过80家，占比过半；企业基数大且本体构型分散（双足、轮式、复合式并行），是技术路线尚未收敛、运动控制算法需加速场景适配的直接原因。" src="charts/pie_2024_aa7ff8882c_4.png" style="max-width:100%"/>
+<figcaption class="figure-caption">全球约150家整机商业公司中，中国内地超过80家，占比过半；企业基数大且本体构型分散（双足、轮式、复合式并行），是技术路线尚未收敛、运动控制算法需加速场景适配的直接原因。</figcaption>
+</figure>
+</section><section id="section_2::sub_2_0">
+<h1 class="chapter-title">厂商格局与份额</h1>
+<div class="section-content">
+<p class="para">全球人形机器人整机厂商格局仍处于“多强并起、尚未收敛”阶段。</p>
+<h3 class="subsection-title">论证与分析</h3>
+<h4 class="sub-subsection-title">企业数量：中国已形成全球最大整机厂商集群</h4>
+<p class="para">该口径与前述“整机商业公司”口径不同，不直接用于比较。这意味着，即便只按整机商业公司口径，中国在整机环节也拥有全球最密集的厂商供给，但企业数量多并不等于集中度高；行业仍处技术路线并行验证期，公开数据不足以确认已出现具有存量份额优势的绝对龙头。</p>
+<h4 class="sub-subsection-title">量产进展：目标成本差距决定竞争位势</h4>
+<p class="para">而据《2025年人形机器人产业发展蓝皮书》，本田、NASA与通用汽车、波士顿动力等人形机器人的成本或售价均超过200万美元。需要说明的是，2万—3万美元为马斯克的量产目标成本，并非当前实际成本；目标成本与现有成本/售价之间的差距，揭示了“工程样机”与“可量产产品”之间的目标差距。行业是否已从样机交付走向批量制造、量产竞赛是否成为竞争主轴，目前公开数据有限，尚属推断。</p>
+<h4 class="sub-subsection-title">份额判断：有规模预期，无稳定份额</h4>
+<p class="para">结合前文基准情景推算，全球出货量有一定规模预期，但公开数据有限；分厂商销售数据披露有限，不足以计算按厂商口径的稳定市场份额。当前衡量竞争位势的关键指标不是存量份额，而是量产准备度——包括单位成本、交付能力与场景验证速度。</p>
+<h3 class="subsection-title">前瞻判断</h3>
+<p class="para">若特斯拉产量不及预期或国内厂商批量交付提速，格局更可能走向“多强均势”。上述判断的假设前提是产量目标按期兑现、全球出货量口径与前文基准情景一致、无重大供应链中断。马斯克还表示，若进展顺利，2027年产量将在2026年基础上再增长10倍，该目标属个人展望，不确定性较高；若兑现，特斯拉将进一步拉开与追赶者的规模差距。对产业参与者的启示是：未来一段时期的竞争焦点不在概念参数，而在制造良率与成本曲线；供应链企业应优先绑定具备真实量产订单的整机客户。</p>
+<h3 class="subsection-title">数据支撑</h3>
+<p class="para"><strong>Exhibit 3｜厂商格局与份额</strong></p>
+<table class="data-table">
+<thead><tr>
+<th style="text-align:left">指标</th>
+<th style="text-align:left">数值</th>
+<th style="text-align:left">来源</th>
+<th style="text-align:left">认知层级</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">全球通用人形机器人整机商业公司数量（截至2024年）</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地人形机器人整机商业公司数量（截至2024年）</td>
+<td style="text-align:left">超80家</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地整机公司全球占比</td>
+<td style="text-align:left">超50%</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">中国人形机器人相关企业数量</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">新浪财经</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">特斯拉2026年人形机器人产量目标</td>
+<td style="text-align:left">5万—10万台</td>
+<td style="text-align:left">特斯拉（马斯克公开表态）</td>
+<td style="text-align:left">（目标）</td>
+</tr>
+<tr>
+<td style="text-align:left">特斯拉人形机器人量产目标成本</td>
+<td style="text-align:left">2万—3万美元</td>
+<td style="text-align:left">2025年人形机器人产业发展蓝皮书</td>
+<td style="text-align:left">（目标）</td>
+</tr>
+<tr>
+<td style="text-align:left">本田、NASA/通用汽车、波士顿动力等人形机器人单台成本/售价</td>
+<td style="text-align:left">超200万美元</td>
+<td style="text-align:left">2025年人形机器人产业发展蓝皮书</td>
+<td style="text-align:left"></td>
+</tr>
+<tr>
+<td style="text-align:left">2026年上半年中国人形机器人出货量</td>
+<td style="text-align:left">超4万台</td>
+<td style="text-align:left">中国人形机器人与具身智能百人会</td>
+<td style="text-align:left"></td>
+</tr>
+</tbody>
+</table>
+<ul><li>特斯拉产量目标为马斯克公开表态，属前瞻性指引，实际产量受产线爬坡、供应链与需求验证影响，存在较大不及预期可能；2027年“再增长10倍”的表述不确定性更高。- 当前缺乏权威机构发布的分厂商市场份额数据，文中“一超多强”或“多强均势”为基于产量目标与行业出货量推算的情形判断，后续需以实际交付数据验证。</li></ul>
+
+</div>
+<figure class="chart-container">
+<img alt="全球约150家、中国内地超80家，海外地区按全球总量与中国内地数量之差估算（约70家），仅用于呈现区域分布结构，不代表精确统计。" src="charts/pie_6178_aa7ff8882c_5.png" style="max-width:100%"/>
+<figcaption class="figure-caption">全球约150家、中国内地超80家，海外地区按全球总量与中国内地数量之差估算（约70家），仅用于呈现区域分布结构，不代表精确统计。</figcaption>
+</figure><figure class="chart-container">
+<img alt="目标成本取2万—3万美元区间中值2.5万美元；现有样机成本取“超200万美元”的下限200万美元，实际差距可能更大。该对比刻画的是“工程样机”与“可量产产品”之间的目标鸿沟，而非当期真实成本竞争力。" src="charts/bar_9440_aa7ff8882c_6.png" style="max-width:100%"/>
+<figcaption class="figure-caption">目标成本取2万—3万美元区间中值2.5万美元；现有样机成本取“超200万美元”的下限200万美元，实际差距可能更大。该对比刻画的是“工程样机”与“可量产产品”之间的目标鸿沟，而非当期真实成本竞争力。</figcaption>
+</figure>
+</section><section id="section_3::sub_3_0">
+<h1 class="chapter-title">政策与标准</h1>
+<div class="section-content">
+<p class="para"><strong>人形机器人行业正进入制度供给的“标准化补课期”。</strong> 人形机器人与具身智能标准化技术委员会正式成立，是当前可核验的最具标志性的政策信号之一，并将“2026年行业标准进一步完善”明确为阶段性目标。地方层面同步出现认证服务指南与场景案例集等操作化配套，政策重心正从方向性倡导转向标准互认与场景开放。</p>
+<h3 class="subsection-title">论证与分析</h3>
+<h4 class="sub-subsection-title">1. 制度供给层面：标准化委员会开启体系化建设</h4>
+<p class="para">据新华网2026年1月报道，人形机器人与具身智能标准化技术委员会正式成立，预计2026年行业标准将进一步完善，为产业发展筑牢制度基础。这一事件标志着人形机器人标准化工作从分散的企业实践与团体探索，上升为有组织、有日程的体系化建设。考虑到当前行业技术路线尚未收敛，标准化工作需要在保障安全底线与保留技术多样性之间取得平衡，这也是未来一段时间制度建设的关键看点。</p>
+<h4 class="sub-subsection-title">2. 地方层面：配套措施从原则性表态转向“认证+场景”落地</h4>
+<p class="para">根据东方财富网《2026机器人产业前沿洞察报告》转述，江苏省市场监督管理局已发布《2025内外贸一体化认证服务指南-机器人产业》，上海人工智能研究院已发布《2025上海智能机器人百大场景案例集》。这两类文件分别指向标准在贸易认证环节的应用，以及具体应用场景的批量开放，构成地方扶持措施从框架部署走向可执行工具的典型样本。地方配套的推进方式，正在从单一的生产制造补贴，转向认证路径、场景案例与标准互认等多维度工具组合。</p>
+<h4 class="sub-subsection-title">3. 传导逻辑：标准与政策决定商业化“最后一公里”</h4>
+<p class="para">统一的安全与测试标准可以降低下游采购方的验证成本，认证服务指南为潜在客户提供明确的合规路径，场景案例集则形成可复制的需求入口。政策与标准由此成为市场预测中不可忽略的制度变量：若标准文件如期落地，2026—2027年出货量爬坡将更具确定性；若标准滞后，企业的技术优势将难以顺利转化为订单优势。</p>
+<h3 class="subsection-title">前瞻性判断</h3>
+<p class="para">基于标准化委员会已经成立这一制度事实，未来一段时间将是标准文件密集起草、征求意见和首批发布的关键窗口，安全、测试与认证是最有可能率先形成行业共识的环节。假设产业化节奏不出现系统性延期，第一批行业标准的落地将降低跨厂商部署与验收摩擦，使2026年全球出货量基准情景获得更强制度支撑。对产业链企业而言，标准符合性应前置到产品定义阶段；对投资机构而言，标准起草单位与首批通过认证的企业通常对应更确定的准入优势。</p>
+<h3 class="subsection-title">数据支撑</h3>
+<p class="para"><strong>Exhibit 4｜政策与标准</strong></p>
+<table class="data-table">
+<thead><tr>
+<th style="text-align:left">类别</th>
+<th style="text-align:left">文件/事件</th>
+<th style="text-align:left">主体/时间</th>
+<th style="text-align:left">来源</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">行业标准</td>
+<td style="text-align:left">人形机器人与具身智能标准化技术委员会成立</td>
+<td style="text-align:left">2026年1月</td>
+<td style="text-align:left">[新华网](https://www.news.cn/tech/20260108/46b1220e159d4f80bc6a4240eb3b47b5/c.html)</td>
+</tr>
+<tr>
+<td style="text-align:left">行业标准</td>
+<td style="text-align:left">预计2026年行业标准进一步完善</td>
+<td style="text-align:left">2026年</td>
+<td style="text-align:left">[新华网](https://www.news.cn/tech/20260108/46b1220e159d4f80bc6a4240eb3b47b5/c.html)</td>
+</tr>
+<tr>
+<td style="text-align:left">地方配套</td>
+<td style="text-align:left">《2025内外贸一体化认证服务指南-机器人产业》</td>
+<td style="text-align:left">江苏省市场监督管理局</td>
+<td style="text-align:left">[东方财富网](https://caifuhao.eastmoney.com/news/20260312170524366273820)</td>
+</tr>
+<tr>
+<td style="text-align:left">地方配套</td>
+<td style="text-align:left">《2025上海智能机器人百大场景案例集》</td>
+<td style="text-align:left">上海人工智能研究院</td>
+<td style="text-align:left">[东方财富网](https://caifuhao.eastmoney.com/news/20260312170524366273820)</td>
+</tr>
+<tr>
+<td style="text-align:left">产业基础</td>
+<td style="text-align:left">《2026年人形机器人产业发展报告》显示已形成从关键芯片、部组件到整机的产业基础</td>
+<td style="text-align:left">2026年8月</td>
+<td style="text-align:left">[央视网](https://news.cctv.com/2026/08/20/ARTIMP3Ao7HSfKlmytBaEJ2L260820.shtml)</td>
+</tr>
+</tbody>
+</table>
+<h3 class="subsection-title">风险提示</h3>
+<p class="para">本章分析依赖公开可核验的制度事件，目前国家产业政策与地方扶持措施中可量化的资金规模、企业名单及验收标准仍较少披露。标准化委员会从成立到标准文件实际执行存在时间差，2026年标准完善的具体范围可能低于预期。江苏、上海案例为地方样本，不代表全国普遍水平；相关文件系通过财经媒体转述，最终应以官方发布文本为准。此外，行业技术路线尚未收敛，标准节奏过快或过慢都会对商业化进程产生双向影响。</p>
+</div>
+<figure class="chart-container">
+<img alt="行业标准含标准化技术委员会成立与2026年标准完善目标；地方配套含江苏认证服务指南与上海百大场景案例集；产业基础为《2026年人形机器人产业发展报告》相关表述。" src="charts/bar_7685_aa7ff8882c_7.png" style="max-width:100%"/>
+<figcaption class="figure-caption">行业标准含标准化技术委员会成立与2026年标准完善目标；地方配套含江苏认证服务指南与上海百大场景案例集；产业基础为《2026年人形机器人产业发展报告》相关表述。</figcaption>
+</figure><figure class="chart-container">
+<img alt="落地程度为基于公开文件性质的定性评估打分（0-100），用于刻画政策工具从'原则性表态'到'可执行工具'的推进梯度，不代表官方评价。" src="charts/hbar_1458_aa7ff8882c_8.png" style="max-width:100%"/>
+<figcaption class="figure-caption">落地程度为基于公开文件性质的定性评估打分（0-100），用于刻画政策工具从'原则性表态'到'可执行工具'的推进梯度，不代表官方评价。</figcaption>
+</figure>
+</section><section id="section_4::sub_4_0">
+<h1 class="chapter-title">产业链结构与价值分布</h1>
+<div class="section-content">
+<p class="para">高成本占比是否直接等同于高价值分配，仍需进一步验证。中游整机格局多强并起、尚未收敛；下游应用正从示范展示走向真实工位验证，商业化导入处于起步阶段。</p>
+<h3 class="subsection-title">论证与分析</h3>
+<h4 class="sub-subsection-title">产业链三级分工明确，上游成本与壁垒最高</h4>
+<p class="para">据《全球人形机器人行业研究报告（2026）》显示，人形机器人产业链已形成清晰的上中下游分工格局：上游涵盖关键芯片、核心部组件及软硬件基础设施，中游负责整机集成制造，下游对接多元应用场景。报告将这一结构概括为"上游高价值、中游拼集成、下游定场景"。这一成本结构表明，上游环节直接决定整机性能上限；但成本占比高是否等同于主导价值链分配，仍需结合利润率等数据进一步验证。</p>
+<h4 class="sub-subsection-title">中游整机：企业数量全球领先，量产能力成为分水岭</h4>
+<p class="para">区域集聚特征明显。</p>
+<p class="para">中游竞争焦点正从"做出样机"转向"批量交付"。若该目标兑现，将对全球产业格局产生重大影响，构成重塑格局的最大变量。从产业阶段看，行业整体正跨越三道门槛：从动作展示走向自主作业，从样机交付走向批量制造，从融资故事走向真实订单。</p>
+<h4 class="sub-subsection-title">下游应用：真实工位验证处于早期，场景牵引商业化节奏</h4>
+<p class="para">下游应用场景是产业链价值的最终兑现端。目前制造业真实工位验证仍处于早期，公开案例有限，行业整体正处于从实验室展示向生产验证过渡的早期阶段。从技术演进趋势看，具身智能大模型的发展有望进一步推动机器人从"单一执行工具"向"数字劳动力"升级，为下游场景从制造业向服务、家庭等领域延展提供技术前提。</p>
+<h4 class="sub-subsection-title">成本结构决定降本路径与量产节奏</h4>
+<p class="para">当前人形机器人单台成本/售价普遍处于高位：本田、NASA/通用汽车、波士顿动力等企业产品均超200万美元（2025年人形机器人产业发展蓝皮书）。马斯克公开表态的量产目标成本为2万—3万美元。这一进程将直接决定整机成本下降速度，进而影响2034年（预测）全球市场规模落在481亿美元还是1651亿美元（分别对应Straits Research与Fortune Business Insights的预测口径）。</p>
+<h4 class="sub-subsection-title">前瞻：未来一段时期产业链价值分布演变</h4>
+<p class="para">以下为预测性分析，结论存在不确定性。基于当前趋势推演，未来一段时期产业链可能呈现三方面演变：</p>
+<p class="para">其一，上游零部件环节预计维持价值高地，若国产替代与规模效应顺利推进，核心部件成本有望显著下探（假设前提：行星滚柱丝杠、谐波减速器等关键部件良率提升、批量订单落地；当前上述部件的良率、成本与国产化率公开数据有限），为整机成本从超200万美元向数万美元级收敛创造条件；</p>
+<p class="para">其三，下游应用有望以制造业真实工位为突破口率先跑通商业闭环，上料、搬运等标准化场景可能在短期内形成可复制的ROI模型。</p>
+<p class="para">对产业参与者而言，上游零部件预计仍是当前确定性与弹性兼具的价值环节；中游企业核心任务是构建批量化制造与供应链管理能力；下游场景方应尽早基于真实工位验证效益数据，以获取先发卡位优势。</p>
+<h3 class="subsection-title">数据支撑</h3>
+<p class="para"><strong>Exhibit 5｜产业链结构与价值分布</strong></p>
+<table class="data-table">
+<thead><tr>
+<th style="text-align:left">指标</th>
+<th style="text-align:left">数值</th>
+<th style="text-align:left">口径说明</th>
+<th style="text-align:left">来源</th>
+</tr></thead>
+<tbody>
+<tr>
+<td style="text-align:left">上游核心零部件占整机成本比重</td>
+<td style="text-align:left">超50%</td>
+<td style="text-align:left">产业链总体估计</td>
+<td style="text-align:left">全球人形机器人行业研究报告（2026）</td>
+</tr>
+<tr>
+<td style="text-align:left">全球通用人形机器人整机商业公司数量</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">截至2024年，全球口径</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地整机商业公司数量</td>
+<td style="text-align:left">超80家</td>
+<td style="text-align:left">截至2024年，中国口径</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">中国内地整机公司全球占比</td>
+<td style="text-align:left">超50%</td>
+<td style="text-align:left">截至2024年</td>
+<td style="text-align:left">国家地方共建人形机器人创新中心</td>
+</tr>
+<tr>
+<td style="text-align:left">中国人形机器人相关企业数量</td>
+<td style="text-align:left">约150家</td>
+<td style="text-align:left">全产业链口径</td>
+<td style="text-align:left">新浪财经</td>
+</tr>
+<tr>
+<td style="text-align:left">2026年上半年中国人形机器人出货量</td>
+<td style="text-align:left">超4万台</td>
+<td style="text-align:left">中国口径</td>
+<td style="text-align:left">中国人形机器人与具身智能百人会</td>
+</tr>
+<tr>
+<td style="text-align:left">人形机器人单台成本/售价</td>
+<td style="text-align:left">超200万美元</td>
+<td style="text-align:left">本田、NASA/通用汽车、波士顿动力等</td>
+<td style="text-align:left">2025年人形机器人产业发展蓝皮书</td>
+</tr>
+<tr>
+<td style="text-align:left">人形机器人量产目标成本</td>
+<td style="text-align:left">2万-3万美元</td>
+<td style="text-align:left">马斯克表态</td>
+<td style="text-align:left">2025年人形机器人产业发展蓝皮书</td>
+</tr>
+<tr>
+<td style="text-align:left">特斯拉2026年产量目标</td>
+<td style="text-align:left">5万-10万台</td>
+<td style="text-align:left">公司目标</td>
+<td style="text-align:left">特斯拉（马斯克公开表态）</td>
+</tr>
+</tbody>
+</table>
+<h3 class="subsection-title">风险提示</h3>
+<p class="para">本章分析基于以下不确定性，需审慎解读：</p>
+
+</div>
+<figure class="chart-container">
+<img alt="两者均为'整机商业公司'口径；中国内地整机公司全球占比超50%，区域集聚特征显著。中游企业数量领先尚不等于量产能力领先，交付能力仍是分水岭。" src="charts/bar_7121_aa7ff8882c_9.png" style="max-width:100%"/>
+<figcaption class="figure-caption">两者均为'整机商业公司'口径；中国内地整机公司全球占比超50%，区域集聚特征显著。中游企业数量领先尚不等于量产能力领先，交付能力仍是分水岭。</figcaption>
+</figure><figure class="chart-container">
+<img alt="报告口径为上游核心零部件占整机成本'超50%'，图中按下限50%近似呈现；中游整机集成与下游应用环节合计不足50%。成本占比高并不必然等同于利润分配主导，需结合各环节利润率另行验证。" src="charts/pie_5804_aa7ff8882c_10.png" style="max-width:100%"/>
+<figcaption class="figure-caption">报告口径为上游核心零部件占整机成本'超50%'，图中按下限50%近似呈现；中游整机集成与下游应用环节合计不足50%。成本占比高并不必然等同于利润分配主导，需结合各环节利润率另行验证。</figcaption>
+</figure>
+</section>
+</article>
+</body>
+</html>
