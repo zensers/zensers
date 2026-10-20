@@ -1,8 +1,6 @@
 # -*- coding: utf-8 -*-
 import json
 
-import pytest
-
 
 class TestResolveOutputFormat:
     """_resolve_output_format: structured field > legacy marker > docx default."""

@@ -37,7 +37,7 @@ import shutil
 from datetime import datetime
 from src.core.orchestrator.execution.task_utils import safe_create_task
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 from src.core.adjustment.cascade_update_analyzer import CascadeUpdateAnalyzer
 from src.core.adjustment.enhanced_section_locator import EnhancedSectionLocator
 from src.core.adjustment.revision_intent_mapper import RevisionIntentMapper
@@ -885,7 +885,7 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
 
     _VALID_OUTPUT_FORMATS = ("docx", "pptx", "pdf", "html")
 
-    def _resolve_output_format(self, session: Dict, user_input: str) -> tuple:
+    def _resolve_output_format(self, session: dict, user_input: str) -> tuple[Optional[list], str]:
         """Resolve (selected_sections, output_format).
 
         Priority: structured field stashed by handle_interact <- legacy
