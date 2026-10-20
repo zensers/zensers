@@ -1042,6 +1042,9 @@ class ReportOrchestrator:
                     for point in (chapter.data_points_used or [])
                 }
                 stripped_any: List[bool] = []
+                _ENUM_HEAD = re.compile(
+                    r"^(第[一二三四五六七八九十]+[，,、．.]|其[一二三四五六七八九十]+[，,、]|[一二三四五六七八九十]+是)"
+                )
 
                 def _safe_sentence(sentence: str) -> str:
                     for match in quantified.findall(sentence):
@@ -1055,6 +1058,13 @@ class ReportOrchestrator:
                             for known_value, known_unit in valid_values
                         ):
                             stripped_any.append(True)
+                            # 枚举头保护（ses_ea193fac 实证）：剥离枚举首句会
+                            # 打断"其一/其二/其三"链条（曾产出有二无一的断裂
+                            # 枚举），以中性占位保留枚举槽位。
+                            if _ENUM_HEAD.match(sentence.strip()):
+                                tail = sentence.rstrip()[-1:] if sentence.rstrip() else ""
+                                tail = tail if tail in "。；;，," else "；"
+                                return f"该点当前尚缺少可核验的结构化证据{tail}"
                             return ""
                     return sentence
 
@@ -3349,11 +3359,10 @@ class ReportOrchestrator:
                 value = dp.get("value")
                 if not metric or value in (None, "", [], {}):
                     continue
-                identity = (
-                    metric,
-                    str(value),
-                    str(dp.get("source_url") or dp.get("source") or dp.get("url") or ""),
-                )
+                # C（B 端评估实证）：Key Data 汇总表按 (metric, value) 跨章
+                # 去重——同一指标同一数值多章复现时只保留首个，避免汇总表
+                # 同条目重复 3-6 次。来源差异由各章自身 data_points 承载。
+                identity = (metric, str(value))
                 if identity in seen:
                     continue
                 seen.add(identity)
@@ -3450,6 +3459,23 @@ class ReportOrchestrator:
         re_unclosed = re.compile(
             r"\[(" + "|".join(tag_map) + r")\s*[；;，,]\s*"
         )
+        # 括号式标签（ses_ea193fac 实证 11 处）：（speculative，马斯克公开预测）
+        # → （推测性判断，马斯克公开预测）；纯括号式（speculative）同理
+        re_paren = re.compile(
+            r"[（(](" + "|".join(tag_map) + r")\s*([，,、；;）)][^）)]{0,60}[）)])?"
+        )
+
+        def _paren_sub(match: "re.Match") -> str:
+            tag = tag_map[match.group(1)]
+            tail = (match.group(2) or "").strip()
+            if not tail:
+                return f"（{tag}）"
+            # 带补充说明的括号式：去掉开头的分隔符，保留说明
+            tail = re.sub(r"^[，,、；;]", "", tail)
+            if tail in ("）", ")"):
+                return f"（{tag}）"
+            return f"（{tag}，{tail}"
+
         re_naked_url = re.compile(
             r"(?<![\w/\"（(（>])(?:https?://)?"
             r"(?:[a-z0-9-]+\.(?:com|cn|net|org|io)/[^\s）)】。，,；;]{0,120})"
@@ -3468,6 +3494,7 @@ class ReportOrchestrator:
             content = re_unclosed.sub(
                 lambda m: f"（{tag_map[m.group(1)]}）。", content,
             )
+            content = re_paren.sub(_paren_sub, content)
             content = re_naked_url.sub("", content)
             # 未闭合 ** 最小风险修复：仅当计数为奇（必有毒落单标记）时，
             # 优先剔除"后跟空白"的 stray-closer 签名（"** "，实证损伤形态

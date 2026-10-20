@@ -1461,9 +1461,23 @@ class ContentOrchestrator:
         
         col_count = len(rows[0])
         if not col_count or any(len(row) != col_count for row in rows):
+            # 宽容规整（B 端评估实证）：LLM 产出的表格常有长短行，过去
+            # 直接放弃渲染导致整段原始 markdown（含未转链接）泄漏进正文。
+            # 现按首行列数补齐/截断，保证表格始终以 <table> 呈现。
+            col_count = len(rows[0])
+            norm = []
+            for row in rows:
+                row = list(row)
+                if len(row) < col_count:
+                    row += [""] * (col_count - len(row))
+                elif len(row) > col_count:
+                    row = row[:col_count]
+                norm.append(row)
+            rows = norm
+        if not col_count:
             return ""
         if len(alignments) != col_count:
-            return ""
+            alignments = (list(alignments) + [""] * col_count)[:col_count]
         
         parts = ['<table class="data-table">']
         

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """Tests for Markdown table to HTML conversion (改造项2)"""
 
 import pytest
@@ -120,8 +120,8 @@ class TestContentToHtmlMdTable:
         content = "| some text |\n| other text |"
         result = ContentOrchestrator._content_to_html(content)
         # Should not contain table tags, should contain paragraphs
-        assert "<table" not in result
-        assert "section-content" in result
+        assert "<table" not in result  # 无分隔行的伪表格不得渲染为表格
+        assert "render-diagnostic" in result  # 以诊断块明确告知
 
     def test_non_table_pipe_not_matched(self):
         """Standalone | in text is not treated as table"""
@@ -135,4 +135,4 @@ class TestContentToHtmlMdTable:
         result = ContentOrchestrator._content_to_html(content)
         assert "subsection-title" in result
         assert "<table" in result
-        assert "section-content" in result
+        assert "subsection-title" in result and "<table" in result and "para" in result

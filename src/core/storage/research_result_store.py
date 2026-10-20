@@ -571,7 +571,7 @@ class ResearchResultStore:
                 "defense_loop",
                 # I5 交付签名 / D1 口径前置 / 报告结构字段（白名单遗漏会
                 # 静默丢弃签名——ses_49a64607 实证）。
-                "delivery_signature", "methodology_notes",
+                "delivery_signature", "methodology_notes", "llm_trace",
                 "exec_summary", "conclusion", "claims", "quality_report",
             ):
                 if field in result:

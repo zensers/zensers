@@ -389,6 +389,21 @@ class DocumentGenerationAgent(FixedAgent):
                 # 渲染期剥离内部证据标注（（factual）/（inferential）/（置信度：中）），
                 # 落盘的 research_result 审计原件不动
                 research_result = self._strip_annotations_for_render(research_result)
+                # D1（B 端评估实证）：HTML 渲染补齐"口径、假设与方法"前置节
+                # （此前仅 docx 渲染器有）。注入渲染副本，审计原件不动。
+                _notes = research_result.get("methodology_notes") or []
+                if _notes and isinstance(research_result.get("sections"), list):
+                    research_result["sections"] = [{
+                        "section_id": "methodology",
+                        "section_name": "口径、假设与方法",
+                        "title": "口径、假设与方法",
+                        "content": "\n".join(
+                            f"{i}. {n}" for i, n in enumerate(_notes, 1)
+                        ),
+                        "status": "ready",
+                        "data_points": [],
+                        "sources": [],
+                    }] + research_result["sections"]
 
                 from src.content.content_orchestrator import ContentOrchestrator
                 from src.core.preview_storage import PreviewStorage
