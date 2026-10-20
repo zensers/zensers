@@ -1055,6 +1055,8 @@ class ResearchOrchestrator:
 
     def _configure_task_search_gateway(self, task_id: str) -> SearchGateway:
         """Create and distribute one Gateway for a research task."""
+        from src.core.deep_mode import DeepModeConfig
+        _deep_config = getattr(self._execution_engine, "_deep_mode_config", None)
         existing = self._search_gateways.get(task_id)
         if existing is not None:
             return existing
@@ -1078,6 +1080,7 @@ class ResearchOrchestrator:
                 "report_revision": 8,
                 "conflict_resolver": 2,
                 "ppt_supplement": 2,
+                "deep_mode": (_deep_config or DeepModeConfig.from_env()).max_searches,
             },
             # 40 preserves the existing local-search quality contract during
             # migration; the final task quality gate remains separate.
@@ -1087,6 +1090,7 @@ class ResearchOrchestrator:
         )
         self._search_gateways[task_id] = gateway
         self._execution_engine.search_gateway = gateway
+        self._execution_engine.deep_mode_scraper = self._skill_registry.get("web_scraper")
         if hasattr(self._agent_factory, "_search_gateway"):
             self._agent_factory._search_gateway = gateway
         logger.info("[%s] task SearchGateway configured", task_id)
@@ -1471,6 +1475,7 @@ class ResearchOrchestrator:
                         "region": requirement.region,
                         "task_id": task_id,
                         "session_id": _sid,
+                        "output_type": output_type_value,
                     },
                     decomposition_plan=decomposition_plan,
                     skip_phases=skip_phases,
@@ -1489,6 +1494,7 @@ class ResearchOrchestrator:
                         "region": requirement.region,
                         "task_id": task_id,  # For ResearchResultStore persistence
                         "session_id": _sid,
+                        "output_type": output_type_value,
                     },
                     scheduler=self._execution_scheduler,
                     decomposition_plan=decomposition_plan,
@@ -2943,6 +2949,7 @@ class ResearchOrchestrator:
                         "region": getattr(requirement, 'region', ''),
                         "task_id": task_id,
                         "session_id": getattr(requirement, 'session_id', task_id),
+                        "output_type": requirement_dict["output_type"],
                     },
                     scheduler=self._execution_scheduler,
                     decomposition_plan=routing_result.decomposition_plan,
@@ -4047,6 +4054,7 @@ class ResearchOrchestrator:
                     requirement = {
                         "topic": result.get("topic", ""),
                         "task_id": task_id,
+                        "output_type": "",
                     }
 
                 # Create Agents for pending sections
@@ -7087,6 +7095,7 @@ class ResearchOrchestrator:
                 "region": req.region,
                 "task_id": task_id,
                 "session_id": task_id,
+                "output_type": output_type_value,
             },
             scheduler=self._execution_scheduler,
             decomposition_plan=remaining_plan,
@@ -7208,6 +7217,7 @@ class ResearchOrchestrator:
                 "region": req.region,
                 "task_id": task_id,
                 "session_id": task_id,
+                "output_type": output_type_value,
             },
             scheduler=self._execution_scheduler,
             decomposition_plan=filtered_plan,

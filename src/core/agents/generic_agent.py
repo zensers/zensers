@@ -874,6 +874,7 @@ class GenericAgent(
                         cross_dimension_claims=cross_dimension_claims,
                         causal_hypotheses=causal_hypotheses,
                         conflict_entries=_conflict_entries if self._shared_memory and hasattr(self._shared_memory, 'get_all_canonical') else {},
+                        deep_mode_tables=task.get("deep_mode_tables", ""),
                     )
                 else:
                     prompt = self._build_basic_research_prompt(
@@ -1065,6 +1066,7 @@ class GenericAgent(
                                 cross_dimension_claims=cross_dimension_claims,
                                 causal_hypotheses=causal_hypotheses,
                                 conflict_entries=_conflict_entries if self._shared_memory and hasattr(self._shared_memory, 'get_all_canonical') else {},
+                                deep_mode_tables=task.get("deep_mode_tables", ""),
                             )
                             revised = await call_llm(prompt=prompt2, system_prompt=system_prompt)
 
@@ -5492,6 +5494,7 @@ Output ONE type name only: fact_driven / inference_driven / forward_looking / as
         cross_dimension_claims: Optional[List[Dict]] = None,
         causal_hypotheses: Optional[List[Dict]] = None,
         conflict_entries: Optional[Dict[str, Dict]] = None,
+        deep_mode_tables: str = "",
     ) -> str:
         """Build analysis prompt using pre-collected data points.
         
@@ -5718,6 +5721,14 @@ Output ONE type name only: fact_driven / inference_driven / forward_looking / as
                     parts.append(f"  {_insight_inst}")
                     parts.append("  在报告末尾单独列出你发现的最重要的非常规洞察，标注为「核心洞察」")
             framework_context = "\n".join(parts)
+
+        if deep_mode_tables:
+            framework_context += (
+                "\n\n## 深度模式结构化证据\n"
+                "以下表格已通过校验。写作时必须优先使用这些记录，"
+                "不得引入未提供的公司名或数字。估算值带 *，并保留脚注。\n\n"
+                f"{deep_mode_tables}\n"
+            )
 
         if aspect:
             return pm.render(

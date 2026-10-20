@@ -73,6 +73,11 @@ def _canonical_runtime_section_id(section_id: Any) -> str:
     return f"{match.group(1)}_{match.group(2)}" if match else value
 
 
+def _deep_parent_section_id(section_id: Any) -> str:
+    value = str(section_id or "").strip()
+    return value.split("::", 1)[0]
+
+
 def _evidence_record_key(record: Any, kind: str) -> str:
     """Stable identity for evidence carried forward between batches."""
     if not isinstance(record, dict):
@@ -270,6 +275,24 @@ class ExecutionEngine:
         self._shared_memory = shared_memory
         self.shared_memory = shared_memory
         self.search_gateway = search_gateway
+
+        from src.core.deep_mode import DeepModeConfig, DeepModeService
+        from src.core.llm_client import call_llm
+
+        self._deep_mode_config = DeepModeConfig.from_env()
+        self.deep_mode_scraper = None
+        self._deep_mode_service = (
+            DeepModeService(
+                config=self._deep_mode_config,
+                gateway_provider=lambda: self.search_gateway,
+                scraper_provider=lambda: self.deep_mode_scraper,
+                llm_call=call_llm,
+            )
+            if self._deep_mode_config.enabled
+            else None
+        )
+        self._deep_mode_done_tasks: set[str] = set()
+        self._deep_mode_lock = asyncio.Lock()
         
         # 控制机制
         self.concurrency = ConcurrencyManager(ConcurrencyConfig(
@@ -2823,7 +2846,9 @@ class ExecutionEngine:
                             getattr(self, "_agent_section_map", {}).get(agent.agent_id)
                             or getattr(agent, "section_id", "")
                         )
-                        section_spec = self._get_section_spec_map().get(analysis_section_id)
+                        section_spec = self._get_section_spec_map().get(
+                            _deep_parent_section_id(analysis_section_id)
+                        )
                         required_metrics = set(section_spec.all_data_needs) if section_spec else set()
                         evidence_scope = EvidenceScope(
                             section_id=analysis_section_id,
@@ -2841,6 +2866,10 @@ class ExecutionEngine:
                             "audit": evidence_audit,
                         }
                         task["required_metrics"] = sorted(required_metrics)
+                        if self._deep_mode_service:
+                            task["deep_mode_tables"] = self._deep_mode_service.get_tables(
+                                _deep_parent_section_id(analysis_section_id)
+                            )
                         logger.info(
                             "[_execute_batch] analysis evidence scope: agent=%s section=%s %s",
                             agent.agent_id, analysis_section_id, evidence_audit,
@@ -3016,7 +3045,78 @@ class ExecutionEngine:
                         pass
             _ar["section_id"] = _sid
             _ar["_section_id"] = _sid
-        
+
+        if _is_data_collection and hasattr(self, '_section_data_specs') and self._section_data_specs and self._deep_mode_service:
+            try:
+                _deep_task_id = requirement.get("task_id", "")
+                if not _deep_task_id:
+                    logger.warning("[DeepMode] skipped: empty task_id")
+                elif _deep_task_id not in self._deep_mode_done_tasks:
+                    async with self._deep_mode_lock:
+                        if _deep_task_id not in self._deep_mode_done_tasks:
+                            _deep_records = await self._deep_mode_service.enrich(
+                                topic=requirement.get("topic", ""),
+                                section_specs=self._section_data_specs,
+                                output_type=requirement.get("output_type", ""),
+                                task_id=_deep_task_id,
+                            )
+                            _shadow_mode = getattr(self._deep_mode_config, "shadow", False)
+                            _attached = 0
+                            if not _shadow_mode:
+                                _attached_sections = set()
+                                for _res in batch_results:
+                                    _spec = (
+                                        self._get_section_spec_map().get(
+                                            _deep_parent_section_id(_res.get("section_id", "")))
+                                        or self._get_section_spec_by_agent_id(_res.get("agent_id", ""))
+                                    )
+                                    if not _spec or _spec.section_id in _attached_sections:
+                                        continue
+                                    _points = _deep_records.get(_spec.section_id)
+                                    if not _points:
+                                        continue
+                                    for _point in _points:
+                                        _point = dict(_point)
+                                        _point.setdefault(
+                                            "source_agent_id", _res.get("agent_id", "")
+                                        )
+                                        _point["is_validated"] = True
+                                        if not _point.get("quality_score"):
+                                            _point["quality_score"] = 85
+                                        _res.setdefault("data_points", []).append(_point)
+                                        _attached += 1
+                                    _attached_sections.add(_spec.section_id)
+                                logger.info(
+                                    "[DeepMode] enriched %s sections with %s records, attached=%s",
+                                    len(_deep_records),
+                                    sum(len(points) for points in _deep_records.values()),
+                                    _attached,
+                                )
+                            else:
+                                logger.info(
+                                    "[DeepMode] shadow mode: stored %s records without injection",
+                                    sum(len(points) for points in _deep_records.values()),
+                                )
+                            self._deep_mode_done_tasks.add(_deep_task_id)
+            except Exception as _deep_err:  # noqa: BLE001
+                logger.warning("[DeepMode] enrichment failed: %s", _deep_err)
+
+        if (
+            not _is_data_collection
+            and self._deep_mode_service
+            and hasattr(self, "_section_data_specs")
+        ):
+            _section_by_agent = {}
+            for _res in batch_results:
+                _spec = (
+                    self._get_section_spec_map().get(
+                        _deep_parent_section_id(_res.get("section_id", "")))
+                    or self._get_section_spec_by_agent_id(_res.get("agent_id", ""))
+                )
+                if _spec:
+                    _section_by_agent[_res.get("agent_id", "")] = _spec.section_id
+            self._deep_mode_service.ensure_tables(batch_results, _section_by_agent)
+
         # A-1修复：将批次结果持久化到 ResearchResultStore（JSON文件）
         try:
             task_id_for_store = requirement.get("task_id")
