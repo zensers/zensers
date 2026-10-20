@@ -224,7 +224,8 @@ class ChapterWriter:
                 directive = get_format_strategy(
                     input_data.output_format).get_writing_directive()
                 prompt_kwargs["bullet_max_chars"] = directive.bullet_max_chars or 25
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to read bullet_max_chars from format strategy: {e}, using 25")
                 prompt_kwargs["bullet_max_chars"] = 25
         prompt_name = "chapter_write_pptx" if input_data.output_format == "pptx" else "chapter_write"
         try:
