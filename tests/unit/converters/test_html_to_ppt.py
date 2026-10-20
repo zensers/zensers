@@ -597,3 +597,19 @@ class TestPPTBulletContentRendering:
         output_path = os.path.join(temp_dir, "findings.pptx")
         result = converter.convert(html, output_path)
         assert result.success is True
+
+
+class TestRendererFontFromDesign:
+    def test_renderer_uses_design_font(self):
+        """SlideRenderer must read the default font from the design dict."""
+        from src.converters.slide_renderer import SlideRenderer
+
+        design = {"font_default": "SimHei"}
+        renderer = SlideRenderer(design)
+        assert renderer.default_font == "SimHei"
+
+    def test_renderer_font_defaults_to_yahei(self):
+        from src.converters.slide_renderer import SlideRenderer
+
+        renderer = SlideRenderer({})
+        assert renderer.default_font == "Microsoft YaHei"

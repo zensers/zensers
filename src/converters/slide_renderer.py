@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class SlideRenderer:
     def __init__(self, design: Dict[str, str], image_provider=None):
         self.design = design
+        self.default_font = design.get("font_default", "Microsoft YaHei")
         self.image_provider = image_provider
 
     def render(self, slide, slide_data: Dict, template: Dict, styles: Dict, page_num: int = 0, layout_overrides: Dict = None):
@@ -156,7 +157,7 @@ class SlideRenderer:
             p.font.bold = st.get("font_weight", "") == "bold"
             color = self._resolve_color(st.get("color", "text_dark"))
             p.font.color.rgb = self._rgb(color)
-            p.font.name = st.get("font", "Microsoft YaHei")
+            p.font.name = st.get("font", self.default_font)
             alignment = st.get("alignment", "left")
             align_map = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}
             p.alignment = align_map.get(alignment, PP_ALIGN.LEFT)
@@ -179,7 +180,7 @@ class SlideRenderer:
         bullet = st.get("bullet", "▸")
         bullet_color = self._resolve_color(st.get("bullet_color", "gold"))
         text_color = self._resolve_color(st.get("color", "text_dark"))
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         font_size = st.get("font_size", 18)
         line_spacing = st.get("line_spacing", 14)
         bullet_font_size = st.get("bullet_font_size", font_size + 4)
@@ -294,7 +295,7 @@ class SlideRenderer:
         header_color = self._resolve_color(st.get("header_color", "white"))
         stripe = st.get("stripe", True)
         stripe_color = self._resolve_color(st.get("stripe_color", "off_white"))
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         row_font_size = st.get("row_font_size", 14)
         header_font_size = st.get("header_font_size", row_font_size + 2)
         cell_padding = st.get("cell_padding", 4)
@@ -398,13 +399,13 @@ class SlideRenderer:
             run_num.font.size = Pt(number_size)
             run_num.font.color.rgb = self._rgb(number_color)
             run_num.font.bold = True
-            run_num.font.name = "Microsoft YaHei"
+            run_num.font.name = self.default_font
             run_trend = p_num.add_run()
             run_trend.text = f"{arrow} {trend}"
             run_trend.font.size = Pt(14)
             run_trend.font.color.rgb = self._rgb(trend_color)
             run_trend.font.bold = True
-            run_trend.font.name = "Microsoft YaHei"
+            run_trend.font.name = self.default_font
         else:
             p_num = tf.paragraphs[0]
             p_num.space_before = Pt(4)
@@ -413,7 +414,7 @@ class SlideRenderer:
             run_num.font.size = Pt(number_size)
             run_num.font.color.rgb = self._rgb(number_color)
             run_num.font.bold = True
-            run_num.font.name = "Microsoft YaHei"
+            run_num.font.name = self.default_font
         label = kpi.get("label", "")
         if not label:
             label = kpi.get("original_text", "")[:30]
@@ -422,7 +423,7 @@ class SlideRenderer:
             p_label.text = label
             p_label.font.size = Pt(label_size)
             p_label.font.color.rgb = self._rgb(label_color)
-            p_label.font.name = "Microsoft YaHei"
+            p_label.font.name = self.default_font
             p_label.alignment = PP_ALIGN.CENTER
             p_label.space_before = Pt(4)
 
@@ -446,7 +447,7 @@ class SlideRenderer:
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.alignment = PP_ALIGN.LEFT
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         font_color = self._resolve_color(st.get("color", "white"))
         if icon:
             run_icon = p.add_run()
@@ -478,7 +479,7 @@ class SlideRenderer:
         left_color = self._resolve_color(st.get("left_color", "navy"))
         right_color = self._resolve_color(st.get("right_color", "gold"))
         font_size = st.get("font_size", 13)
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         for col_idx, (side, color) in enumerate([(left_side, left_color), (right_side, right_color)]):
             col_left = start_left + col_idx * (col_width + 0.4)
             title = side.get("title", "")
@@ -516,7 +517,7 @@ class SlideRenderer:
 
     def _render_decoration(self, slide, dec: Dict, styles: Dict, page_num: int = 0):
         dec_type = dec.get("type", "")
-        font_name = "Microsoft YaHei"
+        font_name = self.default_font
 
         if dec_type == "footer_bar":
             color = self._resolve_color(dec.get("color", "gold"))
