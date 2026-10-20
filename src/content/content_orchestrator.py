@@ -1777,7 +1777,7 @@ class ContentOrchestrator:
         return f'''<section class="slide" data-type="findings" data-page="{slide_num}">
     <div class="slide-content">
         <div class="slide-title">
-            <h2>Key Findings</h2>
+            <h2>核心发现</h2>
         </div>
         <ul class="findings-list">
             {chr(10).join(items)}
@@ -1801,7 +1801,7 @@ class ContentOrchestrator:
         return f'''<section class="slide" data-type="data" data-page="{slide_num}">
     <div class="slide-content">
         <div class="slide-title">
-            <h2>Key Data</h2>
+            <h2>核心数据</h2>
         </div>
         <table class="data-table">
             <tbody>
@@ -1819,7 +1819,7 @@ class ContentOrchestrator:
             <h2>报告结论</h2>
         </div>
         <div class="slide-footer">
-            <p>{html.escape(title)} · 感谢关注</p>
+            <p>{html.escape(title)} · 谢谢观看</p>
         </div>
     </div>
 </section>'''

@@ -772,3 +772,29 @@ class TestExtraTablesRendered:
             result = HTMLToPPTConverter().convert(html=html, output_path=out)
             assert result.success
             assert result.slides_count == 2  # 主表页 + 续表页
+
+
+class TestSlideCopyChinese:
+    def test_findings_slide_title_chinese(self):
+        from src.content.content_orchestrator import ContentOrchestrator
+
+        co = ContentOrchestrator()
+        slide_html = co._render_findings_slide(["发现一"], 1)
+        assert "核心发现" in slide_html
+        assert "Key Findings" not in slide_html
+
+    def test_data_slide_title_chinese(self):
+        from src.content.content_orchestrator import ContentOrchestrator
+
+        co = ContentOrchestrator()
+        slide_html = co._render_data_slide([{"metric": "规模", "value": "2000", "unit": "亿元"}], 1)
+        assert "核心数据" in slide_html
+        assert "Key Data" not in slide_html
+
+    def test_end_slide_no_thanks_follow(self):
+        from src.content.content_orchestrator import ContentOrchestrator
+
+        co = ContentOrchestrator()
+        slide_html = co._render_end_slide("测试报告", 1)
+        assert "谢谢观看" in slide_html
+        assert "感谢关注" not in slide_html
