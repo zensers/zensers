@@ -1,0 +1,22 @@
+{
+  "meta": {
+    "name": "default",
+    "display_name": "藏青金 默认主题",
+    "description": "与 ppt_default.html 对齐的默认视觉：藏青+金"
+  },
+  "colors": {
+    "navy": "1A2744",
+    "navy_dark": "0F1A2E",
+    "navy_light": "2C3E50",
+    "gold": "C9A227",
+    "gold_light": "D4AF37",
+    "white": "FFFFFF",
+    "off_white": "F5F5F5",
+    "text_dark": "333333",
+    "text_mid": "666666",
+    "text_light": "999999"
+  },
+  "fonts": {
+    "default": "Microsoft YaHei"
+  }
+}
