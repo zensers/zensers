@@ -613,3 +613,37 @@ class TestRendererFontFromDesign:
 
         renderer = SlideRenderer({})
         assert renderer.default_font == "Microsoft YaHei"
+
+
+class TestThemeIntegration:
+    def test_design_attribute_comes_from_theme(self):
+        """Converter must build its palette from the theme loader, not a hardcoded dict."""
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+        from src.converters.ppt_theme import DEFAULT_THEME
+
+        converter = HTMLToPPTConverter()
+        assert converter.design["colors"]["navy"] == DEFAULT_THEME["colors"]["navy"]
+
+    def test_css_overrides_theme(self):
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        template_html = "<html><head><style>.slide.cover h1{color:#FF0000;font-family:'SimHei'}</style></head><body></body></html>"
+        converter = HTMLToPPTConverter()
+        design = converter._build_design(template_html=template_html)
+        assert design["colors"]["gold"] == "FF0000"
+        assert design["font_default"] == "SimHei"
+
+    def test_design_without_template_uses_theme(self):
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        converter = HTMLToPPTConverter()
+        design = converter._build_design(template_html=None)
+        assert design["colors"]["gold"] == "C9A227"
+
+    def test_renderer_resolves_colors_from_nested_design(self):
+        from src.converters.slide_renderer import SlideRenderer
+
+        design = {"colors": {"navy": "1A2744"}, "fonts": {}, "font_default": "Microsoft YaHei"}
+        renderer = SlideRenderer(design)
+        assert renderer._resolve_color("navy") == "1A2744"
+        assert renderer._resolve_color("#FF0000") == "#FF0000"

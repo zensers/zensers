@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 
 from .base_parser import SlideElementParser
 from .css_extractor import CSSStyleExtractor, ExtractedStyles
+from .ppt_theme import load_theme
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +90,17 @@ class HTMLToPPTConverter:
         "slide_height": 7.5  # inches (16:9)
     }
     
-    def __init__(self, styles: Optional[Dict[str, Any]] = None):
+    def __init__(self, styles: Optional[Dict[str, Any]] = None, theme: str = "default"):
         """
         Initialize converter
         
         Args:
             styles: Custom style configuration
+            theme: PPT theme name (loaded from config/ppt_themes/<name>.json)
         """
         self.styles = {**self.DEFAULT_STYLES, **(styles or {})}
+        self.theme_name = theme
+        self.design = load_theme(theme)
         self._pptx_available = self._check_pptx_available()
         
         if not self._pptx_available:
@@ -113,6 +117,31 @@ class HTMLToPPTConverter:
     def get_default_styles(self) -> Dict[str, Any]:
         """Get default styles"""
         return self.DEFAULT_STYLES.copy()
+    
+    def _build_design(self, template_html: Optional[str]) -> Dict[str, Any]:
+        """Merge theme file with CSS overrides extracted from the template.
+
+        Priority: theme file base <- template CSS overrides (CSS wins where present).
+        """
+        design: Dict[str, Any] = {
+            "colors": dict(self.design.get("colors", {})),
+            "fonts": dict(self.design.get("fonts", {})),
+        }
+        design["font_default"] = design["fonts"].get("default", "Microsoft YaHei")
+        if template_html:
+            try:
+                extractor = CSSStyleExtractor()
+                extracted = extractor.extract_from_html(template_html)
+                overrides = extracted.to_theme_overrides()
+                design["colors"].update(overrides.get("colors", {}))
+                if overrides.get("fonts"):
+                    design["fonts"].update(overrides["fonts"])
+                    design["font_default"] = overrides["fonts"].get(
+                        "default", design["font_default"]
+                    )
+            except Exception as e:
+                logger.warning(f"CSS override extraction failed, using theme defaults: {e}")
+        return design
     
     def _merge_styles(
         self,
@@ -225,7 +254,8 @@ class HTMLToPPTConverter:
             
             # Create PPT document
             if self._pptx_available:
-                return self._create_pptx_document(slides, output_path, final_styles)
+                design = self._build_design(template_html)
+                return self._create_pptx_document(slides, output_path, final_styles, design=design)
             else:
                 return self._create_fallback_document(slides, output_path, final_styles)
                 
@@ -579,7 +609,8 @@ class HTMLToPPTConverter:
         self,
         slides: List[Dict[str, Any]],
         output_path: str,
-        styles: Dict[str, Any]
+        styles: Dict[str, Any],
+        design: Optional[Dict[str, Any]] = None
     ) -> ConversionResult:
         """
         Create PPT document using python-pptx
@@ -594,6 +625,9 @@ class HTMLToPPTConverter:
         """
         from pptx import Presentation
         from pptx.util import Inches
+        
+        if design is None:
+            design = self._build_design(None)
         
         # Create presentation
         prs = Presentation()
@@ -619,7 +653,7 @@ class HTMLToPPTConverter:
             except Exception:
                 image_provider = None
             
-            renderer = SlideRenderer(self.DESIGN, image_provider=image_provider)
+            renderer = SlideRenderer(design, image_provider=image_provider)
             section_index = 0
             
             try:
@@ -710,19 +744,9 @@ class HTMLToPPTConverter:
             slides_count=slides_count
         )
     
-    # Design system colors (matching ppt_default.html CSS)
-    DESIGN = {
-        "navy": "1A2744",
-        "navy_dark": "0F1A2E",
-        "navy_light": "2C3E50",
-        "gold": "C9A227",
-        "gold_light": "D4AF37",
-        "white": "FFFFFF",
-        "off_white": "F5F5F5",
-        "text_dark": "333333",
-        "text_mid": "666666",
-        "text_light": "999999",
-    }
+    # Transitional alias; the legacy hand-drawn renderer that reads it is
+    # deleted in a follow-up task (USE_TEMPLATE_RENDERER cleanup).
+    DESIGN = None
 
     def _set_slide_bg(self, slide, color_hex: str):
         """Set solid background color for a slide."""
@@ -750,7 +774,7 @@ class HTMLToPPTConverter:
         from pptx.util import Inches
         sw = styles.get("slide_width", 13.333)
         sh = styles.get("slide_height", 7.5)
-        bar_color = color or self.DESIGN["gold"]
+        bar_color = color or load_theme(self.theme_name)["colors"]["gold"]
         shape = slide.shapes.add_shape(
             1, Inches(0), Inches(sh - 0.11), Inches(sw), Inches(0.11)
         )
@@ -765,7 +789,7 @@ class HTMLToPPTConverter:
             1, Inches(left), Inches(top), Inches(width), Inches(0.04)
         )
         shape.fill.solid()
-        shape.fill.fore_color.rgb = self._rgb(self.DESIGN["gold"])
+        shape.fill.fore_color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
         shape.line.fill.background()
 
     def _add_side_accent(self, slide, styles: Dict[str, Any]):
@@ -776,7 +800,7 @@ class HTMLToPPTConverter:
             1, Inches(0), Inches(0), Inches(0.06), Inches(sh)
         )
         shape.fill.solid()
-        shape.fill.fore_color.rgb = self._rgb(self.DESIGN["gold"])
+        shape.fill.fore_color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
         shape.line.fill.background()
 
     def _content_width(self, styles: Dict[str, Any], margin: float = 1.0) -> float:
@@ -789,13 +813,13 @@ class HTMLToPPTConverter:
         from pptx.enum.text import PP_ALIGN
 
         try:
-            self._set_gradient_bg(slide, self.DESIGN["navy"], self.DESIGN["navy_light"])
+            self._set_gradient_bg(slide, load_theme(self.theme_name)["colors"]["navy"], load_theme(self.theme_name)["colors"]["navy_light"])
         except Exception:
-            self._set_slide_bg(slide, self.DESIGN["navy"])
+            self._set_slide_bg(slide, load_theme(self.theme_name)["colors"]["navy"])
 
         sw = styles.get("slide_width", 13.333)
 
-        self._add_footer_bar(slide, styles, self.DESIGN["gold"])
+        self._add_footer_bar(slide, styles, load_theme(self.theme_name)["colors"]["gold"])
 
         title = slide_data.get("title", "")
         if title:
@@ -808,7 +832,7 @@ class HTMLToPPTConverter:
             p.text = title
             p.font.size = Pt(styles.get("title_size", 44))
             p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["gold"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
             p.font.name = "Microsoft YaHei"
             p.alignment = PP_ALIGN.CENTER
 
@@ -821,7 +845,7 @@ class HTMLToPPTConverter:
             p = tf.paragraphs[0]
             p.text = subtitle
             p.font.size = Pt(24)
-            p.font.color.rgb = self._rgb(self.DESIGN["white"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["white"])
             p.font.name = "Microsoft YaHei"
             p.alignment = PP_ALIGN.CENTER
 
@@ -833,7 +857,7 @@ class HTMLToPPTConverter:
         p = tf.paragraphs[0]
         p.text = datetime.date.today().strftime("%Y-%m-%d")
         p.font.size = Pt(18)
-        p.font.color.rgb = self._rgb(self.DESIGN["white"])
+        p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["white"])
         p.font.name = "Microsoft YaHei"
         p.alignment = PP_ALIGN.CENTER
 
@@ -842,7 +866,7 @@ class HTMLToPPTConverter:
         from pptx.util import Inches, Pt
         from pptx.enum.text import PP_ALIGN
 
-        self._set_slide_bg(slide, self.DESIGN["off_white"])
+        self._set_slide_bg(slide, load_theme(self.theme_name)["colors"]["off_white"])
         cw = self._content_width(styles)
 
         self._add_footer_bar(slide, styles)
@@ -857,7 +881,7 @@ class HTMLToPPTConverter:
             p.text = title
             p.font.size = Pt(styles.get("subtitle_size", 28))
             p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["navy"])
             p.font.name = "Microsoft YaHei"
             p.alignment = PP_ALIGN.CENTER
 
@@ -876,19 +900,19 @@ class HTMLToPPTConverter:
                 run = p.add_run()
                 run.text = "  " + item
                 run.font.size = Pt(20)
-                run.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
+                run.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["text_dark"])
                 run.font.name = "Microsoft YaHei"
                 bullet = p.add_run()
                 bullet.text = "■ "
                 bullet.font.size = Pt(12)
-                bullet.font.color.rgb = self._rgb(self.DESIGN["gold"])
+                bullet.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
                 bullet.font.name = "Microsoft YaHei"
 
             left_bar = slide.shapes.add_shape(
                 1, Inches(1.0), Inches(2.0), Inches(0.05), Inches(min(len(items) * 0.6, 4.0))
             )
             left_bar.fill.solid()
-            left_bar.fill.fore_color.rgb = self._rgb(self.DESIGN["gold"])
+            left_bar.fill.fore_color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
             left_bar.line.fill.background()
     
     def _add_images_to_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any], position: str = "right"):
@@ -974,7 +998,7 @@ class HTMLToPPTConverter:
         """Create content slide: title bar + left text / right image layout."""
         from pptx.util import Inches, Pt
 
-        self._set_slide_bg(slide, self.DESIGN["white"])
+        self._set_slide_bg(slide, load_theme(self.theme_name)["colors"]["white"])
         sw = styles.get("slide_width", 13.333)
         sh = styles.get("slide_height", 7.5)
         self._add_side_accent(slide, styles)
@@ -990,7 +1014,7 @@ class HTMLToPPTConverter:
             p.text = title
             p.font.size = Pt(24)
             p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["navy"])
             p.font.name = "Microsoft YaHei"
             self._add_title_underline(slide, 0.8, 1.05, min(4.0, sw * 0.3))
 
@@ -1025,12 +1049,12 @@ class HTMLToPPTConverter:
                 run_bullet = p.add_run()
                 run_bullet.text = "▸ "
                 run_bullet.font.size = Pt(14)
-                run_bullet.font.color.rgb = self._rgb(self.DESIGN["gold"])
+                run_bullet.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
                 run_bullet.font.name = "Microsoft YaHei"
                 run_text = p.add_run()
                 run_text.text = item
                 run_text.font.size = Pt(14)
-                run_text.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
+                run_text.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["text_dark"])
                 run_text.font.name = "Microsoft YaHei"
                 p.space_after = Pt(6)
                 p.space_before = Pt(2)
@@ -1043,7 +1067,7 @@ class HTMLToPPTConverter:
             p = tf.paragraphs[0]
             p.text = content
             p.font.size = Pt(14)
-            p.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["text_dark"])
             p.font.name = "Microsoft YaHei"
             p.space_after = Pt(6)
 
@@ -1054,7 +1078,7 @@ class HTMLToPPTConverter:
         """Create findings slide: left check-mark items / right image."""
         from pptx.util import Inches, Pt
 
-        self._set_slide_bg(slide, self.DESIGN["white"])
+        self._set_slide_bg(slide, load_theme(self.theme_name)["colors"]["white"])
         sw = styles.get("slide_width", 13.333)
         sh = styles.get("slide_height", 7.5)
         self._add_side_accent(slide, styles)
@@ -1070,7 +1094,7 @@ class HTMLToPPTConverter:
             p.text = title
             p.font.size = Pt(24)
             p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["navy"])
             p.font.name = "Microsoft YaHei"
             self._add_title_underline(slide, 0.8, 1.05, min(4.0, sw * 0.3))
 
@@ -1097,13 +1121,13 @@ class HTMLToPPTConverter:
                 run_check = p.add_run()
                 run_check.text = "✓ "
                 run_check.font.size = Pt(16)
-                run_check.font.color.rgb = self._rgb(self.DESIGN["gold"])
+                run_check.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
                 run_check.font.bold = True
                 run_check.font.name = "Microsoft YaHei"
                 run_text = p.add_run()
                 run_text.text = item
                 run_text.font.size = Pt(14)
-                run_text.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
+                run_text.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["text_dark"])
                 run_text.font.name = "Microsoft YaHei"
                 p.space_after = Pt(6)
 
@@ -1114,7 +1138,7 @@ class HTMLToPPTConverter:
         """Create data slide: left table / right chart."""
         from pptx.util import Inches, Pt
 
-        self._set_slide_bg(slide, self.DESIGN["white"])
+        self._set_slide_bg(slide, load_theme(self.theme_name)["colors"]["white"])
         sw = styles.get("slide_width", 13.333)
         self._add_side_accent(slide, styles)
         self._add_footer_bar(slide, styles)
@@ -1129,7 +1153,7 @@ class HTMLToPPTConverter:
             p.text = title
             p.font.size = Pt(24)
             p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["navy"])
             p.font.name = "Microsoft YaHei"
             self._add_title_underline(slide, 0.8, 1.05, min(4.0, sw * 0.3))
 
@@ -1160,16 +1184,16 @@ class HTMLToPPTConverter:
                                 paragraph.font.size = Pt(12)
                                 paragraph.font.name = "Microsoft YaHei"
                                 if i == 0:
-                                    paragraph.font.color.rgb = self._rgb(self.DESIGN["white"])
+                                    paragraph.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["white"])
                                     paragraph.font.bold = True
                                 else:
-                                    paragraph.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
+                                    paragraph.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["text_dark"])
                             if i == 0:
                                 cell.fill.solid()
-                                cell.fill.fore_color.rgb = self._rgb(self.DESIGN["navy"])
+                                cell.fill.fore_color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["navy"])
                             elif i % 2 == 0:
                                 cell.fill.solid()
-                                cell.fill.fore_color.rgb = self._rgb(self.DESIGN["off_white"])
+                                cell.fill.fore_color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["off_white"])
 
         if has_image:
             self._add_images_to_slide(slide, slide_data, styles, position="right")
@@ -1179,10 +1203,10 @@ class HTMLToPPTConverter:
         from pptx.util import Inches, Pt
         from pptx.enum.text import PP_ALIGN
 
-        self._set_slide_bg(slide, self.DESIGN["navy"])
+        self._set_slide_bg(slide, load_theme(self.theme_name)["colors"]["navy"])
         sw = styles.get("slide_width", 13.333)
 
-        self._add_footer_bar(slide, styles, self.DESIGN["white"])
+        self._add_footer_bar(slide, styles, load_theme(self.theme_name)["colors"]["white"])
 
         title = slide_data.get("title", "")
         if title:
@@ -1194,7 +1218,7 @@ class HTMLToPPTConverter:
             p.text = title
             p.font.size = Pt(44)
             p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["gold"])
+            p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["gold"])
             p.font.name = "Microsoft YaHei"
             p.alignment = PP_ALIGN.CENTER
 
@@ -1205,7 +1229,7 @@ class HTMLToPPTConverter:
         p = tf.paragraphs[0]
         p.text = "感谢关注"
         p.font.size = Pt(28)
-        p.font.color.rgb = self._rgb(self.DESIGN["white"])
+        p.font.color.rgb = self._rgb(load_theme(self.theme_name)["colors"]["white"])
         p.font.name = "Microsoft YaHei"
         p.alignment = PP_ALIGN.CENTER
     

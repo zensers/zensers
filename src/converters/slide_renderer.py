@@ -84,6 +84,9 @@ class SlideRenderer:
     def _resolve_color(self, color_str: str) -> str:
         if color_str in self.design:
             return self.design[color_str]
+        colors = self.design.get("colors")
+        if isinstance(colors, dict) and color_str in colors:
+            return colors[color_str]
         return color_str
 
     def _rgb(self, hex_color: str):
