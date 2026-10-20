@@ -249,7 +249,6 @@ class SlideRenderer:
         max_h = pos.get("height", 5.2)
         slot_left = pos.get("left", 0.8)
         slot_top = pos.get("top", 1.6)
-        is_chart = self._is_chart_image(img_info) or slot_id == "chart"
         try:
             from PIL import Image as PILImage
             with PILImage.open(src) as pil_img:
