@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import pytest
 
+import src.converters.ppt_theme as ppt_theme
 from src.converters.ppt_theme import DEFAULT_THEME, load_theme, clear_theme_cache
 
 
@@ -47,5 +48,63 @@ class TestLoadTheme:
         theme = load_theme("themes/bad")
         assert theme["colors"] == DEFAULT_THEME["colors"]
 
-    def test_cache_returns_same_object(self):
-        assert load_theme("default") is load_theme("default")
+    def test_cache_returns_equal_content(self):
+        first = load_theme("default")
+        second = load_theme("default")
+        assert first == second
+        assert first is not second
+
+    def test_cache_avoids_rereading_file(self, tmp_path, monkeypatch):
+        theme_dir = tmp_path / "themes"
+        theme_dir.mkdir()
+        (theme_dir / "cached.json").write_text('{"colors": {"navy": "123456"}}', encoding="utf-8")
+        monkeypatch.setenv("PPT_THEME_DIR", str(tmp_path))
+
+        calls = []
+        original = ppt_theme._resolve_theme_path
+
+        def counting(name):
+            calls.append(name)
+            return original(name)
+
+        monkeypatch.setattr(ppt_theme, "_resolve_theme_path", counting)
+
+        first = load_theme("themes/cached")
+        second = load_theme("themes/cached")
+        assert len(calls) == 1
+        assert first == second
+
+    def test_non_hex_color_falls_back_to_default(self, tmp_path, monkeypatch):
+        theme_dir = tmp_path / "themes"
+        theme_dir.mkdir()
+        (theme_dir / "badhex.json").write_text(
+            '{"colors": {"navy": "GGGGGG"}}',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("PPT_THEME_DIR", str(tmp_path))
+        theme = load_theme("themes/badhex")
+        assert theme["colors"]["navy"] == DEFAULT_THEME["colors"]["navy"]
+
+    def test_hash_prefix_is_stripped(self, tmp_path, monkeypatch):
+        theme_dir = tmp_path / "themes"
+        theme_dir.mkdir()
+        (theme_dir / "hash.json").write_text(
+            '{"colors": {"navy": "#123ABC", "gold": "#ABC"}}',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("PPT_THEME_DIR", str(tmp_path))
+        theme = load_theme("themes/hash")
+        assert theme["colors"]["navy"] == "123ABC"
+        assert theme["colors"]["gold"] == "ABC"
+
+    def test_non_dict_colors_falls_back_entirely(self, tmp_path, monkeypatch):
+        theme_dir = tmp_path / "themes"
+        theme_dir.mkdir()
+        (theme_dir / "strcolors.json").write_text(
+            '{"colors": "red", "fonts": {"default": "SimHei"}}',
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("PPT_THEME_DIR", str(tmp_path))
+        theme = load_theme("themes/strcolors")
+        assert theme["colors"] == DEFAULT_THEME["colors"]
+        assert theme["fonts"]["default"] == "SimHei"

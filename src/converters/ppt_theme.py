@@ -7,13 +7,17 @@ maps and falls back to :data:`DEFAULT_THEME` when a file is missing or
 invalid, so a broken theme file can never break a conversion.
 """
 
+import copy
 import json
 import logging
 import os
+import re
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+_HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{3}$")
 
 DEFAULT_THEME: Dict = {
     "colors": {
@@ -36,7 +40,7 @@ DEFAULT_THEME: Dict = {
 _theme_cache: Dict[str, Dict] = {}
 
 
-def _resolve_theme_path(name: str):
+def _resolve_theme_path(name: str) -> Optional[Path]:
     env_dir = os.environ.get("PPT_THEME_DIR")
     if env_dir:
         candidate = Path(env_dir) / f"{name}.json"
@@ -63,21 +67,28 @@ def load_theme(name: str = "default") -> Dict:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            colors = data.get("colors") or {}
-            fonts = data.get("fonts") or {}
-            for key, value in colors.items():
-                if isinstance(value, str) and len(value) in (3, 6):
-                    theme["colors"][key] = value.lstrip("#")
-                else:
-                    logger.warning(f"Theme '{name}': invalid color '{key}={value}', keeping default")
-            for key, value in fonts.items():
-                if isinstance(value, str) and value.strip():
-                    theme["fonts"][key] = value.strip()
+            colors = data.get("colors")
+            fonts = data.get("fonts")
+            if isinstance(colors, dict):
+                for key, value in colors.items():
+                    cleaned = value.lstrip("#") if isinstance(value, str) else ""
+                    if _HEX_COLOR_RE.match(cleaned):
+                        theme["colors"][key] = cleaned
+                    else:
+                        logger.warning(f"Theme '{name}': invalid color '{key}={value}', keeping default")
+            elif colors:
+                logger.warning(f"Theme '{name}': 'colors' is not an object, keeping defaults")
+            if isinstance(fonts, dict):
+                for key, value in fonts.items():
+                    if isinstance(value, str) and value.strip():
+                        theme["fonts"][key] = value.strip()
+            elif fonts:
+                logger.warning(f"Theme '{name}': 'fonts' is not an object, keeping defaults")
         except (OSError, json.JSONDecodeError, ValueError) as e:
             logger.warning(f"Failed to load PPT theme '{name}' from {path}: {e}, using defaults")
 
     _theme_cache[name] = theme
-    return theme
+    return copy.deepcopy(theme)
 
 
 def clear_theme_cache() -> None:
