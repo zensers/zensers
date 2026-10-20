@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import dataclasses
+
 from src.converters.css_extractor import CSSStyleExtractor
 
 _HTML = """
@@ -24,3 +26,17 @@ class TestThemeOverrides:
         styles = CSSStyleExtractor().extract_from_html("<html></html>")
         overrides = styles.to_theme_overrides()
         assert overrides == {"colors": {}, "fonts": {}}
+
+    def test_non_hex_color_not_emitted(self):
+        html = _HTML.replace("color: #C9A227", "color: red")
+        styles = CSSStyleExtractor().extract_from_html(html)
+        overrides = styles.to_theme_overrides()
+        assert "gold" not in overrides["colors"]
+        assert overrides["colors"]["navy"] == "1A2744"
+        assert overrides["colors"]["text_dark"] == "555555"
+        assert overrides["fonts"]["default"] == "SimHei"
+
+    def test_replace_preserves_found_field(self):
+        styles = CSSStyleExtractor().extract_from_html(_HTML)
+        replaced = dataclasses.replace(styles)
+        assert replaced.to_theme_overrides() == styles.to_theme_overrides()
