@@ -37,7 +37,7 @@ import shutil
 from datetime import datetime
 from src.core.orchestrator.execution.task_utils import safe_create_task
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 from src.core.adjustment.cascade_update_analyzer import CascadeUpdateAnalyzer
 from src.core.adjustment.enhanced_section_locator import EnhancedSectionLocator
 from src.core.adjustment.revision_intent_mapper import RevisionIntentMapper
@@ -883,6 +883,37 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
                     conv_machine.force_set_state(ConversationState.FRAMEWORK_CONFIRM)
         return True
 
+    _VALID_OUTPUT_FORMATS = ("docx", "pptx", "pdf", "html")
+
+    def _resolve_output_format(self, session: Dict, user_input: str) -> tuple:
+        """Resolve (selected_sections, output_format).
+
+        Priority: structured field stashed by handle_interact <- legacy
+        __OUTPUT_FORMAT__ text marker (one-version compat) <- docx default.
+        """
+        fmt = session.pop("_output_format_structured", None)
+        selected_sections = None
+        marker = '__SELECTED_SECTIONS__:'
+        format_marker = '__OUTPUT_FORMAT__:'
+        if marker in user_input:
+            try:
+                json_part = user_input[user_input.index(marker) + len(marker):]
+                if format_marker in json_part:
+                    fmt_and_json = json_part.split(format_marker, 1)
+                    json_part = fmt_and_json[0].strip()
+                    if fmt not in self._VALID_OUTPUT_FORMATS:
+                        candidate = fmt_and_json[1].strip() if len(fmt_and_json) > 1 else ''
+                        if candidate in self._VALID_OUTPUT_FORMATS:
+                            fmt = candidate
+                if fmt not in self._VALID_OUTPUT_FORMATS:
+                    fmt = 'docx'
+                selected_sections = json.loads(json_part)
+            except Exception:
+                selected_sections = None
+        if fmt not in self._VALID_OUTPUT_FORMATS:
+            fmt = 'docx'
+        return selected_sections, fmt
+
     async def _handle_chat_mode(self, session_id, user_input, skip_lang_detect=False):
         """Handle chat mode interaction"""
         session = session_manager.get(session_id)
@@ -917,22 +948,7 @@ RULE: When action="enter_framework", if the topic has natural multi-level struct
             return await self._enter_framework_mode(session_id, user_input)
         if framework and any(kw in _user_lower for kw in _confirm_keywords):
             logger.info(f"[{session_id}] Framework confirm intent detected, starting execution directly")
-            selected_sections = None
-            marker = '__SELECTED_SECTIONS__:'
-            format_marker = '__OUTPUT_FORMAT__:'
-            output_format = 'docx'
-            if marker in user_input:
-                try:
-                    json_part = user_input[user_input.index(marker) + len(marker):]
-                    if format_marker in json_part:
-                        fmt_and_json = json_part.split(format_marker, 1)
-                        json_part = fmt_and_json[0].strip()
-                        output_format = fmt_and_json[1].strip() if len(fmt_and_json) > 1 else 'docx'
-                    selected_sections = json.loads(json_part)
-                except Exception:
-                    selected_sections = None
-            if output_format not in ('docx', 'pptx', 'pdf', 'html'):
-                output_format = 'docx'
+            selected_sections, output_format = self._resolve_output_format(session, user_input)
             session['output_format'] = output_format
             sections_tree = framework.get('sections_tree')
             if selected_sections:
@@ -1943,22 +1959,7 @@ IMPORTANT: The DEFAULT action for ambiguous messages like "继续" is resume_res
             if not topic or not framework.get('sections'):
                 return self._framework_response(session_id, self._l('研究框架尚未完整定义，请先完成框架设置。', 'The research framework is not yet complete. Please finish setting it up first.', lang))
             logger.info(f"[{session_id}] Framework confirm intent detected in framework mode, starting execution directly")
-            selected_sections = None
-            marker = '__SELECTED_SECTIONS__:'
-            format_marker = '__OUTPUT_FORMAT__:'
-            output_format = 'docx'
-            if marker in user_input:
-                try:
-                    json_part = user_input[user_input.index(marker) + len(marker):]
-                    if format_marker in json_part:
-                        fmt_and_json = json_part.split(format_marker, 1)
-                        json_part = fmt_and_json[0].strip()
-                        output_format = fmt_and_json[1].strip() if len(fmt_and_json) > 1 else 'docx'
-                    selected_sections = json.loads(json_part)
-                except Exception:
-                    selected_sections = None
-            if output_format not in ('docx', 'pptx', 'pdf', 'html'):
-                output_format = 'docx'
+            selected_sections, output_format = self._resolve_output_format(session, user_input)
             session['output_format'] = output_format
             logger.info(f"[{session_id}] Output format set to: {output_format}")
             if selected_sections:
@@ -2669,6 +2670,9 @@ IMPORTANT: The DEFAULT action for ambiguous messages like "继续" is resume_res
         if step == 0:
             mode = session.get('mode', 'chat')
             user_message = response.get('text', response.get('message', ''))
+            structured_fmt = response.get('output_format')
+            if structured_fmt in self._VALID_OUTPUT_FORMATS:
+                session['_output_format_structured'] = structured_fmt
             suggestion_id = response.get('suggestion_id', response.get('id', ''))
             skip_lang = False
             if suggestion_id:
