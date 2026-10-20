@@ -880,3 +880,30 @@ class TestChartConfigFromStrategy:
         cfg = captured["config"]
         figsize = PPTXStrategy().get_chart_style().figsize
         assert (cfg.width, cfg.height) == figsize
+
+
+class TestAtomicSave:
+    def test_atomic_save_uses_mkstemp(self, tmp_path, monkeypatch):
+        """_atomic_save must not call the deprecated tempfile.mktemp."""
+        import tempfile
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        called = {"mktemp": False}
+        real_mktemp = tempfile.mktemp
+
+        def spy_mktemp(*a, **kw):
+            called["mktemp"] = True
+            return real_mktemp(*a, **kw)
+
+        monkeypatch.setattr(tempfile, "mktemp", spy_mktemp)
+
+        import os
+        from pptx import Presentation
+
+        prs = Presentation()
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as td:
+            out = os.path.join(td, "a.pptx")
+            HTMLToPPTConverter()._atomic_save(prs, out)
+            assert os.path.exists(out)
+            assert not called["mktemp"]

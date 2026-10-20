@@ -445,25 +445,23 @@ class HTMLToPPTConverter:
     def _atomic_save(self, prs: Any, output_path: str) -> None:
         """
         Atomic save presentation
-        
-        Use temp file + shutil.move to ensure atomic write.
-        
+
+        Use mkstemp + os.replace to ensure atomic write (race-safe,
+        no deprecated mktemp).
+
         Args:
             prs: Presentation object
             output_path: Final output path
         """
-        import shutil
-        
-        # Create temp file (without file descriptor)
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-        
-        temp_path = tempfile.mktemp(suffix='.pptx', dir=output_dir or '.')
+
+        fd, temp_path = tempfile.mkstemp(suffix='.pptx', dir=output_dir or '.')
+        os.close(fd)
         try:
             prs.save(temp_path)
-            # Use shutil.move instead of os.replace, more reliable
-            shutil.move(temp_path, output_path)
+            os.replace(temp_path, output_path)
         except Exception:
             # Clean up temp file
             try:
