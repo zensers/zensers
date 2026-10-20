@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .template_engine import TemplateEngine
+from .format_strategy import get_format_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +127,12 @@ class ContentOrchestrator:
         self._last_render_diagnostics: List[Dict[str, Any]] = []
         self._last_render_validation: Dict[str, Any] = {"passed": True, "issues": []}
         from .content_condenser import ContentCondenser
-        # PPT uses a stricter editorial contract than Word.  The condenser
-        # still exposes a larger default for standalone callers, but the
-        # orchestrator must enforce presentation-scale bullets.
-        self._condenser = ContentCondenser(max_bullet_chars=25)
+        # PPT 编辑契约的单一来源是 PPTXStrategy（format_strategy.py）。
+        # condenser 只在 _render_section_slides（pptx 分支）中使用。
+        directive = get_format_strategy("pptx").get_writing_directive()
+        self._condenser = ContentCondenser(
+            max_bullet_chars=directive.bullet_max_chars or 25
+        )
     
     def get_template_html(self, template_name: Optional[str] = None) -> Optional[str]:
         """

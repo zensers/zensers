@@ -798,3 +798,54 @@ class TestSlideCopyChinese:
         slide_html = co._render_end_slide("测试报告", 1)
         assert "谢谢观看" in slide_html
         assert "感谢关注" not in slide_html
+
+
+class TestStrategyWiringCondenser:
+    def test_condenser_uses_strategy_bullet_limit(self):
+        """Condenser 要点字数上限必须来自 PPTXStrategy，而非字面量。"""
+        from unittest.mock import patch
+
+        from src.content import content_orchestrator as co_mod
+        from src.content.format_strategy import PPTXStrategy
+
+        directive = PPTXStrategy().get_writing_directive()
+        assert directive.bullet_max_chars == 25  # 策略源值
+
+        with patch.object(co_mod, "get_format_strategy", wraps=co_mod.get_format_strategy) as spy:
+            orchestrator = co_mod.ContentOrchestrator()
+            assert spy.call_count >= 1
+            assert orchestrator._condenser.max_bullet_chars == directive.bullet_max_chars
+
+    def test_condenser_respects_strategy_change(self):
+        """策略变化时 condenser 上限应随之变化（策略为单一来源）。"""
+        from src.content import content_orchestrator as co_mod
+        from src.content.format_strategy import FormatStrategy, WritingDirective
+
+        original = co_mod.get_format_strategy
+
+        class _StubStrategy(FormatStrategy):
+            @property
+            def format_name(self):
+                return "pptx"
+
+            def get_writing_directive(self, section_type="body"):
+                return WritingDirective(bullet_max_chars=18)
+
+            def get_chart_style(self):
+                return None
+
+            def get_quality_standard(self):
+                return None
+
+            def get_layout_preference(self):
+                return None
+
+            def get_chapter_writer_prompt_suffix(self, section_type="body"):
+                return ""
+
+        try:
+            co_mod.get_format_strategy = lambda fmt: _StubStrategy()
+            orchestrator = co_mod.ContentOrchestrator()
+            assert orchestrator._condenser.max_bullet_chars == 18
+        finally:
+            co_mod.get_format_strategy = original
