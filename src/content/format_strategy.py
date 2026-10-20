@@ -76,10 +76,6 @@ class FormatStrategy(ABC):
     def get_layout_preference(self) -> LayoutPreference:
         pass
 
-    @abstractmethod
-    def get_chapter_writer_prompt_suffix(self, section_type: str = "body") -> str:
-        pass
-
 
 class DOCXStrategy(FormatStrategy):
 
@@ -125,13 +121,6 @@ class DOCXStrategy(FormatStrategy):
             slide_layouts=["bullet_points"],
             chart_position="embedded",
             table_style="full",
-        )
-
-    def get_chapter_writer_prompt_suffix(self, section_type: str = "body") -> str:
-        return (
-            "请撰写详细的分析论述，将数据自然融入论证逻辑中。"
-            "每段应包含：观点陈述 → 数据支撑 → 逻辑推导 → 结论。"
-            "段落之间保持逻辑连贯，形成完整的论证链条。"
         )
 
 
@@ -185,22 +174,6 @@ class PPTXStrategy(FormatStrategy):
             table_style="compact",
         )
 
-    def get_chapter_writer_prompt_suffix(self, section_type: str = "body") -> str:
-        return (
-            "请为每张幻灯片提炼内容，使用以下格式：\n"
-            "## 幻灯片: [标题]\n"
-            "- 要点1: [不超过25字]\n"
-            "- 要点2: [不超过25字]\n"
-            "- 要点3: [不超过25字]\n"
-            "[图表建议: 图表类型 - 展示内容描述]\n"
-            "[数据标签: 关键数值及单位]\n\n"
-            "要求：\n"
-            "1. 每张幻灯片聚焦一个核心观点\n"
-            "2. 要点精炼，适合远距离阅读\n"
-            "3. 明确指出哪里适合配图、配什么图\n"
-            "4. 数据以标签形式呈现，而非嵌入段落\n"
-        )
-
 
 class PDFStrategy(FormatStrategy):
 
@@ -244,13 +217,6 @@ class PDFStrategy(FormatStrategy):
         return LayoutPreference(
             chart_position="embedded",
             table_style="full",
-        )
-
-    def get_chapter_writer_prompt_suffix(self, section_type: str = "body") -> str:
-        return (
-            "请撰写详细的分析论述，适合打印阅读。"
-            "注意页面可读性，避免过长段落。"
-            "图表应有清晰标题和数据来源标注。"
         )
 
 

@@ -841,9 +841,6 @@ class TestStrategyWiringCondenser:
             def get_layout_preference(self):
                 return None
 
-            def get_chapter_writer_prompt_suffix(self, section_type="body"):
-                return ""
-
         try:
             seen_formats = []
             co_mod.get_format_strategy = lambda fmt: (seen_formats.append(fmt), _StubStrategy())[1]
@@ -852,3 +849,34 @@ class TestStrategyWiringCondenser:
             assert seen_formats == ["pptx"]
         finally:
             co_mod.get_format_strategy = original
+
+
+class TestChartConfigFromStrategy:
+    def test_table_chart_uses_strategy_figsize(self):
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+        from src.content.format_strategy import PPTXStrategy
+
+        captured = {}
+
+        class FakeResult:
+            success = True
+            image_path = None
+
+        class FakeInner:
+            def generate(self, config):
+                captured["config"] = config
+                return FakeResult()
+
+        chart_gen = MagicMock()
+        chart_gen.output_dir = Path(".")
+        chart_gen.chart_generator = FakeInner()
+
+        converter = HTMLToPPTConverter()
+        table = [["年份", "规模"], ["2023", "100"], ["2024", "120"], ["2025", "150"]]
+        converter._generate_chart_from_table(table, "规模趋势", chart_gen)
+        cfg = captured["config"]
+        figsize = PPTXStrategy().get_chart_style().figsize
+        assert (cfg.width, cfg.height) == figsize

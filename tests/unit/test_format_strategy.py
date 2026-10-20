@@ -80,10 +80,6 @@ class TestDOCXStrategy:
         l = self.strategy.get_layout_preference()
         assert l.chart_position == "embedded"
 
-    def test_prompt_suffix_mentions_detailed(self):
-        p = self.strategy.get_chapter_writer_prompt_suffix()
-        assert "详细" in p
-
 
 class TestPPTXStrategy:
     def setup_method(self):
@@ -116,11 +112,6 @@ class TestPPTXStrategy:
         assert l.prefer_split_layout is True
         assert "chart_split" in l.slide_layouts
         assert l.chart_position == "right"
-
-    def test_prompt_suffix_mentions_slide(self):
-        p = self.strategy.get_chapter_writer_prompt_suffix()
-        assert "幻灯片" in p
-        assert "图表建议" in p
 
 
 class TestPDFStrategy:
@@ -191,8 +182,6 @@ class TestStrategyInterface:
             assert isinstance(strategy.get_chart_style(), ChartStyleConfig)
             assert isinstance(strategy.get_quality_standard(), QualityStandard)
             assert isinstance(strategy.get_layout_preference(), LayoutPreference)
-            assert isinstance(strategy.get_chapter_writer_prompt_suffix(), str)
-            assert len(strategy.get_chapter_writer_prompt_suffix()) > 0
 
 
 if __name__ == "__main__":

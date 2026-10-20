@@ -101,6 +101,11 @@ class HTMLToPPTConverter:
         self.styles = {**self.DEFAULT_STYLES, **(styles or {})}
         self.theme_name = theme
         self.design = load_theme(theme)
+        try:
+            from src.content.format_strategy import get_format_strategy
+            self._chart_figsize = get_format_strategy("pptx").get_chart_style().figsize
+        except Exception:
+            self._chart_figsize = (8.0, 5.0)
         self._pptx_available = self._check_pptx_available()
         
         if not self._pptx_available:
@@ -589,8 +594,8 @@ class HTMLToPPTConverter:
             data={"categories": categories, "values": values},
             ylabel=headers[numeric_col_idx],
             source="",
-            width=8,
-            height=5,
+            width=self._chart_figsize[0],
+            height=self._chart_figsize[1],
         )
         result = chart_gen.chart_generator.generate(config)
         if result.success and result.image_path:
