@@ -647,3 +647,22 @@ class TestThemeIntegration:
         renderer = SlideRenderer(design)
         assert renderer._resolve_color("navy") == "1A2744"
         assert renderer._resolve_color("#FF0000") == "#FF0000"
+
+
+class TestTemplateHtmlForwarding:
+    def test_conversion_with_template_does_not_crash(self):
+        """Guard: convert(template_html=...) is the wired path used by all 3 call sites."""
+        import tempfile
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        template_html = "<html><head><style>.slide.cover h1{color:#C9A227}</style></head><body></body></html>"
+        html = "<section class='slide' data-type='cover'><h1>T</h1></section>"
+        # Converter's _is_safe_path sandbox restricts output to the workspace,
+        # so use a workspace-local temp dir instead of pytest tmp_path.
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+            out = Path(tmpdir) / "out.pptx"
+            result = HTMLToPPTConverter().convert(
+                html=html, output_path=str(out), template_html=template_html
+            )
+            assert result.success

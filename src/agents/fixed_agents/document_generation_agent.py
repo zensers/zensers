@@ -442,8 +442,15 @@ class DocumentGenerationAgent(FixedAgent):
 
                 if format_value == "pptx":
                     from src.converters.html_to_ppt import HTMLToPPTConverter
-                    converter = HTMLToPPTConverter()
-                    conv_result = converter.convert(html=html_content, output_path=str(output_path))
+                    template_html = None
+                    try:
+                        from src.content.content_orchestrator import ContentOrchestrator
+                        co = ContentOrchestrator()
+                        template_html = co.get_template_html("ppt_default")
+                    except Exception:
+                        logger.warning("ppt_default template unavailable, exporting with theme defaults")
+                    converter = HTMLToPPTConverter(theme="ppt_default")
+                    conv_result = converter.convert(html=html_content, output_path=str(output_path), template_html=template_html)
                     if conv_result.success:
                         direct_conversion_ok = True
                     else:

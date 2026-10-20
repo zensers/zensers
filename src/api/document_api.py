@@ -560,9 +560,15 @@ class DocumentAPI:
         # 3. Convert HTML to target format
         logger.info(f"[EXPORT] Step 4: Converting HTML to {output_format.upper()}")
         try:
+            template_html = None
             if output_format == "pptx":
                 from src.converters.html_to_ppt import HTMLToPPTConverter
-                converter = HTMLToPPTConverter()
+                try:
+                    from src.content.content_orchestrator import ContentOrchestrator
+                    template_html = ContentOrchestrator().get_template_html("ppt_default")
+                except Exception:
+                    logger.warning("ppt_default template unavailable, exporting with theme defaults")
+                converter = HTMLToPPTConverter(theme="ppt_default")
                 logger.info(f"[EXPORT] HTMLToPPTConverter created, pptx_available={converter._pptx_available}")
             elif output_format == "pdf":
                 from src.converters.html_to_pdf import HTMLToPDFConverter
@@ -572,10 +578,14 @@ class DocumentAPI:
                 from src.converters.html_to_word import HTMLToWordConverter
                 converter = HTMLToWordConverter()
                 logger.info(f"[EXPORT] HTMLToWordConverter created, docx_available={converter._docx_available}")
-            
-            result = converter.convert(html=html_content, output_path=output_path)
+
+            # PDF converter does not accept template_html; only forward it when set (pptx/docx).
+            if template_html is not None:
+                result = converter.convert(html=html_content, output_path=output_path, template_html=template_html)
+            else:
+                result = converter.convert(html=html_content, output_path=output_path)
             logger.info(f"[EXPORT] Conversion result: success={result.success}, error={result.error}, error_code={result.error_code}")
-            
+
         except ImportError as e:
             logger.error(f"[EXPORT] FAILED: Could not import HTMLToWordConverter: {e}")
             return {"status": "failed", "error": f"Converter not available: {e}"}

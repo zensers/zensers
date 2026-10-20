@@ -4800,8 +4800,15 @@ IMPORTANT: The DEFAULT action for ambiguous messages like "继续" is resume_res
             output_dir = Path('data') / session_id
             output_dir.mkdir(parents=True, exist_ok=True)
             output_path = output_dir / f"{session_id}.pptx"
-            result = HTMLToPPTConverter().convert(
-                html=artifact.load_html(), output_path=str(output_path)
+            template_html = None
+            try:
+                from src.content.content_orchestrator import ContentOrchestrator
+                template_html = ContentOrchestrator().get_template_html("ppt_default")
+            except Exception:
+                logger.warning("ppt_default template unavailable, exporting with theme defaults")
+            result = HTMLToPPTConverter(theme="ppt_default").convert(
+                html=artifact.load_html(), output_path=str(output_path),
+                template_html=template_html,
             )
             if not result.success:
                 return {'status': 'failed', 'error_code': 'PPT_EXPORT_FAILED', 'error': result.error}
