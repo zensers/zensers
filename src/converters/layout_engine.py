@@ -33,7 +33,7 @@ NO_CHART_TEMPLATES = {"cover", "toc", "section_title", "end", "comparison"}
 
 TYPO_BOUNDS = {
     "font.min": 10,
-    "font.max_items": 36,
+    "font.max_items": 30,
     "font.max_table": 16,
     "font.max_toc": 32,
     "font.min_table": 11,
@@ -222,15 +222,18 @@ class LayoutEngine:
         full_h = T["footer.top"] - T["content.top"]
         gap = T["gap.card"]
         if kpi_count <= 2:
-            card_h = min(2.8, full_h * 0.55)
+            card_h = min(3.2, full_h * 0.55)
         else:
-            card_h = min(2.0, full_h * 0.45)
+            card_h = min(2.6, full_h * 0.45)
         card_w = (T["content.width"] - gap * (kpi_count - 1)) / kpi_count
         typo = self._typo_kpi(card_h, card_w, kpi_count)
+        # A short row of cards reads as a deliberate dashboard band; center it
+        # vertically instead of stretching each card over the whole content area.
+        top = T["content.top"] + (full_h - card_h) / 2
         return {
             "kpi_row": {
                 "left": T["margin.left"],
-                "top": T["content.top"],
+                "top": top,
                 "width": T["content.width"],
                 "height": card_h,
                 "_style_delta": typo,
@@ -473,7 +476,7 @@ class LayoutEngine:
             and isinstance(pos.get("height"), (int, float))
         )
         utilization = used_area / content_area if content_area > 0 else 0
-        if utilization < 0.5:
+        if utilization < 0.5 and not profile.get("has_kpis"):
             issues.append(f"Content utilization {utilization:.0%} < 50%")
 
         rects = [
@@ -514,17 +517,7 @@ class LayoutEngine:
         T = self.T
         content_h = self._content_h()
         if profile["has_kpis"]:
-            kpi_count = profile.get("kpi_count", 2)
-            typo = self._typo_kpi(content_h * 0.45, T["content.width"] / kpi_count, kpi_count)
-            return {
-                "kpi_row": {
-                    "left": T["margin.left"],
-                    "top": T["content.top"],
-                    "width": T["content.width"],
-                    "height": content_h,
-                    "_style_delta": typo,
-                },
-            }
+            return self._layout_kpi_solo(profile, slide_data, template)
         if profile["has_table"]:
             table_rows = profile.get("table_rows", 3)
             typo = self._typo_table(table_rows, content_h)

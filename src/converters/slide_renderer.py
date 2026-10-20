@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 class SlideRenderer:
     def __init__(self, design: Dict[str, str], image_provider=None):
         self.design = design
+        self.default_font = design.get("font_default", "Microsoft YaHei")
         self.image_provider = image_provider
 
     def render(self, slide, slide_data: Dict, template: Dict, styles: Dict, page_num: int = 0, layout_overrides: Dict = None):
@@ -83,6 +84,9 @@ class SlideRenderer:
     def _resolve_color(self, color_str: str) -> str:
         if color_str in self.design:
             return self.design[color_str]
+        colors = self.design.get("colors")
+        if isinstance(colors, dict) and color_str in colors:
+            return colors[color_str]
         return color_str
 
     def _rgb(self, hex_color: str):
@@ -156,7 +160,7 @@ class SlideRenderer:
             p.font.bold = st.get("font_weight", "") == "bold"
             color = self._resolve_color(st.get("color", "text_dark"))
             p.font.color.rgb = self._rgb(color)
-            p.font.name = st.get("font", "Microsoft YaHei")
+            p.font.name = st.get("font", self.default_font)
             alignment = st.get("alignment", "left")
             align_map = {"left": PP_ALIGN.LEFT, "center": PP_ALIGN.CENTER, "right": PP_ALIGN.RIGHT}
             p.alignment = align_map.get(alignment, PP_ALIGN.LEFT)
@@ -176,10 +180,11 @@ class SlideRenderer:
         txBox = slide.shapes.add_textbox(left, top, width, height)
         tf = txBox.text_frame
         tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         bullet = st.get("bullet", "▸")
         bullet_color = self._resolve_color(st.get("bullet_color", "gold"))
         text_color = self._resolve_color(st.get("color", "text_dark"))
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         font_size = st.get("font_size", 18)
         line_spacing = st.get("line_spacing", 14)
         bullet_font_size = st.get("bullet_font_size", font_size + 4)
@@ -202,6 +207,15 @@ class SlideRenderer:
             p.space_after = Pt(line_spacing)
             p.space_before = Pt(space_before)
 
+    def _is_chart_image(self, img: Dict) -> bool:
+        """Chart detection: metadata first, filename heuristic as legacy fallback."""
+        if img.get("image_type") == "chart":
+            return True
+        if img.get("image_type"):  # 显式非 chart 元数据优先于文件名
+            return False
+        src = img.get("src", "")
+        return any(p in src for p in ("pie_", "bar_", "hbar_", "line_", "chart"))
+
     def _render_image_slot(self, slide, slot: Dict, slide_data: Dict, styles: Dict):
         images = slide_data.get(slot.get("source", "images"), [])
         idx = slot.get("style", {}).get("index", 0)
@@ -209,8 +223,7 @@ class SlideRenderer:
         if slot_id == "chart" and images:
             chart_idx = None
             for ci, img in enumerate(images):
-                src = img.get("src", "")
-                if img.get("image_type") == "chart" or any(p in src for p in ("pie_", "bar_", "hbar_", "line_", "chart")):
+                if self._is_chart_image(img):
                     chart_idx = ci
                     break
             if chart_idx is not None:
@@ -237,31 +250,27 @@ class SlideRenderer:
         max_h = pos.get("height", 5.2)
         slot_left = pos.get("left", 0.8)
         slot_top = pos.get("top", 1.6)
-        is_chart = img_info.get("image_type") == "chart" or "chart" in src or "pie_" in src or "bar_" in src or "hbar_" in src or "line_" in src or slot_id == "chart"
-        if is_chart:
-            slide.shapes.add_picture(src, Inches(slot_left), Inches(slot_top), Inches(max_w), Inches(max_h))
-        else:
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(src) as pil_img:
+                img_w, img_h = pil_img.size
+                aspect = img_w / img_h
+            if max_w / max_h > aspect:
+                final_h = max_h
+                final_w = final_h * aspect
+            else:
+                final_w = max_w
+                final_h = final_w / aspect
+            centered_left = slot_left + (max_w - final_w) / 2
+            centered_top = slot_top + (max_h - final_h) / 2
+            slide.shapes.add_picture(src, Inches(centered_left), Inches(centered_top), Inches(final_w), Inches(final_h))
+        except ImportError:
             try:
-                from PIL import Image as PILImage
-                with PILImage.open(src) as pil_img:
-                    img_w, img_h = pil_img.size
-                    aspect = img_w / img_h
-                if max_w / max_h > aspect:
-                    final_h = max_h
-                    final_w = final_h * aspect
-                else:
-                    final_w = max_w
-                    final_h = final_w / aspect
-                centered_left = slot_left + (max_w - final_w) / 2
-                centered_top = slot_top + (max_h - final_h) / 2
-                slide.shapes.add_picture(src, Inches(centered_left), Inches(centered_top), Inches(final_w), Inches(final_h))
-            except ImportError:
-                try:
-                    slide.shapes.add_picture(src, Inches(slot_left), Inches(slot_top), Inches(max_w))
-                except Exception as e:
-                    logger.warning(f"Failed to add image '{src}': {e}")
+                slide.shapes.add_picture(src, Inches(slot_left), Inches(slot_top), Inches(max_w))
             except Exception as e:
                 logger.warning(f"Failed to add image '{src}': {e}")
+        except Exception as e:
+            logger.warning(f"Failed to add image '{src}': {e}")
 
     def _render_table_slot(self, slide, slot: Dict, slide_data: Dict, styles: Dict):
         table_data = slide_data.get(slot.get("source", "table_data"), [])
@@ -294,7 +303,7 @@ class SlideRenderer:
         header_color = self._resolve_color(st.get("header_color", "white"))
         stripe = st.get("stripe", True)
         stripe_color = self._resolve_color(st.get("stripe_color", "off_white"))
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         row_font_size = st.get("row_font_size", 14)
         header_font_size = st.get("header_font_size", row_font_size + 2)
         cell_padding = st.get("cell_padding", 4)
@@ -398,13 +407,13 @@ class SlideRenderer:
             run_num.font.size = Pt(number_size)
             run_num.font.color.rgb = self._rgb(number_color)
             run_num.font.bold = True
-            run_num.font.name = "Microsoft YaHei"
+            run_num.font.name = self.default_font
             run_trend = p_num.add_run()
             run_trend.text = f"{arrow} {trend}"
             run_trend.font.size = Pt(14)
             run_trend.font.color.rgb = self._rgb(trend_color)
             run_trend.font.bold = True
-            run_trend.font.name = "Microsoft YaHei"
+            run_trend.font.name = self.default_font
         else:
             p_num = tf.paragraphs[0]
             p_num.space_before = Pt(4)
@@ -413,16 +422,14 @@ class SlideRenderer:
             run_num.font.size = Pt(number_size)
             run_num.font.color.rgb = self._rgb(number_color)
             run_num.font.bold = True
-            run_num.font.name = "Microsoft YaHei"
+            run_num.font.name = self.default_font
         label = kpi.get("label", "")
-        if not label:
-            label = kpi.get("original_text", "")[:30]
         if label:
             p_label = tf.add_paragraph()
             p_label.text = label
             p_label.font.size = Pt(label_size)
             p_label.font.color.rgb = self._rgb(label_color)
-            p_label.font.name = "Microsoft YaHei"
+            p_label.font.name = self.default_font
             p_label.alignment = PP_ALIGN.CENTER
             p_label.space_before = Pt(4)
 
@@ -446,7 +453,7 @@ class SlideRenderer:
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.alignment = PP_ALIGN.LEFT
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         font_color = self._resolve_color(st.get("color", "white"))
         if icon:
             run_icon = p.add_run()
@@ -478,7 +485,7 @@ class SlideRenderer:
         left_color = self._resolve_color(st.get("left_color", "navy"))
         right_color = self._resolve_color(st.get("right_color", "gold"))
         font_size = st.get("font_size", 13)
-        font_name = st.get("font", "Microsoft YaHei")
+        font_name = st.get("font", self.default_font)
         for col_idx, (side, color) in enumerate([(left_side, left_color), (right_side, right_color)]):
             col_left = start_left + col_idx * (col_width + 0.4)
             title = side.get("title", "")
@@ -516,7 +523,7 @@ class SlideRenderer:
 
     def _render_decoration(self, slide, dec: Dict, styles: Dict, page_num: int = 0):
         dec_type = dec.get("type", "")
-        font_name = "Microsoft YaHei"
+        font_name = self.default_font
 
         if dec_type == "footer_bar":
             color = self._resolve_color(dec.get("color", "gold"))

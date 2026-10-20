@@ -644,7 +644,7 @@ export function useResearch() {
   /**
    * Generic option handler - dispatches based on currentStep
    */
-  const handleOptionSelect = useCallback(async (optionId: string, exampleText?: string) => {
+  const handleOptionSelect = useCallback(async (optionId: string, exampleText?: string, outputFormat?: string) => {
     // S11: start_research handled here, not in ChatPanel
     if (optionId === 'start_research') {
       return handleStartResearch();
@@ -679,7 +679,7 @@ export function useResearch() {
           topP: llm.topP,
           frequencyPenalty: llm.frequencyPenalty,
           presencePenalty: llm.presencePenalty,
-        }));
+        }), outputFormat);
         if (!isActiveSession(targetSessionId)) return null;
         
         // Update state based on returned mode

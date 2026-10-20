@@ -474,33 +474,32 @@ class HTMLToWordConverter:
     def _atomic_save(self, doc: Any, output_path: str) -> None:
         """
         Atomically save document
-        
-        Use temp file + shutil.move to ensure atomic write.
-        
+
+        Use mkstemp + os.replace to ensure atomic write (race-safe,
+        no deprecated mktemp).
+
         Args:
             doc: Document object
             output_path: Final output path
         """
-        import shutil
-        
         logger.info(f"[CONVERT] Atomic save starting, target: {output_path}")
-        
-        # Create temp file (don't use file descriptor)
+
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-        
-        temp_path = tempfile.mktemp(suffix='.docx', dir=output_dir or '.')
+
+        fd, temp_path = tempfile.mkstemp(suffix='.docx', dir=output_dir or '.')
+        os.close(fd)
         logger.info(f"[CONVERT] Temp file path: {temp_path}")
-        
+
         try:
             logger.info(f"[CONVERT] Saving document to temp file...")
             doc.save(temp_path)
             temp_size = os.path.getsize(temp_path) if os.path.exists(temp_path) else 0
             logger.info(f"[CONVERT] Temp file saved, size: {temp_size} bytes")
-            
+
             logger.info(f"[CONVERT] Moving temp file to final location...")
-            shutil.move(temp_path, output_path)
+            os.replace(temp_path, output_path)
             logger.info(f"[CONVERT] Atomic save complete: {output_path}")
         except Exception as e:
             logger.error(f"[CONVERT] Atomic save FAILED: {e}")

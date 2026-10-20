@@ -27,6 +27,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# 合法 hex 颜色（6 位或 3 位），与 ppt_theme._HEX_COLOR_RE 保持一致
+_HEX_COLOR_RE = re.compile(r"^[0-9a-fA-F]{6}$|^[0-9a-fA-F]{3}$")
+
 
 @dataclass
 class CSSRule:
@@ -63,7 +66,49 @@ class ExtractedStyles:
     title_color: str = "#1A2744"
     accent_color: str = "#C9A227"
     body_color: str = "#333333"
-    
+
+    # 深层色板（body 一级文字之外的补充）
+    slide_bg_color: str = ""
+
+    # 模板 CSS 中实际出现的字段（to_theme_overrides 只输出这些）
+    found: set = field(default_factory=set, repr=False, compare=False)
+
+    def to_theme_overrides(self) -> Dict[str, Dict[str, str]]:
+        """Convert extracted colors/fonts into ppt_theme override dict.
+
+        Only tokens that were actually present in the template CSS are
+        returned, so the caller can merge: theme file base <- CSS overrides.
+        """
+        colors: Dict[str, str] = {}
+
+        def _clean(value: str) -> str:
+            return value.lstrip("#").upper() if value else ""
+
+        def _hex6(value: str) -> str:
+            cleaned = _clean(value)
+            return cleaned if _HEX_COLOR_RE.match(cleaned) else ""
+
+        if "accent_color" in self.found:
+            gold = _hex6(self.accent_color)
+            if gold:
+                colors["gold"] = gold
+        if "title_color" in self.found:
+            navy = _hex6(self.title_color)
+            if navy:
+                colors["navy"] = navy
+        if "body_color" in self.found:
+            text_dark = _hex6(self.body_color)
+            if text_dark:
+                colors["text_dark"] = text_dark
+
+        fonts: Dict[str, str] = {}
+        if "title_font" in self.found and self.title_font and self.title_font != "Microsoft YaHei":
+            fonts["default"] = self.title_font
+        elif "body_font" in self.found and self.body_font and self.body_font != "Microsoft YaHei":
+            fonts["default"] = self.body_font
+
+        return {"colors": colors, "fonts": fonts}
+
     def to_word_styles(self) -> Dict[str, Any]:
         """Convert to Word style dict"""
         return {
@@ -383,14 +428,18 @@ class CSSStyleExtractor:
     def _extract_key_styles(self) -> ExtractedStyles:
         """提取关键样式配置"""
         styles = ExtractedStyles()
-        
+
         # 提取Word样式
         # 封面标题样式（.cover-page h1 优先级高于 h1.chapter-title）
         cover_title = self._get_merged_styles("h1.chapter-title", ".cover-page h1")
         if cover_title:
-            styles.title_font = self._parse_font_family(cover_title.get("font-family", ""))
+            if cover_title.get("font-family"):
+                styles.title_font = self._parse_font_family(cover_title["font-family"])
+                styles.found.add("title_font")
             styles.title_size = self._parse_size(cover_title.get("font-size", "28pt"))
-            styles.title_color = self._parse_color(cover_title.get("color", "#1A2744"))
+            if cover_title.get("color"):
+                styles.title_color = self._parse_color(cover_title["color"])
+                styles.found.add("title_color")
         
         # 章标题样式（精确匹配，不使用降级匹配避免误取封面样式）
         h1_styles = self._get_merged_styles("h1.chapter-title")
@@ -410,28 +459,42 @@ class CSSStyleExtractor:
         # 正文样式
         body_styles = self._get_merged_styles("body", "p")
         if body_styles:
-            styles.body_font = self._parse_font_family(body_styles.get("font-family", ""))
+            if body_styles.get("font-family"):
+                styles.body_font = self._parse_font_family(body_styles["font-family"])
+                styles.found.add("body_font")
             styles.body_size = self._parse_size(body_styles.get("font-size", "11pt"))
-            styles.body_color = self._parse_color(body_styles.get("color", "#333333"))
+            if body_styles.get("color"):
+                styles.body_color = self._parse_color(body_styles["color"])
+                styles.found.add("body_color")
             styles.line_spacing = self._parse_line_height(body_styles.get("line-height", "1.5"))
-        
+
         # 提取PPT样式
         # 封面标题
         ppt_cover_title = self._get_merged_styles(".slide.cover h1", ".slide h1")
         if ppt_cover_title:
             styles.ppt_title_size = self._parse_size(ppt_cover_title.get("font-size", "72px"))
-            styles.accent_color = self._parse_color(ppt_cover_title.get("color", "#C9A227"))
-        
+            if ppt_cover_title.get("color"):
+                styles.accent_color = self._parse_color(ppt_cover_title["color"])
+                styles.found.add("accent_color")
+            if ppt_cover_title.get("font-family"):
+                styles.title_font = self._parse_font_family(ppt_cover_title["font-family"])
+                styles.found.add("title_font")
+
         # 内容页标题
         ppt_content_title = self._get_merged_styles(".slide.content h2", ".slide h2")
         if ppt_content_title:
             styles.ppt_subtitle_size = self._parse_size(ppt_content_title.get("font-size", "48px"))
-            styles.title_color = self._parse_color(ppt_content_title.get("color", "#1A2744"))
-        
+            if ppt_content_title.get("color"):
+                styles.title_color = self._parse_color(ppt_content_title["color"])
+                styles.found.add("title_color")
+
         # PPT正文
         ppt_body = self._get_merged_styles(".slide.content .content-body", ".slide")
         if ppt_body:
             styles.ppt_body_size = self._parse_size(ppt_body.get("font-size", "24px"))
+            if ppt_body.get("color"):
+                styles.body_color = self._parse_color(ppt_body["color"])
+                styles.found.add("body_color")
         
         # 幻灯片尺寸
         slide_styles = self._get_merged_styles(".slide")

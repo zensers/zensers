@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .template_engine import TemplateEngine
+from .format_strategy import get_format_strategy
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +127,12 @@ class ContentOrchestrator:
         self._last_render_diagnostics: List[Dict[str, Any]] = []
         self._last_render_validation: Dict[str, Any] = {"passed": True, "issues": []}
         from .content_condenser import ContentCondenser
-        # PPT uses a stricter editorial contract than Word.  The condenser
-        # still exposes a larger default for standalone callers, but the
-        # orchestrator must enforce presentation-scale bullets.
-        self._condenser = ContentCondenser(max_bullet_chars=25)
+        # PPT 编辑契约的单一来源是 PPTXStrategy（format_strategy.py）。
+        # condenser 仅在 pptx 分支中使用（_prepare_template_variables / _render_section_slides）。
+        directive = get_format_strategy("pptx").get_writing_directive()
+        self._condenser = ContentCondenser(
+            max_bullet_chars=directive.bullet_max_chars or 25
+        )
     
     def get_template_html(self, template_name: Optional[str] = None) -> Optional[str]:
         """
@@ -729,6 +732,14 @@ class ContentOrchestrator:
             f'<img src="{safe_path}" alt="{alt_text}" style="max-width:100%">'
             f'<figcaption class="figure-caption">{html.escape(caption)}</figcaption>'
             f'</figure>'
+        )
+
+    @staticmethod
+    def _ppt_chart_img(chart_path: str, chart_alt: str, chart: Dict[str, Any]) -> str:
+        chart_type = html.escape(str(chart.get("chart_type", "") or ""), quote=True)
+        return (
+            f'<img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}" '
+            f'data-image-type="chart" data-chart-type="{chart_type}">'
         )
 
     @staticmethod
@@ -1600,11 +1611,19 @@ class ContentOrchestrator:
                     num = kpi.get("number", "")
                     label = kpi.get("label", "")
                     trend = kpi.get("trend", "")
+                    direction = kpi.get("trend_direction")
                     parts = [num]
                     if label:
                         parts.insert(0, label)
                     if trend:
-                        parts.append(trend)
+                        # 方向动词必须写进 <li> 文本：下游 PPT 管线靠关键词
+                        # 正则从 li 重新推导 trend_direction，丢了就画不出箭头。
+                        if direction == "up":
+                            parts.append(f"同比增长{trend}")
+                        elif direction == "down":
+                            parts.append(f"同比下降{trend}")
+                        else:
+                            parts.append(trend)
                     kpi_items.append(html.escape(" ".join(p for p in parts if p)))
                 
                 kpi_li = "\n            ".join(f'<li>{item}</li>' for item in kpi_items)
@@ -1661,7 +1680,7 @@ class ContentOrchestrator:
                         chart_path = self._resolve_ppt_chart_path(chart.get("path", ""))
                         chart_alt = html.escape(chart.get("caption", "") or chart.get("title", "") or "Chart")
                         if chart_path:
-                            chart_imgs += f'<img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}">'
+                            chart_imgs += ContentOrchestrator._ppt_chart_img(chart_path, chart_alt, chart)
                         chart_idx += 1
                         if anchor_type != "section_end":
                             break
@@ -1701,7 +1720,7 @@ class ContentOrchestrator:
                         chart_path = self._resolve_ppt_chart_path(chart.get("path", ""))
                         chart_alt = html.escape(chart.get("caption", "") or chart.get("title", "") or "Chart")
                         if chart_path:
-                            chart_imgs += f'<img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}">'
+                            chart_imgs += ContentOrchestrator._ppt_chart_img(chart_path, chart_alt, chart)
                         chart_idx += 1
                         if anchor_type != "section_end":
                             break
@@ -1731,7 +1750,7 @@ class ContentOrchestrator:
             <h2>{chart_alt}</h2>
         </div>
         <div class="slide-body">
-            <img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}">
+            {ContentOrchestrator._ppt_chart_img(chart_path, chart_alt, chart)}
         </div>
     </div>
 </section>'''
@@ -1783,7 +1802,7 @@ class ContentOrchestrator:
         return f'''<section class="slide" data-type="findings" data-page="{slide_num}">
     <div class="slide-content">
         <div class="slide-title">
-            <h2>Key Findings</h2>
+            <h2>核心发现</h2>
         </div>
         <ul class="findings-list">
             {chr(10).join(items)}
@@ -1803,13 +1822,14 @@ class ContentOrchestrator:
             value = dp.get("value", "")
             unit = dp.get("unit", "")
             rows.append(f'<tr><td>{html.escape(metric)}</td><td class="data-value">{html.escape(value)}</td><td>{html.escape(unit)}</td></tr>')
-        
+
         return f'''<section class="slide" data-type="data" data-page="{slide_num}">
     <div class="slide-content">
         <div class="slide-title">
-            <h2>Key Data</h2>
+            <h2>核心数据</h2>
         </div>
         <table class="data-table">
+            <thead><tr><th>指标</th><th>数值</th><th>单位</th></tr></thead>
             <tbody>
                 {chr(10).join(rows)}
             </tbody>
@@ -1825,7 +1845,7 @@ class ContentOrchestrator:
             <h2>报告结论</h2>
         </div>
         <div class="slide-footer">
-            <p>{html.escape(title)} · 感谢关注</p>
+            <p>{html.escape(title)} · 谢谢观看</p>
         </div>
     </div>
 </section>'''

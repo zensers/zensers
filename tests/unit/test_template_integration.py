@@ -101,21 +101,3 @@ class TestIntegrationFullPresentation:
         tables = [s for s in prs.slides[0].shapes if s.has_table]
         assert len(tables) == 1
         assert tables[0].table.cell(0, 0).text == "Year"
-
-    def test_feature_flag_default_on(self, monkeypatch):
-        from src.converters.html_to_ppt import HTMLToPPTConverter
-        monkeypatch.delenv("USE_TEMPLATE_RENDERER", raising=False)
-        converter = HTMLToPPTConverter()
-        assert converter._should_use_template_renderer()
-
-    def test_feature_flag_env_on(self, monkeypatch):
-        monkeypatch.setenv("USE_TEMPLATE_RENDERER", "1")
-        from src.converters.html_to_ppt import HTMLToPPTConverter
-        converter = HTMLToPPTConverter()
-        assert converter._should_use_template_renderer()
-
-    def test_feature_flag_env_off(self, monkeypatch):
-        monkeypatch.setenv("USE_TEMPLATE_RENDERER", "0")
-        from src.converters.html_to_ppt import HTMLToPPTConverter
-        converter = HTMLToPPTConverter()
-        assert not converter._should_use_template_renderer()

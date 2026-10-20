@@ -567,9 +567,11 @@ class DocumentGenerator:
             
             prs.save(str(output_path))
             
-        except ImportError:
-            logger.warning("python-pptx not installed, creating placeholder")
-            self._create_placeholder(output_path, "PPTX")
+        except ImportError as e:
+            logger.error("python-pptx not installed, failing PPTX generation explicitly")
+            raise RuntimeError(
+                "python-pptx is not installed. Install it with: pip install python-pptx"
+            ) from e
 
     def _prepare_research_result(self) -> Dict[str, Any]:
         """

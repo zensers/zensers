@@ -399,3 +399,49 @@ class TestChapterPromptToolGuidance:
         assert "不要尝试调用" in prompt_text
         # Path stays visible in the prompt for context.
         assert str(cache_file) in prompt_text
+
+
+class TestChapterPromptPptxBulletLimit:
+    """策略接线 B：pptx 提示词的要点字数上限必须来自 PPTXStrategy，不得硬编码。"""
+
+    def _pptx_writer(self):
+        # 真实 PromptManager + 真实模板：接线测试必须走生产模板文件。
+        return ChapterWriter(prompt_manager=PromptManager(), use_streaming=False)
+
+    def test_pptx_prompt_bullet_limit_comes_from_strategy(self, monkeypatch):
+        # 哨兵值（30）证明数字来自策略注入而非模板硬编码：若模板仍写死 25，
+        # 渲染结果不会跟随策略变化，本测试失败。
+        from dataclasses import replace as dc_replace
+
+        from src.content.format_strategy import get_format_strategy
+
+        real_directive = get_format_strategy("pptx").get_writing_directive()
+        sentinel = dc_replace(real_directive, bullet_max_chars=30)
+
+        class _FakeStrategy:
+            def get_writing_directive(self, section_type: str = "body"):
+                return sentinel
+
+        monkeypatch.setattr(
+            "src.content.format_strategy.get_format_strategy",
+            lambda fmt: _FakeStrategy(),
+        )
+        prompt = self._pptx_writer()._build_write_prompt(
+            make_input(output_format="pptx"), RetryVariations(), "")
+        assert "30 个中文字符" in prompt
+        assert "25 个中文字符" not in prompt
+
+    def test_pptx_prompt_uses_strategy_value_without_leftover_placeholder(self):
+        from src.content.format_strategy import get_format_strategy
+
+        directive = get_format_strategy("pptx").get_writing_directive()
+        prompt = self._pptx_writer()._build_write_prompt(
+            make_input(output_format="pptx"), RetryVariations(), "")
+        assert f"{directive.bullet_max_chars} 个中文字符" in prompt
+        assert "${bullet_max_chars}" not in prompt
+
+    def test_docx_prompt_has_no_bullet_limit_injection(self):
+        prompt = self._pptx_writer()._build_write_prompt(
+            make_input(), RetryVariations(), "")
+        assert "个中文字符" not in prompt
+        assert "bullet_max_chars" not in prompt

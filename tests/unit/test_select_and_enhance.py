@@ -77,12 +77,12 @@ class TestSelectAndEnhance:
         assert "kpi_data" in slide_data
         assert len(slide_data["kpi_data"]) == 2
 
-    def test_kpi_empty_label_backfill_from_title(self, selector):
-        slide_data = {"slide_type": "content", "title": "Market Overview", "items": ["Revenue 15.1B", "Users 2.7M"]}
+    def test_kpi_empty_label_is_not_backfilled_from_title(self, selector):
+        slide_data = {"slide_type": "content", "title": "Market Overview", "items": ["65%", "3000 美元"]}
         selector.select_and_enhance(slide_data)
-        for kpi in slide_data["kpi_data"]:
-            if not kpi.get("label"):
-                assert kpi["label"] == "Market Overview"[:30]
+        labels = [kpi.get("label", "") for kpi in slide_data["kpi_data"]]
+        assert "Market Overview" not in labels
+        assert "" in labels
 
     def test_comparison_data_enhanced(self, selector):
         slide_data = {"slide_type": "content", "items": ["US vs China market", "US leads", "China leads"]}

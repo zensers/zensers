@@ -249,6 +249,27 @@ class TestLayoutKpiSolo:
         r4 = engine._layout_kpi_solo({"kpi_count": 4}, {}, {})
         assert r2["kpi_row"]["height"] >= r4["kpi_row"]["height"]
 
+    def test_cards_are_not_stretched_to_full_content_height(self):
+        engine = LayoutEngine()
+        content_h = engine.T["footer.top"] - engine.T["content.top"]
+        for count in (2, 4):
+            pos = engine._layout_kpi_solo({"kpi_count": count}, {}, {})["kpi_row"]
+            assert pos["height"] < content_h * 0.7
+            assert pos["top"] > engine.T["content.top"]
+
+    def test_layout_survives_validation_for_sparse_kpi_rows(self):
+        engine = LayoutEngine()
+        slide_data = {"kpi_data": [{"number": "1", "label": "A"}, {"number": "2", "label": "B"}]}
+        template = {"slots": [{"id": "kpi_row", "type": "kpi_cards"}]}
+        result = engine.compute(slide_data, template)
+        assert result["kpi_row"]["height"] < engine._content_h() * 0.7
+
+    def test_fallback_does_not_stretch_kpi_cards(self):
+        engine = LayoutEngine()
+        profile = {"has_kpis": True, "kpi_count": 2, "has_table": False}
+        result = engine._fallback_layout(profile, {}, {})
+        assert result["kpi_row"]["height"] < engine._content_h() * 0.7
+
 
 class TestLayoutKpiWithChart:
     def test_kpi_left_chart_right(self):

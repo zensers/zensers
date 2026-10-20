@@ -100,7 +100,7 @@ class TestEnrichImages:
             provider.enrich_images(slide_data)
             assert "images" not in slide_data
 
-    def test_no_api_keys_placeholder_generated(self):
+    def test_no_api_keys_no_placeholder_generated(self):
         provider = ImageProvider()
         slide_data = {
             "slide_type": "content",
@@ -108,11 +108,9 @@ class TestEnrichImages:
             "content": "test",
         }
         provider.enrich_images(slide_data)
-        assert "images" in slide_data
-        assert len(slide_data["images"]) == 1
-        assert slide_data["images"][0]["image_type"] == "technology"
+        assert "images" not in slide_data
 
-    def test_no_keywords_placeholder_from_title(self):
+    def test_no_keywords_no_placeholder_generated(self):
         provider = ImageProvider()
         slide_data = {
             "slide_type": "content",
@@ -120,9 +118,7 @@ class TestEnrichImages:
             "content": "Nothing special",
         }
         provider.enrich_images(slide_data)
-        assert "images" in slide_data
-        assert len(slide_data["images"]) == 1
-        assert slide_data["images"][0]["alt"] == "Hello World"
+        assert "images" not in slide_data
 
 
 class TestResolveImageSrc:

@@ -49,3 +49,22 @@ class TestBuildSlideDictExtraTables:
         elements = [{"type": "paragraph", "text": "hello"}]
         result = parser._build_slide_dict(elements)
         assert "source_text" not in result
+
+
+class TestDashBulletSplitting:
+    def test_dash_lines_become_items_and_prose_stays_content(self, parser):
+        text = "上游核心零部件占整机成本 60% 以上。\n- 执行器总成价值量占比 35%\n- 传感器与 IMU 占比 12%"
+        result = parser._build_slide_dict([{"type": "paragraph", "text": text}])
+        assert result["items"] == ["执行器总成价值量占比 35%", "传感器与 IMU 占比 12%"]
+        assert result["content"] == "上游核心零部件占整机成本 60% 以上。"
+
+    def test_plain_paragraph_not_split(self, parser):
+        result = parser._build_slide_dict([{"type": "paragraph", "text": "单一正文段落，无破折号行"}])
+        assert result["content"] == "单一正文段落，无破折号行"
+        assert "items" not in result
+
+    def test_blank_lines_skipped(self, parser):
+        text = "导语。\n\n- 要点一\n\n- 要点二"
+        result = parser._build_slide_dict([{"type": "paragraph", "text": text}])
+        assert result["items"] == ["要点一", "要点二"]
+        assert result["content"] == "导语。"

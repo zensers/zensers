@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional
 
 from .base_parser import SlideElementParser
 from .css_extractor import CSSStyleExtractor, ExtractedStyles
+from .ppt_theme import load_theme
 
 logger = logging.getLogger(__name__)
 
@@ -89,14 +90,22 @@ class HTMLToPPTConverter:
         "slide_height": 7.5  # inches (16:9)
     }
     
-    def __init__(self, styles: Optional[Dict[str, Any]] = None):
+    def __init__(self, styles: Optional[Dict[str, Any]] = None, theme: str = "default"):
         """
         Initialize converter
         
         Args:
             styles: Custom style configuration
+            theme: PPT theme name (loaded from config/ppt_themes/<name>.json)
         """
         self.styles = {**self.DEFAULT_STYLES, **(styles or {})}
+        self.theme_name = theme
+        self.design = load_theme(theme)
+        try:
+            from src.content.format_strategy import get_format_strategy
+            self._chart_figsize = get_format_strategy("pptx").get_chart_style().figsize
+        except Exception:
+            self._chart_figsize = (8.0, 5.0)
         self._pptx_available = self._check_pptx_available()
         
         if not self._pptx_available:
@@ -113,6 +122,31 @@ class HTMLToPPTConverter:
     def get_default_styles(self) -> Dict[str, Any]:
         """Get default styles"""
         return self.DEFAULT_STYLES.copy()
+    
+    def _build_design(self, template_html: Optional[str]) -> Dict[str, Any]:
+        """Merge theme file with CSS overrides extracted from the template.
+
+        Priority: theme file base <- template CSS overrides (CSS wins where present).
+        """
+        design: Dict[str, Any] = {
+            "colors": dict(self.design.get("colors", {})),
+            "fonts": dict(self.design.get("fonts", {})),
+        }
+        design["font_default"] = design["fonts"].get("default", "Microsoft YaHei")
+        if template_html:
+            try:
+                extractor = CSSStyleExtractor()
+                extracted = extractor.extract_from_html(template_html)
+                overrides = extracted.to_theme_overrides()
+                design["colors"].update(overrides.get("colors", {}))
+                if overrides.get("fonts"):
+                    design["fonts"].update(overrides["fonts"])
+                    design["font_default"] = overrides["fonts"].get(
+                        "default", design["font_default"]
+                    )
+            except Exception as e:
+                logger.warning(f"CSS override extraction failed, using theme defaults: {e}")
+        return design
     
     def _merge_styles(
         self,
@@ -137,6 +171,13 @@ class HTMLToPPTConverter:
         # Apply template-extracted styles (higher priority than defaults)
         if extracted_styles:
             template_styles = extracted_styles.to_ppt_styles()
+            # The HTML canvas size (e.g. 1920x1080 CSS pixels) describes the
+            # browser render, not the PPT canvas.  The slide templates and
+            # layout tokens are authored for a 13.333x7.5in page, so adopting
+            # the CSS page size leaves all content squeezed into the top-left
+            # ~58% of the slide.  Keep the PPT page at the authored 16:9 size.
+            template_styles.pop("slide_width", None)
+            template_styles.pop("slide_height", None)
             final_styles.update(template_styles)
             logger.debug(f"Applied template styles: {template_styles}")
         
@@ -225,9 +266,14 @@ class HTMLToPPTConverter:
             
             # Create PPT document
             if self._pptx_available:
-                return self._create_pptx_document(slides, output_path, final_styles)
+                design = self._build_design(template_html)
+                return self._create_pptx_document(slides, output_path, final_styles, design=design)
             else:
-                return self._create_fallback_document(slides, output_path, final_styles)
+                return ConversionResult(
+                    success=False,
+                    error="python-pptx is not installed. Install it with: pip install python-pptx",
+                    error_code="PPTX_UNAVAILABLE",
+                )
                 
         except (OSError, IOError) as e:
             logger.error(f"File operation failed: {e}")
@@ -410,25 +456,23 @@ class HTMLToPPTConverter:
     def _atomic_save(self, prs: Any, output_path: str) -> None:
         """
         Atomic save presentation
-        
-        Use temp file + shutil.move to ensure atomic write.
-        
+
+        Use mkstemp + os.replace to ensure atomic write (race-safe,
+        no deprecated mktemp).
+
         Args:
             prs: Presentation object
             output_path: Final output path
         """
-        import shutil
-        
-        # Create temp file (without file descriptor)
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir, exist_ok=True)
-        
-        temp_path = tempfile.mktemp(suffix='.pptx', dir=output_dir or '.')
+
+        fd, temp_path = tempfile.mkstemp(suffix='.pptx', dir=output_dir or '.')
+        os.close(fd)
         try:
             prs.save(temp_path)
-            # Use shutil.move instead of os.replace, more reliable
-            shutil.move(temp_path, output_path)
+            os.replace(temp_path, output_path)
         except Exception:
             # Clean up temp file
             try:
@@ -437,9 +481,6 @@ class HTMLToPPTConverter:
                 pass
             raise
     
-    def _should_use_template_renderer(self):
-        return os.environ.get("USE_TEMPLATE_RENDERER", "1") == "1"
-
     def _auto_generate_charts(self, slide_data: Dict, template_name: str, chart_gen) -> None:
         """Auto-generate chart images for slides with data but no images."""
         title = slide_data.get("title", "")
@@ -521,6 +562,7 @@ class HTMLToPPTConverter:
         headers = [str(h) for h in table_data[0]]
         categories = []
         values = []
+        units = set()
         numeric_col_idx = None
         for col_idx in range(len(headers)):
             numeric_vals = []
@@ -550,10 +592,29 @@ class HTMLToPPTConverter:
                 val = float(cleaned)
                 categories.append(name[:12])
                 values.append(val)
+                units.add(re.sub(r'[\d.\-\s,]', '', cell).strip())
             except (ValueError, TypeError):
                 continue
-        
+
         if len(categories) < 2:
+            return None
+        # 数值为纯数字时单位可能独立成列（表头“单位”），一并纳入校验。
+        if len(units) <= 1:
+            unit_col = next(
+                (i for i, h in enumerate(headers) if h.strip() == "单位" and i != numeric_col_idx),
+                None,
+            )
+            if unit_col is not None:
+                for row_idx in range(1, len(table_data)):
+                    if unit_col < len(table_data[row_idx]):
+                        units.add(re.sub(r'[\s,]', '', str(table_data[row_idx][unit_col])))
+                units.discard("")
+        # 同一坐标轴只允许一种计量单位，否则比例失真（如 27.6 亿美元 vs 40%）。
+        if len(units) > 1:
+            logger.warning(
+                "Refusing table chart with mixed units for '%s': %s",
+                title, sorted(units),
+            )
             return None
         
         config = ChartConfig(
@@ -562,8 +623,8 @@ class HTMLToPPTConverter:
             data={"categories": categories, "values": values},
             ylabel=headers[numeric_col_idx],
             source="",
-            width=8,
-            height=5,
+            width=self._chart_figsize[0],
+            height=self._chart_figsize[1],
         )
         result = chart_gen.chart_generator.generate(config)
         if result.success and result.image_path:
@@ -579,7 +640,8 @@ class HTMLToPPTConverter:
         self,
         slides: List[Dict[str, Any]],
         output_path: str,
-        styles: Dict[str, Any]
+        styles: Dict[str, Any],
+        design: Optional[Dict[str, Any]] = None
     ) -> ConversionResult:
         """
         Create PPT document using python-pptx
@@ -595,6 +657,9 @@ class HTMLToPPTConverter:
         from pptx import Presentation
         from pptx.util import Inches
         
+        if design is None:
+            design = self._build_design(None)
+        
         # Create presentation
         prs = Presentation()
         
@@ -604,96 +669,92 @@ class HTMLToPPTConverter:
         
         slides_count = 0
         
-        if self._should_use_template_renderer():
-            from .template_selector import TemplateRegistry, TemplateSelector
-            from .slide_renderer import SlideRenderer
-            from .layout_engine import LayoutEngine
+        from .template_selector import TemplateRegistry, TemplateSelector
+        from .slide_renderer import SlideRenderer
+        from .layout_engine import LayoutEngine
+        
+        registry = TemplateRegistry()
+        selector = TemplateSelector()
+        layout_engine = LayoutEngine()
+        
+        try:
+            from src.services.image_provider import ImageProvider
+            image_provider = ImageProvider()
+        except Exception:
+            image_provider = None
+        
+        renderer = SlideRenderer(design, image_provider=image_provider)
+        section_index = 0
+        
+        try:
+            from src.services.smart_chart_generator import SmartChartGenerator
+            chart_gen = SmartChartGenerator(output_dir=os.path.join(
+                os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                "output", "charts"
+            ))
+        except Exception:
+            chart_gen = None
+        
+        pending = list(slides)
+        while pending:
+            slide_data = pending.pop(0)
+            # 展开 extra_tables：每张附加表生成独立 data 页，
+            # 插到队首保证续表紧跟当前页、顺序不乱
+            extra_tables = slide_data.pop("extra_tables", None)
+            if extra_tables:
+                base_title = slide_data.get("title", "")
+                pending[0:0] = [
+                    {
+                        "slide_type": "data",
+                        "title": f"{base_title}（续表{ti}）" if base_title else f"续表{ti}",
+                        "table_data": table,
+                    }
+                    for ti, table in enumerate(extra_tables, start=1)
+                ]
+            slide_layout = prs.slide_layouts[6]
+            slide = prs.slides.add_slide(slide_layout)
+            slides_count += 1
             
-            registry = TemplateRegistry()
-            selector = TemplateSelector()
-            layout_engine = LayoutEngine()
+            slide_type = slide_data.get("slide_type", "content")
+            if slide_type in ("section_title", "section-title"):
+                section_index += 1
             
+            if image_provider and not slide_data.get("images"):
+                image_provider.enrich_images(slide_data)
+            
+            template_name = selector.select_and_enhance(slide_data, section_index=section_index)
             try:
-                from src.services.image_provider import ImageProvider
-                image_provider = ImageProvider()
-            except Exception:
-                image_provider = None
+                template = registry.get(template_name)
+            except KeyError:
+                template = registry.get("content_text_only")
             
-            renderer = SlideRenderer(self.DESIGN, image_provider=image_provider)
-            section_index = 0
+            source = slide_data.get("source_text", "")
+            if source:
+                for dec in template.get("decorations", []):
+                    if dec.get("type") == "source_text" and not dec.get("text"):
+                        dec["text"] = source
             
+            if chart_gen and layout_engine.can_accommodate_chart(slide_data, template_name):
+                existing_images = slide_data.get("images", [])
+                has_chart = any(
+                    img.get("image_type") == "chart" or
+                    (img.get("src", "").endswith((".png", ".jpg")) and "chart" in img.get("src", ""))
+                    for img in existing_images
+                )
+                if not has_chart:
+                    self._auto_generate_charts(slide_data, template_name, chart_gen)
+            
+            layout_overrides = None
             try:
-                from src.services.smart_chart_generator import SmartChartGenerator
-                chart_gen = SmartChartGenerator(output_dir=os.path.join(
-                    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                    "output", "charts"
-                ))
-            except Exception:
-                chart_gen = None
-            
-            for slide_data in slides:
-                slide_layout = prs.slide_layouts[6]
-                slide = prs.slides.add_slide(slide_layout)
-                slides_count += 1
-                
-                slide_type = slide_data.get("slide_type", "content")
-                if slide_type in ("section_title", "section-title"):
-                    section_index += 1
-                
-                if image_provider and not slide_data.get("images"):
-                    image_provider.enrich_images(slide_data)
-                
-                template_name = selector.select_and_enhance(slide_data, section_index=section_index)
-                try:
-                    template = registry.get(template_name)
-                except KeyError:
-                    template = registry.get("content_text_only")
-                
-                source = slide_data.get("source_text", "")
-                if source:
-                    for dec in template.get("decorations", []):
-                        if dec.get("type") == "source_text" and not dec.get("text"):
-                            dec["text"] = source
-                
-                if chart_gen and layout_engine.can_accommodate_chart(slide_data, template_name):
-                    existing_images = slide_data.get("images", [])
-                    has_chart = any(
-                        img.get("image_type") == "chart" or
-                        (img.get("src", "").endswith((".png", ".jpg")) and "chart" in img.get("src", ""))
-                        for img in existing_images
-                    )
-                    if not has_chart:
-                        self._auto_generate_charts(slide_data, template_name, chart_gen)
-                
-                layout_overrides = None
-                try:
+                # chart_full 的图表槽位本身就是版心整幅（约 11.7x5.8in），
+                # 再叠加 items_with_chart 等场景覆盖会把图表压进右半栏，
+                # 表现为图表缩成 1/3 宽、左半页空白。
+                if template_name != "chart_full":
                     layout_overrides = layout_engine.compute(slide_data, template)
-                except Exception:
-                    logger.debug("LayoutEngine compute failed, using template defaults")
-                
-                renderer.render(slide, slide_data, template, styles, page_num=slides_count, layout_overrides=layout_overrides)
-        else:
-            for slide_data in slides:
-                slide_type = slide_data.get("slide_type", "content")
-                
-                # Use blank layout
-                slide_layout = prs.slide_layouts[6]
-                slide = prs.slides.add_slide(slide_layout)
-                slides_count += 1
-                
-                # Process by type
-                if slide_type == "cover":
-                    self._create_cover_slide(slide, slide_data, styles)
-                elif slide_type == "toc":
-                    self._create_toc_slide(slide, slide_data, styles)
-                elif slide_type == "findings":
-                    self._create_findings_slide(slide, slide_data, styles)
-                elif slide_type == "data":
-                    self._create_data_slide(slide, slide_data, styles)
-                elif slide_type == "end":
-                    self._create_end_slide(slide, slide_data, styles)
-                else:
-                    self._create_content_slide(slide, slide_data, styles)
+            except Exception:
+                logger.debug("LayoutEngine compute failed, using template defaults")
+            
+            renderer.render(slide, slide_data, template, styles, page_num=slides_count, layout_overrides=layout_overrides)
         
         # Atomic save
         self._atomic_save(prs, output_path)
@@ -708,610 +769,6 @@ class HTMLToPPTConverter:
             output_path=output_path,
             file_size=file_size,
             slides_count=slides_count
-        )
-    
-    # Design system colors (matching ppt_default.html CSS)
-    DESIGN = {
-        "navy": "1A2744",
-        "navy_dark": "0F1A2E",
-        "navy_light": "2C3E50",
-        "gold": "C9A227",
-        "gold_light": "D4AF37",
-        "white": "FFFFFF",
-        "off_white": "F5F5F5",
-        "text_dark": "333333",
-        "text_mid": "666666",
-        "text_light": "999999",
-    }
-
-    def _set_slide_bg(self, slide, color_hex: str):
-        """Set solid background color for a slide."""
-        bg = slide.background
-        fill = bg.fill
-        fill.solid()
-        fill.fore_color.rgb = self._rgb(color_hex)
-
-    def _set_gradient_bg(self, slide, color1_hex: str, color2_hex: str):
-        """Set gradient background for a slide."""
-        bg = slide.background
-        fill = bg.fill
-        fill.gradient()
-        fill.gradient_stops[0].color.rgb = self._rgb(color1_hex)
-        fill.gradient_stops[1].color.rgb = self._rgb(color2_hex)
-
-    def _rgb(self, hex_color: str):
-        """Convert hex color string to RGBColor."""
-        from pptx.dml.color import RGBColor
-        hex_color = hex_color.lstrip('#')
-        return RGBColor(int(hex_color[0:2], 16), int(hex_color[2:4], 16), int(hex_color[4:6], 16))
-
-    def _add_footer_bar(self, slide, styles: Dict[str, Any], color: str = None):
-        """Add gold footer bar at bottom of slide."""
-        from pptx.util import Inches
-        sw = styles.get("slide_width", 13.333)
-        sh = styles.get("slide_height", 7.5)
-        bar_color = color or self.DESIGN["gold"]
-        shape = slide.shapes.add_shape(
-            1, Inches(0), Inches(sh - 0.11), Inches(sw), Inches(0.11)
-        )
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = self._rgb(bar_color)
-        shape.line.fill.background()
-
-    def _add_title_underline(self, slide, left: float, top: float, width: float):
-        """Add gold underline below section title."""
-        from pptx.util import Inches
-        shape = slide.shapes.add_shape(
-            1, Inches(left), Inches(top), Inches(width), Inches(0.04)
-        )
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = self._rgb(self.DESIGN["gold"])
-        shape.line.fill.background()
-
-    def _add_side_accent(self, slide, styles: Dict[str, Any]):
-        """Add vertical gold accent bar on left side of content slides."""
-        from pptx.util import Inches
-        sh = styles.get("slide_height", 7.5)
-        shape = slide.shapes.add_shape(
-            1, Inches(0), Inches(0), Inches(0.06), Inches(sh)
-        )
-        shape.fill.solid()
-        shape.fill.fore_color.rgb = self._rgb(self.DESIGN["gold"])
-        shape.line.fill.background()
-
-    def _content_width(self, styles: Dict[str, Any], margin: float = 1.0) -> float:
-        """Calculate content width in inches based on slide_width minus margins."""
-        return styles.get("slide_width", 13.333) - margin
-
-    def _create_cover_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any]):
-        """Create cover slide with deep navy gradient + gold title."""
-        from pptx.util import Inches, Pt
-        from pptx.enum.text import PP_ALIGN
-
-        try:
-            self._set_gradient_bg(slide, self.DESIGN["navy"], self.DESIGN["navy_light"])
-        except Exception:
-            self._set_slide_bg(slide, self.DESIGN["navy"])
-
-        sw = styles.get("slide_width", 13.333)
-
-        self._add_footer_bar(slide, styles, self.DESIGN["gold"])
-
-        title = slide_data.get("title", "")
-        if title:
-            title_box = slide.shapes.add_textbox(
-                Inches(1), Inches(2.5), Inches(sw - 2), Inches(1.5)
-            )
-            tf = title_box.text_frame
-            tf.word_wrap = True
-            p = tf.paragraphs[0]
-            p.text = title
-            p.font.size = Pt(styles.get("title_size", 44))
-            p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["gold"])
-            p.font.name = "Microsoft YaHei"
-            p.alignment = PP_ALIGN.CENTER
-
-        subtitle = slide_data.get("subtitle", "")
-        if subtitle:
-            sub_box = slide.shapes.add_textbox(
-                Inches(1), Inches(4.2), Inches(sw - 2), Inches(0.8)
-            )
-            tf = sub_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = subtitle
-            p.font.size = Pt(24)
-            p.font.color.rgb = self._rgb(self.DESIGN["white"])
-            p.font.name = "Microsoft YaHei"
-            p.alignment = PP_ALIGN.CENTER
-
-        import datetime
-        date_box = slide.shapes.add_textbox(
-            Inches(1), Inches(5.5), Inches(sw - 2), Inches(0.5)
-        )
-        tf = date_box.text_frame
-        p = tf.paragraphs[0]
-        p.text = datetime.date.today().strftime("%Y-%m-%d")
-        p.font.size = Pt(18)
-        p.font.color.rgb = self._rgb(self.DESIGN["white"])
-        p.font.name = "Microsoft YaHei"
-        p.alignment = PP_ALIGN.CENTER
-
-    def _create_toc_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any]):
-        """Create TOC slide with gold left accent on items."""
-        from pptx.util import Inches, Pt
-        from pptx.enum.text import PP_ALIGN
-
-        self._set_slide_bg(slide, self.DESIGN["off_white"])
-        cw = self._content_width(styles)
-
-        self._add_footer_bar(slide, styles)
-
-        title = slide_data.get("title", "目录")
-        if title:
-            title_box = slide.shapes.add_textbox(
-                Inches(0.8), Inches(0.5), Inches(cw), Inches(1)
-            )
-            tf = title_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = title
-            p.font.size = Pt(styles.get("subtitle_size", 28))
-            p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
-            p.font.name = "Microsoft YaHei"
-            p.alignment = PP_ALIGN.CENTER
-
-        items = slide_data.get("items", [])
-        if items:
-            content_box = slide.shapes.add_textbox(
-                Inches(1.2), Inches(2), Inches(cw - 0.5), Inches(4)
-            )
-            tf = content_box.text_frame
-            for i, item in enumerate(items):
-                if i == 0:
-                    p = tf.paragraphs[0]
-                else:
-                    p = tf.add_paragraph()
-                p.space_after = Pt(12)
-                run = p.add_run()
-                run.text = "  " + item
-                run.font.size = Pt(20)
-                run.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
-                run.font.name = "Microsoft YaHei"
-                bullet = p.add_run()
-                bullet.text = "■ "
-                bullet.font.size = Pt(12)
-                bullet.font.color.rgb = self._rgb(self.DESIGN["gold"])
-                bullet.font.name = "Microsoft YaHei"
-
-            left_bar = slide.shapes.add_shape(
-                1, Inches(1.0), Inches(2.0), Inches(0.05), Inches(min(len(items) * 0.6, 4.0))
-            )
-            left_bar.fill.solid()
-            left_bar.fill.fore_color.rgb = self._rgb(self.DESIGN["gold"])
-            left_bar.line.fill.background()
-    
-    def _add_images_to_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any], position: str = "right"):
-        """Add image shapes to slide, preserving aspect ratio.
-        
-        position: "right" = right half of slide (left-text-right-image layout)
-                  "below" = below text area (top-text-bottom-image layout)
-        """
-        images = slide_data.get("images", [])
-        if not images:
-            return
-        
-        slide_width = styles.get("slide_width", 13.333)
-        slide_height = styles.get("slide_height", 7.5)
-        
-        if position == "right":
-            img_area_left = slide_width * 0.48
-            img_area_top = 1.6
-            img_area_w = slide_width - img_area_left - 0.5
-            img_area_h = slide_height - img_area_top - 0.8
-            
-            n_images = len(images)
-            if n_images == 1:
-                self._place_image(slide, images[0], img_area_left, img_area_top, img_area_w, img_area_h)
-            else:
-                per_height = (img_area_h - 0.3 * (n_images - 1)) / n_images
-                for idx, img_info in enumerate(images):
-                    top = img_area_top + idx * (per_height + 0.3)
-                    self._place_image(slide, img_info, img_area_left, top, img_area_w, per_height)
-        else:
-            max_w = min(9.0, slide_width - 2.0)
-            max_h = min(3.5, slide_height - 4.5)
-            top = 4.0
-            left = (slide_width - max_w) / 2 + 0.3
-            n_images = len(images)
-            if n_images == 1:
-                self._place_image(slide, images[0], left, top, max_w, max_h)
-            else:
-                cols = 2
-                per_w = (max_w - 0.5) / cols
-                for idx, img_info in enumerate(images):
-                    r = idx // cols
-                    c = idx % cols
-                    il = left + c * (per_w + 0.5)
-                    it = top + r * (max_h + 0.3)
-                    self._place_image(slide, img_info, il, it, per_w, max_h)
-    
-    def _place_image(self, slide, img_info: Dict[str, str], left: float, top: float, max_w: float, max_h: float):
-        """Place a single image preserving aspect ratio within max_w x max_h bounds."""
-        from pptx.util import Inches
-        
-        src = img_info.get("src", "")
-        if not src:
-            return
-        
-        if not os.path.isfile(src):
-            logger.warning(f"Image file not found, skipping: {src}")
-            return
-        
-        try:
-            from PIL import Image as PILImage
-            with PILImage.open(src) as pil_img:
-                img_w, img_h = pil_img.size
-                aspect = img_w / img_h
-            
-            if max_w / max_h > aspect:
-                final_h = max_h
-                final_w = final_h * aspect
-            else:
-                final_w = max_w
-                final_h = final_w / aspect
-            
-            slide.shapes.add_picture(src, Inches(left), Inches(top), Inches(final_w), Inches(final_h))
-        except ImportError:
-            try:
-                slide.shapes.add_picture(src, Inches(left), Inches(top), Inches(max_w))
-            except Exception as e:
-                logger.warning(f"Failed to add image to slide: {src}, error: {e}")
-        except Exception as e:
-            logger.warning(f"Failed to add image to slide: {src}, error: {e}")
-
-    def _create_content_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any]):
-        """Create content slide: title bar + left text / right image layout."""
-        from pptx.util import Inches, Pt
-
-        self._set_slide_bg(slide, self.DESIGN["white"])
-        sw = styles.get("slide_width", 13.333)
-        sh = styles.get("slide_height", 7.5)
-        self._add_side_accent(slide, styles)
-        self._add_footer_bar(slide, styles)
-
-        title = slide_data.get("title", "")
-        if title:
-            title_box = slide.shapes.add_textbox(
-                Inches(0.8), Inches(0.3), Inches(sw - 1.6), Inches(0.7)
-            )
-            tf = title_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = title
-            p.font.size = Pt(24)
-            p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
-            p.font.name = "Microsoft YaHei"
-            self._add_title_underline(slide, 0.8, 1.05, min(4.0, sw * 0.3))
-
-        images = slide_data.get("images", [])
-        has_image = bool(images)
-
-        if has_image:
-            text_left = 0.8
-            text_top = 1.3
-            text_width = sw * 0.42
-            text_height = sh - text_top - 1.0
-        else:
-            text_left = 0.8
-            text_top = 1.3
-            text_width = sw - 1.6
-            text_height = sh - text_top - 1.0
-
-        content = slide_data.get("content", "")
-        items = slide_data.get("items", [])
-
-        if items:
-            content_box = slide.shapes.add_textbox(
-                Inches(text_left), Inches(text_top), Inches(text_width), Inches(text_height)
-            )
-            tf = content_box.text_frame
-            tf.word_wrap = True
-            for i, item in enumerate(items):
-                if i == 0:
-                    p = tf.paragraphs[0]
-                else:
-                    p = tf.add_paragraph()
-                run_bullet = p.add_run()
-                run_bullet.text = "▸ "
-                run_bullet.font.size = Pt(14)
-                run_bullet.font.color.rgb = self._rgb(self.DESIGN["gold"])
-                run_bullet.font.name = "Microsoft YaHei"
-                run_text = p.add_run()
-                run_text.text = item
-                run_text.font.size = Pt(14)
-                run_text.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
-                run_text.font.name = "Microsoft YaHei"
-                p.space_after = Pt(6)
-                p.space_before = Pt(2)
-        elif content:
-            content_box = slide.shapes.add_textbox(
-                Inches(text_left), Inches(text_top), Inches(text_width), Inches(text_height)
-            )
-            tf = content_box.text_frame
-            tf.word_wrap = True
-            p = tf.paragraphs[0]
-            p.text = content
-            p.font.size = Pt(14)
-            p.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
-            p.font.name = "Microsoft YaHei"
-            p.space_after = Pt(6)
-
-        if has_image:
-            self._add_images_to_slide(slide, slide_data, styles, position="right")
-
-    def _create_findings_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any]):
-        """Create findings slide: left check-mark items / right image."""
-        from pptx.util import Inches, Pt
-
-        self._set_slide_bg(slide, self.DESIGN["white"])
-        sw = styles.get("slide_width", 13.333)
-        sh = styles.get("slide_height", 7.5)
-        self._add_side_accent(slide, styles)
-        self._add_footer_bar(slide, styles)
-
-        title = slide_data.get("title", "")
-        if title:
-            title_box = slide.shapes.add_textbox(
-                Inches(0.8), Inches(0.3), Inches(sw - 1.6), Inches(0.7)
-            )
-            tf = title_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = title
-            p.font.size = Pt(24)
-            p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
-            p.font.name = "Microsoft YaHei"
-            self._add_title_underline(slide, 0.8, 1.05, min(4.0, sw * 0.3))
-
-        images = slide_data.get("images", [])
-        has_image = bool(images)
-
-        if has_image:
-            text_width = sw * 0.42
-        else:
-            text_width = sw - 1.6
-
-        items = slide_data.get("items", [])
-        if items:
-            content_box = slide.shapes.add_textbox(
-                Inches(0.8), Inches(1.3), Inches(text_width), Inches(sh - 2.3)
-            )
-            tf = content_box.text_frame
-            tf.word_wrap = True
-            for i, item in enumerate(items):
-                if i == 0:
-                    p = tf.paragraphs[0]
-                else:
-                    p = tf.add_paragraph()
-                run_check = p.add_run()
-                run_check.text = "✓ "
-                run_check.font.size = Pt(16)
-                run_check.font.color.rgb = self._rgb(self.DESIGN["gold"])
-                run_check.font.bold = True
-                run_check.font.name = "Microsoft YaHei"
-                run_text = p.add_run()
-                run_text.text = item
-                run_text.font.size = Pt(14)
-                run_text.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
-                run_text.font.name = "Microsoft YaHei"
-                p.space_after = Pt(6)
-
-        if has_image:
-            self._add_images_to_slide(slide, slide_data, styles, position="right")
-
-    def _create_data_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any]):
-        """Create data slide: left table / right chart."""
-        from pptx.util import Inches, Pt
-
-        self._set_slide_bg(slide, self.DESIGN["white"])
-        sw = styles.get("slide_width", 13.333)
-        self._add_side_accent(slide, styles)
-        self._add_footer_bar(slide, styles)
-
-        title = slide_data.get("title", "")
-        if title:
-            title_box = slide.shapes.add_textbox(
-                Inches(0.8), Inches(0.3), Inches(sw - 1.6), Inches(0.7)
-            )
-            tf = title_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = title
-            p.font.size = Pt(24)
-            p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["navy"])
-            p.font.name = "Microsoft YaHei"
-            self._add_title_underline(slide, 0.8, 1.05, min(4.0, sw * 0.3))
-
-        images = slide_data.get("images", [])
-        has_image = bool(images)
-
-        if has_image:
-            table_width = sw * 0.42
-        else:
-            table_width = sw - 1.6
-
-        table_data = slide_data.get("table_data", [])
-        if table_data:
-            rows = len(table_data)
-            cols = max(len(row) for row in table_data) if table_data else 0
-            if rows > 0 and cols > 0:
-                table = slide.shapes.add_table(
-                    rows, cols, Inches(0.8), Inches(1.3), Inches(table_width), Inches(0.4 * rows)
-                ).table
-                for i, row_data in enumerate(table_data):
-                    for j, cell_text in enumerate(row_data):
-                        if j < cols:
-                            import re
-                            clean = re.sub(r'</?(strong|em|code|del|a[^>]*)>', '', str(cell_text))
-                            cell = table.cell(i, j)
-                            cell.text = clean
-                            for paragraph in cell.text_frame.paragraphs:
-                                paragraph.font.size = Pt(12)
-                                paragraph.font.name = "Microsoft YaHei"
-                                if i == 0:
-                                    paragraph.font.color.rgb = self._rgb(self.DESIGN["white"])
-                                    paragraph.font.bold = True
-                                else:
-                                    paragraph.font.color.rgb = self._rgb(self.DESIGN["text_dark"])
-                            if i == 0:
-                                cell.fill.solid()
-                                cell.fill.fore_color.rgb = self._rgb(self.DESIGN["navy"])
-                            elif i % 2 == 0:
-                                cell.fill.solid()
-                                cell.fill.fore_color.rgb = self._rgb(self.DESIGN["off_white"])
-
-        if has_image:
-            self._add_images_to_slide(slide, slide_data, styles, position="right")
-
-    def _create_end_slide(self, slide, slide_data: Dict[str, Any], styles: Dict[str, Any]):
-        """Create end slide with navy background + gold title."""
-        from pptx.util import Inches, Pt
-        from pptx.enum.text import PP_ALIGN
-
-        self._set_slide_bg(slide, self.DESIGN["navy"])
-        sw = styles.get("slide_width", 13.333)
-
-        self._add_footer_bar(slide, styles, self.DESIGN["white"])
-
-        title = slide_data.get("title", "")
-        if title:
-            title_box = slide.shapes.add_textbox(
-                Inches(1), Inches(2.5), Inches(sw - 2), Inches(1.5)
-            )
-            tf = title_box.text_frame
-            p = tf.paragraphs[0]
-            p.text = title
-            p.font.size = Pt(44)
-            p.font.bold = True
-            p.font.color.rgb = self._rgb(self.DESIGN["gold"])
-            p.font.name = "Microsoft YaHei"
-            p.alignment = PP_ALIGN.CENTER
-
-        thanks_box = slide.shapes.add_textbox(
-            Inches(1), Inches(4.5), Inches(sw - 2), Inches(0.8)
-        )
-        tf = thanks_box.text_frame
-        p = tf.paragraphs[0]
-        p.text = "感谢关注"
-        p.font.size = Pt(28)
-        p.font.color.rgb = self._rgb(self.DESIGN["white"])
-        p.font.name = "Microsoft YaHei"
-        p.alignment = PP_ALIGN.CENTER
-    
-    def _add_formatted_text(self, paragraph, text: str, styles: Dict[str, Any]) -> None:
-        """
-        Add formatted text to paragraph
-        
-        Parse HTML inline tags in text (converted from Markdown)
-        <strong>bold</strong> → bold
-        <em>italic</em> → italic
-        <code>code</code> → code
-        
-        Args:
-            paragraph: Paragraph object
-            text: Text that may contain HTML tags
-            styles: Style configuration
-        """
-        import re
-        from pptx.util import Pt
-        
-        # Clean HTML tags, extract plain text and format info
-        # Simplified: directly clean HTML tags, PPT does not support complex inline formatting
-        clean_text = re.sub(r'</?(strong|em|code|del|a[^>]*)>', '', text)
-        
-        # Check for bold markers
-        has_bold = '<strong>' in text or '**' in text
-        
-        # Check for italic markers
-        has_italic = ('<em>' in text or '*' in text) and '**' not in text
-        
-        # Check for code markers
-        has_code = '<code>' in text or '`' in text
-        
-        paragraph.text = clean_text
-        
-        # Apply format (entire paragraph uses same format in PPT)
-        if has_bold:
-            paragraph.font.bold = True
-        if has_italic:
-            paragraph.font.italic = True
-        if has_code:
-            paragraph.font.name = 'Courier New'
-            paragraph.font.size = Pt(styles.get("body_size", 18) - 2)
-    
-    def _create_fallback_document(
-        self,
-        slides: List[Dict[str, Any]],
-        output_path: str,
-        styles: Dict[str, Any]
-    ) -> ConversionResult:
-        """
-        Create fallback format document (when python-pptx is unavailable)
-        """
-        # Create plain text version
-        text_lines = []
-        
-        for i, slide in enumerate(slides, 1):
-            slide_type = slide.get("slide_type", "content")
-            text_lines.append(f"\n=== Slide {i} ({slide_type}) ===")
-            
-            if slide.get("title"):
-                text_lines.append(f"Title: {slide['title']}")
-            
-            if slide.get("content"):
-                text_lines.append(f"Content: {slide['content']}")
-            
-            items = slide.get("items", [])
-            if items:
-                text_lines.append("List items:")
-                for item in items:
-                    text_lines.append(f"  - {item}")
-            
-            table_data = slide.get("table_data", [])
-            if table_data:
-                text_lines.append("Table:")
-                for row in table_data:
-                    text_lines.append(f"  | {' | '.join(row)} |")
-        
-        content = "\n".join(text_lines)
-        
-        # Change to .txt extension
-        txt_path = output_path.rsplit('.', 1)[0] + '.txt'
-        
-        # Atomic write
-        fd, temp_path = tempfile.mkstemp(suffix='.txt')
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(content)
-            os.replace(temp_path, txt_path)
-        except Exception:
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
-            raise
-        
-        file_size = os.path.getsize(txt_path)
-        
-        logger.warning(f"python-pptx not available, created text file: {txt_path}")
-        
-        return ConversionResult(
-            success=True,
-            output_path=txt_path,
-            file_size=file_size,
-            slides_count=len(slides),
-            error="python-pptx not available, created text file instead"
         )
 
 

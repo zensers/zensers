@@ -74,8 +74,10 @@ class TemplateSelector:
 
     _ABS_RE = re.compile(
         r'(?<!\d)(?!(?:19|20)\d{2})'
-        r'((?:\d+\.\d+|\d{1,})\s*(?:万亿|亿|万|[BMK]|家|倍|个|辆|台|颗|款|项|人|名|次|期|支|条)'
-        r'(?:\s*(?:USD|CNY|EUR|元|美元))?'
+        r'((?:\d+\.\d+|\d{1,})\s*'
+        r'(?:(?:万亿|亿|万)(?:台|人|辆|个|家|倍|颗|款|项|次|支|条|元|美元)?'
+        r'|[BMK]|家|倍|个|辆|台|颗|款|项|人|名|次|期|支|条|元|美元|USD|CNY|EUR)'
+        r'(?:\s*(?:USD|CNY|EUR|人民币|元|美元))?'
         r'|\d+\.\d+[TBMK](?!\w)'
         r'|\d\s*[BMK]\s*(?:USD|CNY|EUR|元|美元))'
         r'(?!\d)',
@@ -84,7 +86,16 @@ class TemplateSelector:
 
     _PCT_RE = re.compile(r'(\d+\.?\d*)\s*%')
 
-    _NUM_UNIT_RE = re.compile(r'(?<!第)([\d.]+)\s*(万亿|亿|万|[BMK]|家|倍|个|辆|台|颗|款|项|人|名|次|期|支|条)', re.I)
+    _NUM_UNIT_RE = re.compile(
+        r'(?<!第)([\d.]+)\s*'
+        r'((?:万亿|亿|万)(?:台|人|辆|个|家|倍|颗|款|项|次|支|条|元|美元)?'
+        r'|[BMK]|家|倍|个|辆|台|颗|款|项|人|名|次|期|支|条|元|美元|USD|CNY|EUR)',
+        re.I,
+    )
+
+    _KPI_LABEL_TAIL_RE = re.compile(
+        r'(?:达到|约为|约|降至|下降至|提升至|增长至|突破|超过|超|达|为|至|到|近|逾|的)+$'
+    )
 
     _PCT_TOKEN_RE = re.compile(r'^[\d.]+%?$')
 
@@ -107,7 +118,7 @@ class TemplateSelector:
                     continue
                 num_unit = self._NUM_UNIT_RE.match(abs_match.group(1))
                 if num_unit:
-                    kpi["number"] = num_unit.group(1) + num_unit.group(2)
+                    kpi["number"] = num_unit.group(0).strip()
                 else:
                     kpi["number"] = abs_match.group(1).split()[0]
                 if pct_match:
@@ -121,7 +132,7 @@ class TemplateSelector:
                 continue
 
             if ":" in item:
-                kpi["label"] = item.split(":")[0].strip()[:30]
+                kpi["label"] = self._clean_label(item.split(":")[0].strip()[:30])
             else:
                 num_pos = item.find(kpi["number"])
                 prefix = item[:num_pos].strip()
@@ -132,7 +143,8 @@ class TemplateSelector:
                     and len(w) > 1
                     and not self._PCT_TOKEN_RE.match(w)
                 ]
-                kpi["label"] = " ".join(meaningful[-3:])[:30] if meaningful else ""
+                label = " ".join(meaningful[-3:])[:30] if meaningful else ""
+                kpi["label"] = self._clean_label(label)
 
             if self._TREND_UP_RE.search(item):
                 kpi["trend_direction"] = "up"
@@ -144,6 +156,18 @@ class TemplateSelector:
             kpi["original_text"] = item
             kpis.append(kpi)
         return kpis
+
+    def _clean_label(self, label: str) -> str:
+        if not label:
+            return ""
+        label = re.sub(r'^[\-\*•▪▸►\s]+', '', label)
+        # Leftovers such as "22成本降至" carry a metric fragment from the
+        # preceding clause; keep the descriptive part only.  A four-digit year
+        # is meaningful ("2026年产能") and must survive.
+        label = re.sub(r'^\s*(?!\d{4}\s*年)[\d.]+\s*', '', label)
+        label = re.sub(r'^年\s*', '', label)
+        label = self._KPI_LABEL_TAIL_RE.sub('', label).strip()
+        return label[:30]
 
     def _detect_comparison(self, items: List[str]) -> Optional[Dict]:
         if not items:
@@ -262,10 +286,6 @@ class TemplateSelector:
         if template_name == "kpi_highlight":
             kpis = kpis or self._detect_kpis(items)
             if kpis:
-                slide_title = slide_data.get("title", "")
-                for kpi in kpis:
-                    if not kpi.get("label") and slide_title:
-                        kpi["label"] = slide_title[:30]
                 slide_data["kpi_data"] = kpis
 
         if template_name == "comparison":

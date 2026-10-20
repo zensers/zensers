@@ -11,13 +11,6 @@ CONCEPT_KEYWORDS = ["趋势", "未来", "战略", "展望", "生态", "格局", 
 
 NO_IMAGE_SLIDE_TYPES = ("cover", "toc", "section_title", "section-title", "end")
 
-PLACEHOLDER_COLORS = {
-    "product": ("1A2744", "C9A227"),
-    "technology": ("0F1A2E", "4FC3F7"),
-    "illustration": ("2C3E50", "E0E0E0"),
-    "default": ("1A2744", "C9A227"),
-}
-
 
 class ImageProvider:
     def __init__(self, config: Dict = None):
@@ -58,14 +51,9 @@ class ImageProvider:
                     "image_type": image_type,
                 }]
                 break
-            local_path = self._generate_placeholder(keyword, image_type)
-            if local_path:
-                slide_data["images"] = [{
-                    "src": local_path,
-                    "alt": keyword,
-                    "image_type": image_type,
-                }]
-                break
+            # 没有真实图片时不插入占位图：斜线占位图既无信息量，
+            # 又会把版式挤成左右分栏，导致 KPI 卡片被压成窄柱。
+            logger.info("No real image found for keyword '%s', leaving slide text-only", keyword)
 
     def get_image(self, keyword: str, image_type: str = "technology", style: str = "landscape") -> Optional[str]:
         cache_key = f"{keyword}:{image_type}:{style}"
@@ -190,50 +178,6 @@ class ImageProvider:
             return response.data[0].url
         except Exception:
             logger.warning("DALL-E generation failed: %s", prompt[:50])
-        return None
-
-    def _generate_placeholder(self, keyword: str, image_type: str = "default") -> Optional[str]:
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-        except ImportError:
-            logger.warning("Pillow not available, cannot generate placeholder images")
-            return None
-        cache_dir = os.path.join(self.cache_dir, "placeholders")
-        os.makedirs(cache_dir, exist_ok=True)
-        filename = hashlib.sha256(keyword.encode()).hexdigest()[:16] + ".png"
-        local_path = os.path.join(cache_dir, filename)
-        if os.path.isfile(local_path):
-            return local_path
-        try:
-            w, h = 1200, 800
-            bg_hex, accent_hex = PLACEHOLDER_COLORS.get(image_type, PLACEHOLDER_COLORS["default"])
-            bg_rgb = (int(bg_hex[0:2], 16), int(bg_hex[2:4], 16), int(bg_hex[4:6], 16))
-            accent_rgb = (int(accent_hex[0:2], 16), int(accent_hex[2:4], 16), int(accent_hex[4:6], 16))
-            img = Image.new("RGB", (w, h), bg_rgb)
-            draw = ImageDraw.Draw(img)
-            for i in range(0, w, 60):
-                draw.line([(i, 0), (i + h, h)], fill=accent_rgb, width=1)
-            for i in range(0, h, 60):
-                draw.line([(0, i), (w, i + w // 3)], fill=accent_rgb, width=1)
-            draw.rectangle([40, 40, w - 40, h - 40], outline=accent_rgb, width=2)
-            try:
-                font = ImageFont.truetype("msyh.ttc", 36)
-            except Exception:
-                try:
-                    font = ImageFont.truetype("arial.ttf", 36)
-                except Exception:
-                    font = ImageFont.load_default()
-            display_text = keyword[:20] if keyword else image_type.upper()
-            bbox = draw.textbbox((0, 0), display_text, font=font)
-            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            tx = (w - tw) // 2
-            ty = (h - th) // 2
-            draw.rectangle([tx - 20, ty - 15, tx + tw + 20, ty + th + 15], fill=bg_rgb)
-            draw.text((tx, ty), display_text, fill=accent_rgb, font=font)
-            img.save(local_path, "PNG")
-            return local_path
-        except Exception:
-            logger.warning("Failed to generate placeholder image for: %s", keyword)
         return None
 
     def _extract_keywords(self, title: str, content: str) -> List[Dict]:

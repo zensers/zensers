@@ -105,3 +105,30 @@ class TestDetectKpis:
         items = ["Revenue 15.1B, 28.9% growth"]
         kpis = selector._detect_kpis(items)
         assert "28.9%" not in kpis[0]["label"]
+
+    def test_compound_chinese_unit_with_counter(self, selector):
+        items = ["全球整机出货量约 2.1 万台 118%"]
+        kpis = selector._detect_kpis(items)
+        assert len(kpis) == 1
+        assert kpis[0]["number"] == "2.1 万台"
+        assert kpis[0]["label"] == "全球整机出货量"
+        assert kpis[0]["trend"] == "118%"
+
+    def test_currency_amount_without_scale_unit(self, selector):
+        items = ["成本 3000 美元"]
+        kpis = selector._detect_kpis(items)
+        assert len(kpis) == 1
+        assert kpis[0]["number"] == "3000 美元"
+        assert kpis[0]["label"] == "成本"
+
+    def test_year_not_duplicated_in_label(self, selector):
+        items = ["2026年产能 10 万台"]
+        kpis = selector._detect_kpis(items)
+        assert kpis[0]["number"] == "10 万台"
+        assert kpis[0]["label"] == "2026年产能"
+
+    def test_stray_metric_fragment_stripped_from_label(self, selector):
+        items = ["22成本降至 3000 美元"]
+        kpis = selector._detect_kpis(items)
+        assert kpis[0]["number"] == "3000 美元"
+        assert kpis[0]["label"] == "成本"
