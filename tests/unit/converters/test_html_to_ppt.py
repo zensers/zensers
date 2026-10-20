@@ -527,19 +527,28 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
-class TestTemplateRendererDefault:
-    """测试Template Renderer默认开启"""
+class TestTemplateRendererOnlyPath:
+    """USE_TEMPLATE_RENDERER 开关已删除，模板渲染是唯一渲染路径"""
 
-    def test_template_renderer_is_default(self):
+    def test_template_renderer_is_only_path(self, monkeypatch):
         from src.converters.html_to_ppt import HTMLToPPTConverter
         converter = HTMLToPPTConverter()
-        assert converter._should_use_template_renderer() is True
+        assert not hasattr(converter, "_should_use_template_renderer")
 
-    def test_template_renderer_can_be_disabled(self, monkeypatch):
-        from src.converters.html_to_ppt import HTMLToPPTConverter
         monkeypatch.setenv("USE_TEMPLATE_RENDERER", "0")
-        converter = HTMLToPPTConverter()
-        assert converter._should_use_template_renderer() is False
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+            html = """
+            <section class="slide" data-type="content" data-page="1">
+                <div class="slide-content">
+                    <div class="slide-title"><h2>Overview</h2></div>
+                    <ul class="slide-list"><li>Point 1</li></ul>
+                </div>
+            </section>
+            """
+            output_path = os.path.join(tmpdir, "only_path.pptx")
+            result = converter.convert(html, output_path)
+            assert result.success is True
+            assert os.path.exists(output_path)
 
 
 class TestPPTBulletContentRendering:
