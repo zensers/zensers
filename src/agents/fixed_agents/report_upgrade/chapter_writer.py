@@ -214,6 +214,18 @@ class ChapterWriter:
                 "本次调用未绑定任何文件读取工具，也不存在 read_json 工具。"
                 "不要尝试调用或输出任何工具调用语句，请直接依据上文提供的数据与证据撰写章节。"
             )
+        # 策略接线 B：pptx 要点字数上限由 PPTXStrategy 单一来源注入模板
+        #（${bullet_max_chars}）；PromptManager.substitute 对缺失模板变量抛
+        # KeyError，故 pptx 路径必须提供；docx 模板无该占位符，多余 kwarg
+        # 会被 Template.substitute 静默忽略，不受影响。
+        if input_data.output_format == "pptx":
+            try:
+                from src.content.format_strategy import get_format_strategy
+                directive = get_format_strategy(
+                    input_data.output_format).get_writing_directive()
+                prompt_kwargs["bullet_max_chars"] = directive.bullet_max_chars or 25
+            except Exception:
+                prompt_kwargs["bullet_max_chars"] = 25
         prompt_name = "chapter_write_pptx" if input_data.output_format == "pptx" else "chapter_write"
         try:
             prompt = self._prompts.get(prompt_name, **prompt_kwargs)
