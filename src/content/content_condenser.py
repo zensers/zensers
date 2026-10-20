@@ -128,11 +128,42 @@ class ContentCondenser:
         return result
 
     @staticmethod
+    def _kpi_label(prefix: str) -> str:
+        """Derive a readable label from the clause that introduces a metric."""
+        clause = re.split(r'[，,、：:；;]', prefix)[-1].strip()
+        words = [
+            w for w in re.split(r'\s+', clause)
+            if len(w) > 1
+            and (not re.fullmatch(r'[\d.%]+', w) or re.fullmatch(r'(?:19|20)\d{2}', w))
+            and w not in ("的", "了", "在", "是", "和", "与", "从", "至", "到", "为", "以")
+        ]
+        label = "".join(words[-2:]) if words else ""
+        label = re.sub(r'^[\-\*•▪▸►\s]+', '', label)
+        # Metric fragments such as "22成本降至" start with a number that is
+        # not a year; drop it and any trailing connective/verb.
+        label = re.sub(r'^\s*(?!\d{4}\s*年)[\d.]+\s*', '', label)
+        label = re.sub(r'^年\s*', '', label)
+        label = re.sub(
+            r'(?:达到|约为|约|降至|下降至|提升至|增长至|突破|超过|超|达|为|至|到|近|逾|的)+$',
+            '',
+            label,
+        ).strip()
+        year_m = _YEAR_RE.search(prefix)
+        if year_m:
+            year = year_m.group(1)
+            if year not in label and 0 < len(label) <= 16:
+                label = year + "年" + label
+        return label[:20]
+
+    @staticmethod
     def _numeric_token(sentence: str, match) -> str:
-        """Keep currency suffixes attached to the numeric evidence."""
+        """Keep currency and counter suffixes attached to the numeric evidence."""
         token = match.group(0)
         tail = sentence[match.end():]
-        for suffix in ("人民币", "美元", "元"):
+        for suffix in (
+            "人民币", "美元", "元",
+            "台", "人", "辆", "个", "家", "倍", "颗", "款", "项", "次", "支", "条", "期",
+        ):
             if tail.startswith(suffix):
                 return token + suffix
         return token
@@ -195,20 +226,7 @@ class ContentCondenser:
 
                 num_pos = num_match.start()
                 if num_pos > 0:
-                    prefix = sent[:num_pos].strip()
-                    words = re.split(r'[，,、：:；;\s]+', prefix)
-                    meaningful = [w for w in words if len(w) > 1 and w not in ("的", "了", "在", "是", "和")]
-                    if len(meaningful) >= 2:
-                        kpi["label"] = meaningful[-2] + meaningful[-1]
-                    elif meaningful:
-                        kpi["label"] = meaningful[-1]
-                    else:
-                        kpi["label"] = ""
-                    year_m = _YEAR_RE.search(prefix)
-                    if year_m and year_m.group(0) not in kpi["label"]:
-                        kpi["label"] = year_m.group(0) + kpi["label"]
-                    if len(kpi["label"]) > 20:
-                        kpi["label"] = kpi["label"][:20]
+                    kpi["label"] = self._kpi_label(sent[:num_pos].strip())
                 else:
                     kpi["label"] = ""
 
@@ -228,7 +246,7 @@ class ContentCondenser:
                         "number": pct_match.group(0).strip(),
                         "trend": None,
                         "trend_direction": "up" if _TREND_UP_RE.search(sent) else ("down" if _TREND_DOWN_RE.search(sent) else None),
-                        "label": "",
+                        "label": self._kpi_label(sent[:pct_match.start()].strip()),
                         "original_text": sent,
                     }
                     kpis.append(kpi_solo)

@@ -18,6 +18,8 @@ import tempfile
 import os
 from pathlib import Path
 
+from pptx.util import Inches
+
 
 class TestHTMLToPPTConverterInit:
     """测试 HTMLToPPTConverter 初始化"""
@@ -677,6 +679,49 @@ class TestTemplateHtmlForwarding:
             assert result.success
 
 
+class TestSlideCanvasSize:
+    def test_template_css_canvas_does_not_shrink_content_area(self):
+        """The 1920px HTML canvas must not become a 20in PPT page.
+
+        Slide templates and layout tokens are authored for a 13.333x7.5in
+        page; adopting the CSS canvas leaves every slide squeezed into the
+        left ~58% of the page.
+        """
+        from pptx import Presentation
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        template_html = (
+            "<html><head><style>.slide{width:1920px;height:1080px;}"
+            ".slide.cover h1{font-size:72px;color:#C9A227}</style></head><body></body></html>"
+        )
+        html = "<section class='slide' data-type='cover'><h1>T</h1></section>"
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+            out = Path(tmpdir) / "out.pptx"
+            result = HTMLToPPTConverter().convert(
+                html=html, output_path=str(out), template_html=template_html
+            )
+            assert result.success
+            prs = Presentation(str(out))
+            assert prs.slide_width == int(Inches(13.333))
+            assert prs.slide_height == int(Inches(7.5))
+
+    def test_explicit_custom_canvas_size_is_respected(self):
+        from pptx import Presentation
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        html = "<section class='slide' data-type='cover'><h1>T</h1></section>"
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as tmpdir:
+            out = Path(tmpdir) / "out.pptx"
+            result = HTMLToPPTConverter().convert(
+                html=html, output_path=str(out), styles={"slide_width": 10.0, "slide_height": 7.5}
+            )
+            assert result.success
+            prs = Presentation(str(out))
+            assert prs.slide_width == int(Inches(10.0))
+
+
 class TestChartMetadataPropagation:
     def _parse(self, html: str):
         from src.converters.base_parser import SlideElementParser
@@ -791,6 +836,17 @@ class TestSlideCopyChinese:
         assert "核心数据" in slide_html
         assert "Key Data" not in slide_html
 
+    def test_data_slide_has_explicit_header_row(self):
+        """数据表必须带 <thead> 表头，否则下游把首行数据误当表头。"""
+        from src.content.content_orchestrator import ContentOrchestrator
+
+        co = ContentOrchestrator()
+        slide_html = co._render_data_slide([{"metric": "规模", "value": "2000", "unit": "亿元"}], 1)
+        assert "<thead>" in slide_html
+        assert "<th>指标</th>" in slide_html
+        assert "<th>数值</th>" in slide_html
+        assert "<th>单位</th>" in slide_html
+
     def test_end_slide_no_thanks_follow(self):
         from src.content.content_orchestrator import ContentOrchestrator
 
@@ -881,6 +937,99 @@ class TestChartConfigFromStrategy:
         figsize = PPTXStrategy().get_chart_style().figsize
         assert (cfg.width, cfg.height) == figsize
 
+    def test_table_chart_allows_consistent_units(self):
+        """数值列单位一致（亿元）时仍应正常生成图表。"""
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        captured = {}
+
+        class FakeResult:
+            success = True
+            image_path = None
+
+        class FakeInner:
+            def generate(self, config):
+                captured["config"] = config
+                return FakeResult()
+
+        chart_gen = MagicMock()
+        chart_gen.output_dir = Path(".")
+        chart_gen.chart_generator = FakeInner()
+
+        converter = HTMLToPPTConverter()
+        table = [["年份", "规模"], ["2023", "100 亿元"], ["2024", "120 亿元"], ["2025", "150 亿元"]]
+        result = converter._generate_chart_from_table(table, "规模趋势", chart_gen)
+        assert "config" in captured
+
+    def test_table_chart_refuses_mixed_units(self):
+        """数值列单位不一致（亿美元/台/%）时必须拒绝画图，避免比例失真。"""
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        captured = {}
+
+        class FakeResult:
+            success = True
+            image_path = None
+
+        class FakeInner:
+            def generate(self, config):
+                captured["config"] = config
+                return FakeResult()
+
+        chart_gen = MagicMock()
+        chart_gen.output_dir = Path(".")
+        chart_gen.chart_generator = FakeInner()
+
+        converter = HTMLToPPTConverter()
+        table = [
+            ["指标", "数值", "单位"],
+            ["全球市场规模", "27.6 亿美元", "美元"],
+            ["中国出货量", "6800 台", "台"],
+            ["成本降幅", "40%", "%"],
+        ]
+        result = converter._generate_chart_from_table(table, "核心数据", chart_gen)
+        assert result is None
+        assert "config" not in captured
+
+    def test_table_chart_refuses_mixed_unit_column(self):
+        """数值为纯数字、单位独立成列时，同样必须校验单位一致性。"""
+        from pathlib import Path
+        from unittest.mock import MagicMock
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        captured = {}
+
+        class FakeResult:
+            success = True
+            image_path = None
+
+        class FakeInner:
+            def generate(self, config):
+                captured["config"] = config
+                return FakeResult()
+
+        chart_gen = MagicMock()
+        chart_gen.output_dir = Path(".")
+        chart_gen.chart_generator = FakeInner()
+
+        converter = HTMLToPPTConverter()
+        table = [
+            ["指标", "数值", "单位"],
+            ["全球市场规模", "27.6", "亿美元"],
+            ["中国出货量", "6800", "台"],
+            ["整机成本降幅", "40", "%"],
+        ]
+        result = converter._generate_chart_from_table(table, "核心数据", chart_gen)
+        assert result is None
+        assert "config" not in captured
+
 
 class TestAtomicSave:
     def test_atomic_save_uses_mkstemp(self, tmp_path, monkeypatch):
@@ -907,6 +1056,41 @@ class TestAtomicSave:
             HTMLToPPTConverter()._atomic_save(prs, out)
             assert os.path.exists(out)
             assert not called["mktemp"]
+
+
+class TestChartFullLayoutNotSqueezed:
+    def test_chart_full_keeps_wide_chart_with_few_items(self):
+        """chart_full 模板下图表应占满版心，不被 items_with_chart 覆盖压进右半栏。"""
+        import tempfile
+
+        from PIL import Image as PILImage
+        from pptx import Presentation
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        with tempfile.TemporaryDirectory(dir="data") as td:
+            chart = Path(td) / "bar_demo.png"
+            PILImage.new("RGB", (1200, 700), "white").save(chart)
+            out = Path(td) / "deck.pptx"
+            html = (
+                "<section class='slide' data-type='content'>"
+                "<h2>市场规模</h2>"
+                "<ul><li>2030 年出货量达到 120 万台</li></ul>"
+                f"<img src='{chart.as_posix()}' alt='chart' data-image-type='chart' data-chart-type='bar'>"
+                "</section>"
+            )
+            result = HTMLToPPTConverter().convert(html, str(out), template_html=None)
+            assert result.success
+
+            prs = Presentation(str(out))
+            pictures = [
+                shape for shape in prs.slides[0].shapes
+                if shape.shape_type == 13  # MSO_SHAPE_TYPE.PICTURE
+            ]
+            assert len(pictures) == 1
+            width_inches = pictures[0].width / 914400
+            height_inches = pictures[0].height / 914400
+            assert width_inches > 7, f"chart squeezed to {width_inches:.2f}in"
+            assert abs(width_inches / height_inches - 1200 / 700) < 0.02
 
 
 class TestNoFakeSuccess:

@@ -1611,11 +1611,19 @@ class ContentOrchestrator:
                     num = kpi.get("number", "")
                     label = kpi.get("label", "")
                     trend = kpi.get("trend", "")
+                    direction = kpi.get("trend_direction")
                     parts = [num]
                     if label:
                         parts.insert(0, label)
                     if trend:
-                        parts.append(trend)
+                        # 方向动词必须写进 <li> 文本：下游 PPT 管线靠关键词
+                        # 正则从 li 重新推导 trend_direction，丢了就画不出箭头。
+                        if direction == "up":
+                            parts.append(f"同比增长{trend}")
+                        elif direction == "down":
+                            parts.append(f"同比下降{trend}")
+                        else:
+                            parts.append(trend)
                     kpi_items.append(html.escape(" ".join(p for p in parts if p)))
                 
                 kpi_li = "\n            ".join(f'<li>{item}</li>' for item in kpi_items)
@@ -1814,13 +1822,14 @@ class ContentOrchestrator:
             value = dp.get("value", "")
             unit = dp.get("unit", "")
             rows.append(f'<tr><td>{html.escape(metric)}</td><td class="data-value">{html.escape(value)}</td><td>{html.escape(unit)}</td></tr>')
-        
+
         return f'''<section class="slide" data-type="data" data-page="{slide_num}">
     <div class="slide-content">
         <div class="slide-title">
             <h2>核心数据</h2>
         </div>
         <table class="data-table">
+            <thead><tr><th>指标</th><th>数值</th><th>单位</th></tr></thead>
             <tbody>
                 {chr(10).join(rows)}
             </tbody>

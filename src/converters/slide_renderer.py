@@ -180,6 +180,7 @@ class SlideRenderer:
         txBox = slide.shapes.add_textbox(left, top, width, height)
         tf = txBox.text_frame
         tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
         bullet = st.get("bullet", "▸")
         bullet_color = self._resolve_color(st.get("bullet_color", "gold"))
         text_color = self._resolve_color(st.get("color", "text_dark"))
@@ -423,8 +424,6 @@ class SlideRenderer:
             run_num.font.bold = True
             run_num.font.name = self.default_font
         label = kpi.get("label", "")
-        if not label:
-            label = kpi.get("original_text", "")[:30]
         if label:
             p_label = tf.add_paragraph()
             p_label.text = label

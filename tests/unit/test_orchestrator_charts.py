@@ -102,7 +102,6 @@ class TestRenderSectionSlidesWithCharts:
     
     def setup_method(self):
         self.orch = ContentOrchestrator()
-    
     def test_section_with_charts_produces_img_tags(self):
         section = ContentSection(
             id="sec_1", title="Market Analysis", content="The market grew 5%.",
@@ -155,6 +154,41 @@ class TestRenderSectionSlidesWithCharts:
         slides = self.orch._render_section_slides(section, 1)
         all_html = "\n".join(slides)
         assert "Revenue Trend" in all_html
+
+
+class TestKpiSlideKeepsTrendDirection:
+    """KPI <li> 必须保留方向动词，否则下游正则推不出 trend_direction。"""
+
+    def setup_method(self):
+        self.orch = ContentOrchestrator()
+
+    def test_kpi_li_keeps_direction_verb(self):
+        section = ContentSection(
+            id="s1", title="市场概述",
+            content=(
+                "行业进入放量期。\n"
+                "- 全球整机出货量约 2.1 万台，同比增长 118%\n"
+                "- 中国市场出货量 6800 台，同比增长 32%"
+            ),
+            order=1,
+        )
+        slides = self.orch._render_section_slides(section, 3)
+        kpi_slide = next(s for s in slides if "核心指标" in s)
+        assert "同比增长" in kpi_slide
+
+    def test_kpi_li_down_direction_verb(self):
+        section = ContentSection(
+            id="s1", title="成本",
+            content=(
+                "成本进入下行通道。\n"
+                "- 整机成本降至 3 万美元，同比下降 20%\n"
+                "- 零部件价格降至 5000 美元，同比下降 15%"
+            ),
+            order=1,
+        )
+        slides = self.orch._render_section_slides(section, 3)
+        kpi_slide = next(s for s in slides if "核心指标" in s)
+        assert "同比下降" in kpi_slide
 
 
 if __name__ == "__main__":

@@ -171,6 +171,13 @@ class HTMLToPPTConverter:
         # Apply template-extracted styles (higher priority than defaults)
         if extracted_styles:
             template_styles = extracted_styles.to_ppt_styles()
+            # The HTML canvas size (e.g. 1920x1080 CSS pixels) describes the
+            # browser render, not the PPT canvas.  The slide templates and
+            # layout tokens are authored for a 13.333x7.5in page, so adopting
+            # the CSS page size leaves all content squeezed into the top-left
+            # ~58% of the slide.  Keep the PPT page at the authored 16:9 size.
+            template_styles.pop("slide_width", None)
+            template_styles.pop("slide_height", None)
             final_styles.update(template_styles)
             logger.debug(f"Applied template styles: {template_styles}")
         
@@ -555,6 +562,7 @@ class HTMLToPPTConverter:
         headers = [str(h) for h in table_data[0]]
         categories = []
         values = []
+        units = set()
         numeric_col_idx = None
         for col_idx in range(len(headers)):
             numeric_vals = []
@@ -584,10 +592,29 @@ class HTMLToPPTConverter:
                 val = float(cleaned)
                 categories.append(name[:12])
                 values.append(val)
+                units.add(re.sub(r'[\d.\-\s,]', '', cell).strip())
             except (ValueError, TypeError):
                 continue
-        
+
         if len(categories) < 2:
+            return None
+        # 数值为纯数字时单位可能独立成列（表头“单位”），一并纳入校验。
+        if len(units) <= 1:
+            unit_col = next(
+                (i for i, h in enumerate(headers) if h.strip() == "单位" and i != numeric_col_idx),
+                None,
+            )
+            if unit_col is not None:
+                for row_idx in range(1, len(table_data)):
+                    if unit_col < len(table_data[row_idx]):
+                        units.add(re.sub(r'[\s,]', '', str(table_data[row_idx][unit_col])))
+                units.discard("")
+        # 同一坐标轴只允许一种计量单位，否则比例失真（如 27.6 亿美元 vs 40%）。
+        if len(units) > 1:
+            logger.warning(
+                "Refusing table chart with mixed units for '%s': %s",
+                title, sorted(units),
+            )
             return None
         
         config = ChartConfig(
@@ -719,7 +746,11 @@ class HTMLToPPTConverter:
             
             layout_overrides = None
             try:
-                layout_overrides = layout_engine.compute(slide_data, template)
+                # chart_full 的图表槽位本身就是版心整幅（约 11.7x5.8in），
+                # 再叠加 items_with_chart 等场景覆盖会把图表压进右半栏，
+                # 表现为图表缩成 1/3 宽、左半页空白。
+                if template_name != "chart_full":
+                    layout_overrides = layout_engine.compute(slide_data, template)
             except Exception:
                 logger.debug("LayoutEngine compute failed, using template defaults")
             

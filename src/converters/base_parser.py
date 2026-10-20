@@ -531,7 +531,9 @@ class SlideElementParser(HTMLElementParser):
             elif etype == "paragraph":
                 text = elem.get("text", "")
                 if text:
-                    content_parts.append(text)
+                    bullets, prose = self._split_dash_bullets(text)
+                    content_parts.extend(prose)
+                    items.extend(bullets)
             
             elif etype == "list_item":
                 text = elem.get("text", "")
@@ -602,6 +604,22 @@ class SlideElementParser(HTMLElementParser):
             slide["source_text"] = source
         
         return slide
+
+    @staticmethod
+    def _split_dash_bullets(text: str) -> Tuple[List[str], List[str]]:
+        """Split a paragraph into ("- " prefixed bullet lines, remaining prose lines)."""
+        bullets: List[str] = []
+        prose: List[str] = []
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            match = re.match(r"^-\s+(.+)$", stripped)
+            if match:
+                bullets.append(match.group(1).strip())
+            else:
+                prose.append(stripped)
+        return bullets, prose
     
     def _split_dense_slides(self, slides: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Split slides that are too dense into multiple per-key-point slides.

@@ -112,6 +112,36 @@ class TestContentCondenserExtractKPIs:
         kpis = condenser.extract_kpis(content)
         assert kpis == []
 
+    def test_compound_unit_keeps_counter(self, condenser):
+        kpis = condenser.extract_kpis("- 全球整机出货量约 2.1 万台，同比增长 118%")
+        kpi = next(k for k in kpis if "2.1" in k["number"])
+        assert kpi["number"] == "2.1 万台"
+        assert kpi["label"] == "全球整机出货量"
+        assert kpi["trend"] == "118%"
+
+    def test_label_uses_clause_not_stray_metric_fragment(self, condenser):
+        kpis = condenser.extract_kpis("自由度从 6 提升到 22，成本降至 3000 美元以内")
+        kpi = next(k for k in kpis if "3000" in k["number"])
+        assert kpi["number"] == "3000 美元"
+        assert kpi["label"] == "成本"
+
+    def test_year_not_duplicated_in_label(self, condenser):
+        kpis = condenser.extract_kpis("特斯拉 Optimus 规划 2026 年产能 10 万台")
+        kpi = next(k for k in kpis if "10" in k["number"])
+        assert kpi["number"] == "10 万台"
+        assert kpi["label"] == "2026年产能"
+
+    def test_label_keeps_entity_and_drops_dangling_conjunction(self, condenser):
+        kpis = condenser.extract_kpis("- 宇树科技 G1 以 9.9 万元价格打开市场")
+        kpi = next(k for k in kpis if "9.9" in k["number"])
+        assert kpi["number"] == "9.9 万元"
+        assert kpi["label"] == "宇树科技G1"
+
+    def test_percentage_only_keeps_descriptive_label(self, condenser):
+        kpis = condenser.extract_kpis("- 硬件成本下降 40%，推动渗透率提升")
+        kpi = next(k for k in kpis if k["number"] == "40%")
+        assert kpi["label"] == "硬件成本下降"
+
 
 class TestContentCondenserSuggestCharts:
     """测试图表建议生成"""
