@@ -693,3 +693,13 @@ class TestChartMetadataPropagation:
         )
         slides = self._parse(html)
         assert "image_type" not in slides[0]["images"][0]
+
+    def test_data_source_survives_image_attrs_shadowing(self):
+        html = (
+            "<section class='slide' data-type='content' data-source='IDC 2025'><h2>T</h2>"
+            "<img src='/charts/bar_x.png' alt='c' data-image-type='chart'>"
+            "</section>"
+        )
+        slides = self._parse(html)
+        assert slides[0].get("source_text") == "IDC 2025"
+        assert slides[0]["images"][0]["image_type"] == "chart"
