@@ -262,7 +262,11 @@ class HTMLToPPTConverter:
                 design = self._build_design(template_html)
                 return self._create_pptx_document(slides, output_path, final_styles, design=design)
             else:
-                return self._create_fallback_document(slides, output_path, final_styles)
+                return ConversionResult(
+                    success=False,
+                    error="python-pptx is not installed. Install it with: pip install python-pptx",
+                    error_code="PPTX_UNAVAILABLE",
+                )
                 
         except (OSError, IOError) as e:
             logger.error(f"File operation failed: {e}")
@@ -734,70 +738,6 @@ class HTMLToPPTConverter:
             output_path=output_path,
             file_size=file_size,
             slides_count=slides_count
-        )
-    
-    def _create_fallback_document(
-        self,
-        slides: List[Dict[str, Any]],
-        output_path: str,
-        styles: Dict[str, Any]
-    ) -> ConversionResult:
-        """
-        Create fallback format document (when python-pptx is unavailable)
-        """
-        # Create plain text version
-        text_lines = []
-        
-        for i, slide in enumerate(slides, 1):
-            slide_type = slide.get("slide_type", "content")
-            text_lines.append(f"\n=== Slide {i} ({slide_type}) ===")
-            
-            if slide.get("title"):
-                text_lines.append(f"Title: {slide['title']}")
-            
-            if slide.get("content"):
-                text_lines.append(f"Content: {slide['content']}")
-            
-            items = slide.get("items", [])
-            if items:
-                text_lines.append("List items:")
-                for item in items:
-                    text_lines.append(f"  - {item}")
-            
-            table_data = slide.get("table_data", [])
-            if table_data:
-                text_lines.append("Table:")
-                for row in table_data:
-                    text_lines.append(f"  | {' | '.join(row)} |")
-        
-        content = "\n".join(text_lines)
-        
-        # Change to .txt extension
-        txt_path = output_path.rsplit('.', 1)[0] + '.txt'
-        
-        # Atomic write
-        fd, temp_path = tempfile.mkstemp(suffix='.txt')
-        try:
-            with os.fdopen(fd, 'w', encoding='utf-8') as f:
-                f.write(content)
-            os.replace(temp_path, txt_path)
-        except Exception:
-            try:
-                os.unlink(temp_path)
-            except OSError:
-                pass
-            raise
-        
-        file_size = os.path.getsize(txt_path)
-        
-        logger.warning(f"python-pptx not available, created text file: {txt_path}")
-        
-        return ConversionResult(
-            success=True,
-            output_path=txt_path,
-            file_size=file_size,
-            slides_count=len(slides),
-            error="python-pptx not available, created text file instead"
         )
 
 

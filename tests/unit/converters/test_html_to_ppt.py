@@ -907,3 +907,22 @@ class TestAtomicSave:
             HTMLToPPTConverter()._atomic_save(prs, out)
             assert os.path.exists(out)
             assert not called["mktemp"]
+
+
+class TestNoFakeSuccess:
+    def test_missing_pptx_lib_fails_explicitly(self):
+        import os
+        import tempfile
+
+        from src.converters import html_to_ppt as mod
+
+        converter = mod.HTMLToPPTConverter()
+        converter._pptx_available = False
+        html = "<section class='slide' data-type='cover'><h1>T</h1></section>"
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as td:
+            out = os.path.join(td, "o.pptx")
+            result = converter.convert(html=html, output_path=out)
+            assert not result.success
+            assert result.error_code == "PPTX_UNAVAILABLE"
+            assert "python-pptx" in result.error
+            assert not os.path.exists(os.path.join(td, "o.txt"))
