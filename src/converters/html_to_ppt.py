@@ -661,7 +661,22 @@ class HTMLToPPTConverter:
         except Exception:
             chart_gen = None
         
-        for slide_data in slides:
+        pending = list(slides)
+        while pending:
+            slide_data = pending.pop(0)
+            # 展开 extra_tables：每张附加表生成独立 data 页，
+            # 插到队首保证续表紧跟当前页、顺序不乱
+            extra_tables = slide_data.pop("extra_tables", None)
+            if extra_tables:
+                base_title = slide_data.get("title", "")
+                pending[0:0] = [
+                    {
+                        "slide_type": "data",
+                        "title": f"{base_title}（续表{ti}）" if base_title else f"续表{ti}",
+                        "table_data": table,
+                    }
+                    for ti, table in enumerate(extra_tables, start=1)
+                ]
             slide_layout = prs.slide_layouts[6]
             slide = prs.slides.add_slide(slide_layout)
             slides_count += 1

@@ -752,3 +752,23 @@ class TestChartAspectFit:
             # 槽位宽高比 6.4/5.2 > 2 → 受宽度约束：w=6.4, h=3.2，等比 2:1
             assert abs(pic.width / pic.height - 2.0) < 0.05
             assert pic.width <= Inches(6.4) + 1000  # EMU 容差
+
+
+class TestExtraTablesRendered:
+    def test_extra_tables_become_data_slides(self, tmp_path):
+        import os
+        import tempfile
+
+        from src.converters.html_to_ppt import HTMLToPPTConverter
+
+        html = (
+            "<section class='slide' data-type='data'><h2>表一</h2>"
+            "<table><tr><th>年份</th><th>规模</th></tr><tr><td>2024</td><td>100亿</td></tr></table>"
+            "<table><tr><th>年份</th><th>增速</th></tr><tr><td>2024</td><td>12%</td></tr></table>"
+            "</section>"
+        )
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as td:
+            out = os.path.join(td, "t.pptx")
+            result = HTMLToPPTConverter().convert(html=html, output_path=out)
+            assert result.success
+            assert result.slides_count == 2  # 主表页 + 续表页
