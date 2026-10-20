@@ -542,7 +542,13 @@ class SlideElementParser(HTMLElementParser):
                 src = elem.get("src", "")
                 alt = elem.get("alt", "")
                 if src:
-                    images.append({"src": src, "alt": alt})
+                    img_entry = {"src": src, "alt": alt}
+                    attrs = elem.get("attrs", {}) or {}
+                    if attrs.get("data-image-type"):
+                        img_entry["image_type"] = attrs["data-image-type"]
+                    if attrs.get("data-chart-type"):
+                        img_entry["chart_type"] = attrs["data-chart-type"]
+                    images.append(img_entry)
             
             elif etype == "table":
                 headers = elem.get("headers", [])

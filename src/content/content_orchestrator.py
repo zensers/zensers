@@ -732,6 +732,14 @@ class ContentOrchestrator:
         )
 
     @staticmethod
+    def _ppt_chart_img(chart_path: str, chart_alt: str, chart: Dict[str, Any]) -> str:
+        chart_type = html.escape(str(chart.get("chart_type", "") or ""), quote=True)
+        return (
+            f'<img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}" '
+            f'data-image-type="chart" data-chart-type="{chart_type}">'
+        )
+
+    @staticmethod
     def _parse_markdown_title(content: str) -> Dict[str, Any]:
         """
         Parse markdown content, separate opening title from body.
@@ -1647,7 +1655,7 @@ class ContentOrchestrator:
                         chart_path = self._resolve_ppt_chart_path(chart.get("path", ""))
                         chart_alt = html.escape(chart.get("caption", "") or chart.get("title", "") or "Chart")
                         if chart_path:
-                            chart_imgs += f'<img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}">'
+                            chart_imgs += ContentOrchestrator._ppt_chart_img(chart_path, chart_alt, chart)
                         chart_idx += 1
                         if anchor_type != "section_end":
                             break
@@ -1687,7 +1695,7 @@ class ContentOrchestrator:
                         chart_path = self._resolve_ppt_chart_path(chart.get("path", ""))
                         chart_alt = html.escape(chart.get("caption", "") or chart.get("title", "") or "Chart")
                         if chart_path:
-                            chart_imgs += f'<img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}">'
+                            chart_imgs += ContentOrchestrator._ppt_chart_img(chart_path, chart_alt, chart)
                         chart_idx += 1
                         if anchor_type != "section_end":
                             break
@@ -1717,7 +1725,7 @@ class ContentOrchestrator:
             <h2>{chart_alt}</h2>
         </div>
         <div class="slide-body">
-            <img src="{html.escape(chart_path, quote=True)}" alt="{chart_alt}">
+            {ContentOrchestrator._ppt_chart_img(chart_path, chart_alt, chart)}
         </div>
     </div>
 </section>'''

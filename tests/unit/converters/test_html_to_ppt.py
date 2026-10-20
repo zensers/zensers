@@ -666,3 +666,30 @@ class TestTemplateHtmlForwarding:
                 html=html, output_path=str(out), template_html=template_html
             )
             assert result.success
+
+
+class TestChartMetadataPropagation:
+    def _parse(self, html: str):
+        from src.converters.base_parser import SlideElementParser
+
+        parser = SlideElementParser()
+        parser.feed(html)
+        return parser.get_slides()
+
+    def test_img_with_data_image_type_becomes_chart(self):
+        html = (
+            "<section class='slide' data-type='content'><h2>T</h2>"
+            "<img src='/charts/bar_x.png' alt='c' data-image-type='chart' data-chart-type='bar'>"
+            "</section>"
+        )
+        slides = self._parse(html)
+        assert slides[0]["images"][0]["image_type"] == "chart"
+        assert slides[0]["images"][0]["chart_type"] == "bar"
+
+    def test_plain_img_has_no_image_type(self):
+        html = (
+            "<section class='slide' data-type='content'><h2>T</h2>"
+            "<img src='/img/photo.png' alt='p'></section>"
+        )
+        slides = self._parse(html)
+        assert "image_type" not in slides[0]["images"][0]
