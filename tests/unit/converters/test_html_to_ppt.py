@@ -814,6 +814,7 @@ class TestStrategyWiringCondenser:
         with patch.object(co_mod, "get_format_strategy", wraps=co_mod.get_format_strategy) as spy:
             orchestrator = co_mod.ContentOrchestrator()
             assert spy.call_count >= 1
+            assert all(call.args and call.args[0] == "pptx" for call in spy.call_args_list)
             assert orchestrator._condenser.max_bullet_chars == directive.bullet_max_chars
 
     def test_condenser_respects_strategy_change(self):
@@ -844,8 +845,10 @@ class TestStrategyWiringCondenser:
                 return ""
 
         try:
-            co_mod.get_format_strategy = lambda fmt: _StubStrategy()
+            seen_formats = []
+            co_mod.get_format_strategy = lambda fmt: (seen_formats.append(fmt), _StubStrategy())[1]
             orchestrator = co_mod.ContentOrchestrator()
             assert orchestrator._condenser.max_bullet_chars == 18
+            assert seen_formats == ["pptx"]
         finally:
             co_mod.get_format_strategy = original

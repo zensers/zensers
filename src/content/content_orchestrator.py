@@ -128,7 +128,7 @@ class ContentOrchestrator:
         self._last_render_validation: Dict[str, Any] = {"passed": True, "issues": []}
         from .content_condenser import ContentCondenser
         # PPT 编辑契约的单一来源是 PPTXStrategy（format_strategy.py）。
-        # condenser 只在 _render_section_slides（pptx 分支）中使用。
+        # condenser 仅在 pptx 分支中使用（_prepare_template_variables / _render_section_slides）。
         directive = get_format_strategy("pptx").get_writing_directive()
         self._condenser = ContentCondenser(
             max_bullet_chars=directive.bullet_max_chars or 25
