@@ -703,3 +703,43 @@ class TestChartMetadataPropagation:
         slides = self._parse(html)
         assert slides[0].get("source_text") == "IDC 2025"
         assert slides[0]["images"][0]["image_type"] == "chart"
+
+
+class TestChartAspectFit:
+    def test_chart_detection_prefers_metadata(self):
+        """image_type=chart wins over filename; plain name no longer misdetects."""
+        from src.converters.slide_renderer import SlideRenderer
+
+        renderer = SlideRenderer({})
+        assert renderer._is_chart_image({"image_type": "chart", "src": "/x/photo.png"})
+        assert not renderer._is_chart_image({"src": "/x/photo.png"})
+        # 回退：无元数据时保留文件名启发
+        assert renderer._is_chart_image({"src": "/x/bar_revenue.png"})
+
+    def test_extract_pptx_picture_sizes(self, tmp_path):
+        """Charts fit inside the slot preserving aspect ratio (PIL available)."""
+        import os
+        import tempfile
+
+        from PIL import Image as PILImage
+        from pptx import Presentation
+        from pptx.util import Inches
+
+        from src.converters.slide_renderer import SlideRenderer
+
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as td:
+            wide = os.path.join(td, "bar_wide.png")
+            PILImage.new("RGB", (400, 200)).save(wide)  # 2:1 wide chart
+
+            prs = Presentation()
+            prs.slide_width = Inches(13.333)
+            prs.slide_height = Inches(7.5)
+            slide = prs.slides.add_slide(prs.slide_layouts[6])
+            renderer = SlideRenderer({})
+            slot = {"id": "chart", "position": {"left": 6.0, "top": 1.6, "width": 6.4, "height": 5.2}}
+            slide_data = {"images": [{"src": wide, "image_type": "chart"}]}
+            renderer._render_image_slot(slide, slot, slide_data, {})
+            pic = [sh for sh in slide.shapes if sh.shape_type == 13][0]  # PICTURE
+            # 槽位宽高比 6.4/5.2 > 2 → 受宽度约束：w=6.4, h=3.2，等比 2:1
+            assert abs(pic.width / pic.height - 2.0) < 0.05
+            assert pic.width <= Inches(6.4) + 1000  # EMU 容差

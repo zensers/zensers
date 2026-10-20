@@ -206,6 +206,15 @@ class SlideRenderer:
             p.space_after = Pt(line_spacing)
             p.space_before = Pt(space_before)
 
+    def _is_chart_image(self, img: Dict) -> bool:
+        """Chart detection: metadata first, filename heuristic as legacy fallback."""
+        if img.get("image_type") == "chart":
+            return True
+        if img.get("image_type"):  # 显式非 chart 元数据优先于文件名
+            return False
+        src = img.get("src", "")
+        return any(p in src for p in ("pie_", "bar_", "hbar_", "line_", "chart"))
+
     def _render_image_slot(self, slide, slot: Dict, slide_data: Dict, styles: Dict):
         images = slide_data.get(slot.get("source", "images"), [])
         idx = slot.get("style", {}).get("index", 0)
@@ -213,8 +222,7 @@ class SlideRenderer:
         if slot_id == "chart" and images:
             chart_idx = None
             for ci, img in enumerate(images):
-                src = img.get("src", "")
-                if img.get("image_type") == "chart" or any(p in src for p in ("pie_", "bar_", "hbar_", "line_", "chart")):
+                if self._is_chart_image(img):
                     chart_idx = ci
                     break
             if chart_idx is not None:
@@ -241,31 +249,28 @@ class SlideRenderer:
         max_h = pos.get("height", 5.2)
         slot_left = pos.get("left", 0.8)
         slot_top = pos.get("top", 1.6)
-        is_chart = img_info.get("image_type") == "chart" or "chart" in src or "pie_" in src or "bar_" in src or "hbar_" in src or "line_" in src or slot_id == "chart"
-        if is_chart:
-            slide.shapes.add_picture(src, Inches(slot_left), Inches(slot_top), Inches(max_w), Inches(max_h))
-        else:
+        is_chart = self._is_chart_image(img_info) or slot_id == "chart"
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(src) as pil_img:
+                img_w, img_h = pil_img.size
+                aspect = img_w / img_h
+            if max_w / max_h > aspect:
+                final_h = max_h
+                final_w = final_h * aspect
+            else:
+                final_w = max_w
+                final_h = final_w / aspect
+            centered_left = slot_left + (max_w - final_w) / 2
+            centered_top = slot_top + (max_h - final_h) / 2
+            slide.shapes.add_picture(src, Inches(centered_left), Inches(centered_top), Inches(final_w), Inches(final_h))
+        except ImportError:
             try:
-                from PIL import Image as PILImage
-                with PILImage.open(src) as pil_img:
-                    img_w, img_h = pil_img.size
-                    aspect = img_w / img_h
-                if max_w / max_h > aspect:
-                    final_h = max_h
-                    final_w = final_h * aspect
-                else:
-                    final_w = max_w
-                    final_h = final_w / aspect
-                centered_left = slot_left + (max_w - final_w) / 2
-                centered_top = slot_top + (max_h - final_h) / 2
-                slide.shapes.add_picture(src, Inches(centered_left), Inches(centered_top), Inches(final_w), Inches(final_h))
-            except ImportError:
-                try:
-                    slide.shapes.add_picture(src, Inches(slot_left), Inches(slot_top), Inches(max_w))
-                except Exception as e:
-                    logger.warning(f"Failed to add image '{src}': {e}")
+                slide.shapes.add_picture(src, Inches(slot_left), Inches(slot_top), Inches(max_w))
             except Exception as e:
                 logger.warning(f"Failed to add image '{src}': {e}")
+        except Exception as e:
+            logger.warning(f"Failed to add image '{src}': {e}")
 
     def _render_table_slot(self, slide, slot: Dict, slide_data: Dict, styles: Dict):
         table_data = slide_data.get(slot.get("source", "table_data"), [])
