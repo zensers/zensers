@@ -314,13 +314,16 @@ class ApiClient {
     topP?: number;
     frequencyPenalty?: number;
     presencePenalty?: number;
-  }): Promise<InteractResponse> {
+  }, outputFormat?: string): Promise<InteractResponse> {
     const formData = new FormData();
     formData.append('session_id', sessionId);
     formData.append('step', '0');
     const payload: Record<string, any> = { suggestion_id: suggestionId };
     if (exampleText) {
       payload.text = exampleText;
+    }
+    if (outputFormat) {
+      payload.output_format = outputFormat;
     }
     formData.append('response', JSON.stringify(payload));
     if (llmConfig?.provider) formData.append('llm_provider', llmConfig.provider);

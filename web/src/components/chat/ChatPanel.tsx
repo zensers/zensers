@@ -861,7 +861,7 @@ export function ChatPanel() {
       ? `确认开始研究，包含章节：${selectedLabels.join('、')}\n__SELECTED_SECTIONS__:${sectionsJson}\n__OUTPUT_FORMAT__:${fmt}`
       : `Confirm and start research with sections: ${selectedLabels.join(', ')}\n__SELECTED_SECTIONS__:${sectionsJson}\n__OUTPUT_FORMAT__:${fmt}`;
     try {
-      await handleOptionSelect('confirm_start', exampleText);
+      await handleOptionSelect('confirm_start', exampleText, fmt);
       const confirmContent = isZh
         ? `✅ 已确认研究框架\n\n**文档格式**：${fmtLabel}\n\n**研究章节**：\n${selectedLabels.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
         : `✅ Research Framework Confirmed\n\n**Format**: ${fmtLabel}\n\n**Sections**:\n${selectedLabels.map((s, i) => `${i + 1}. ${s}`).join('\n')}`;
