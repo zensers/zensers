@@ -32,10 +32,18 @@ class StructuredRecord:
     def summary(self) -> str:
         return f"{self.record_type}: {self.payload()}"
 
+    def metric_label(self) -> str:
+        return self.data_need or self.title
+
+    def metric_value(self) -> str:
+        return ""
+
     def to_data_point(self) -> dict[str, Any]:
         return {
             "title": self.title,
             "content": self.summary(),
+            "metric": self.metric_label(),
+            "value": self.metric_value(),
             "url": self.source_url,
             "source": self.source_title,
             "source_quote": self.source_quote,
@@ -83,6 +91,13 @@ class CompanyShareRecord(StructuredRecord):
             f"（口径：{self.metric_basis or '未注明'}，期间：{self.period or '未注明'}）"
         )
 
+    def metric_label(self) -> str:
+        basis = f"（{self.metric_basis}）" if self.metric_basis else ""
+        return f"市场份额：{self.company_name}{basis}"
+
+    def metric_value(self) -> str:
+        return f"{self.share_pct:g}%"
+
 
 @dataclass
 class BOMItemRecord(StructuredRecord):
@@ -116,6 +131,13 @@ class BOMItemRecord(StructuredRecord):
             f"（期间：{self.period or '未注明'}）"
         )
 
+    def metric_label(self) -> str:
+        prefix = f"{self.system}-" if self.system else ""
+        return f"BOM成本占比：{prefix}{self.component}"
+
+    def metric_value(self) -> str:
+        return f"{self.cost_share_pct:g}%"
+
 
 @dataclass
 class SupplierRecord(StructuredRecord):
@@ -143,6 +165,12 @@ class SupplierRecord(StructuredRecord):
             f"{self.supplier_name} 供应 {self.component}"
             f"（客户：{customers}，关系：{self.relationship_type}）"
         )
+
+    def metric_label(self) -> str:
+        return f"供应商配套：{self.component}"
+
+    def metric_value(self) -> str:
+        return self.supplier_name
 
 
 @dataclass(frozen=True)

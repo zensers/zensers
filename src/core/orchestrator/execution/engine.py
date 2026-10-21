@@ -3077,6 +3077,10 @@ class ExecutionEngine:
                                         continue
                                     for _point in _points:
                                         _point = dict(_point)
+                                        _point["section_id"] = (
+                                            _res.get("section_id", "")
+                                            or _point.get("section_id", "")
+                                        )
                                         _point.setdefault(
                                             "source_agent_id", _res.get("agent_id", "")
                                         )

@@ -11,6 +11,7 @@ def test_engine_has_deep_mode_service_hook():
     assert "self._deep_mode_service.enrich(" in source
     assert "_deep_mode_done_tasks" in source
     assert "shadow" in source
+    assert '_point["section_id"]' in source
 
 
 def test_deep_parent_section_id():

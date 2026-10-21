@@ -71,3 +71,30 @@ def test_bom_and_supplier_payloads():
     assert bom.payload()["component"] == "正极材料"
     assert bom.payload()["supplier_names"] == ["宁德时代"]
     assert supplier.payload()["customers"] == ["比亚迪"]
+
+
+def test_to_data_point_pipeline_metric_value():
+    share = CompanyShareRecord(
+        section_id="s", data_need="d", source_url="u", source_quote="q",
+        company_name="比亚迪", share_pct=19.8, metric_basis="零售销量",
+    )
+    point = share.to_data_point()
+    assert point["metric"] == "市场份额：比亚迪（零售销量）"
+    assert point["value"] == "19.8%"
+
+    from src.core.deep_mode.models import BOMItemRecord, SupplierRecord
+    bom = BOMItemRecord(
+        section_id="s", data_need="d", source_url="u", source_quote="q",
+        system="动力电池", component="电芯", cost_share_pct=18.0,
+    )
+    bom_point = bom.to_data_point()
+    assert bom_point["metric"] == "BOM成本占比：动力电池-电芯"
+    assert bom_point["value"] == "18%"
+
+    supplier = SupplierRecord(
+        section_id="s", data_need="d", source_url="u", source_quote="q",
+        supplier_name="宁德时代", component="电芯",
+    )
+    sup_point = supplier.to_data_point()
+    assert sup_point["metric"] == "供应商配套：电芯"
+    assert sup_point["value"] == "宁德时代"
