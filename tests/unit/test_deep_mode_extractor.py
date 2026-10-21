@@ -257,3 +257,34 @@ async def test_extract_html_table_with_omitted_end_tags():
     assert records[0].company_name == "比亚迪"
     assert records[0].share_pct == 32.5
     assert records[0].source_quote == "| 比亚迪 | 32.5% |"
+
+
+@pytest.mark.asyncio
+async def test_llm_prompt_contains_schema_for_each_type():
+    captured = {}
+
+    async def fake_llm(prompt: str):
+        captured["prompt"] = prompt
+        return {"success": True, "content": ""}
+
+    extractor = StructuredEvidenceExtractor(llm_call=fake_llm)
+    doc = {
+        "title": "行业数据",
+        "url": "https://example.com",
+        "content": "纯文本资料，没有表格。",
+        "evidence_id": "ev-9",
+    }
+
+    await extractor.extract([doc], "bom_item", {"section_id": "s", "data_need": "d"})
+    assert '"component"' in captured["prompt"]
+    assert '"cost_share_pct"' in captured["prompt"]
+    assert '"supplier_names"' in captured["prompt"]
+
+    await extractor.extract([doc], "company_share", {"section_id": "s", "data_need": "d"})
+    assert '"company_name"' in captured["prompt"]
+    assert '"share_pct"' in captured["prompt"]
+    assert '"metric_basis"' in captured["prompt"]
+
+    await extractor.extract([doc], "supplier", {"section_id": "s", "data_need": "d"})
+    assert '"supplier_name"' in captured["prompt"]
+    assert '"customers"' in captured["prompt"]

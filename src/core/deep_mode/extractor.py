@@ -258,9 +258,31 @@ class StructuredEvidenceExtractor:
             f"EVIDENCE_ID: {doc.get('evidence_id', '')}\n{str(doc.get('content') or '')[:3000]}"
             for index, doc in enumerate(documents)
         )
-        prompt = f"""从以下资料抽取 {record_type} 记录。
-只输出 JSON，不要解释。每个记录必须包含 source_quote 和 evidence_id。
-无法确认的数字不要输出。
+        schema = {
+            "company_share": (
+                '{"records": [{"company_name": "公司名", "share_pct": 32.5, '
+                '"metric_basis": "销量|装机量|收入等统计口径", "period": "2025", '
+                '"source_quote": "资料中支持该数字的原句", "evidence_id": "资料编号"}]}'
+            ),
+            "bom_item": (
+                '{"records": [{"system": "所属系统", "component": "部件名", '
+                '"cost_share_pct": 18.0, "supplier_names": ["供应商名"], '
+                '"source_quote": "资料中支持该数字的原句", "evidence_id": "资料编号"}]}'
+            ),
+            "supplier": (
+                '{"records": [{"supplier_name": "供应商名", "component": "部件名", '
+                '"customers": ["客户名"], '
+                '"source_quote": "资料中支持该配套关系的原句", "evidence_id": "资料编号"}]}'
+            ),
+        }.get(record_type, "")
+        prompt = f"""从以下资料抽取 {record_type} 类型的记录。
+只输出 JSON，不要解释，结构严格遵循此示例：{schema}
+字段要求：
+- company_name / supplier_name / component 必须非空，没有则不要输出该条记录
+- share_pct 和 cost_share_pct 必须是 0 到 100 之间的数字，不要带 % 号
+- supplier_names 和 customers 是字符串数组
+- source_quote 必须逐字摘自资料原文，evidence_id 必须逐字复制资料标注的编号
+- 只抽取资料中明确给出的数据，无法确认的记录直接省略
 
 资料：
 {docs_text}
