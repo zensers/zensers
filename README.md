@@ -89,7 +89,7 @@
 
 ### 环境要求
 
-- Python 3.10+ · Node.js 18+（前端）· LLM API Key（OpenAI / DeepSeek）
+- Python 3.10+ · Node.js 18+（前端）· LLM API Key（OpenAI / DeepSeek）· Tavily API Key（推荐，主力联网搜索）
 
 ### 安装
 
@@ -100,10 +100,17 @@ cd zensers
 # 后端
 pip install -r requirements.txt
 cp config/settings.example.yaml config/settings.yaml   # 填入你的 LLM API Key
+cp .env.example .env                                   # 填入你的 Tavily API Key（见下方说明）
 
 # 前端
 cd web && npm install && cd ..
 ```
+
+> 🔑 **联网搜索配置（推荐）**：主力搜索技能 `lc_tavily_search` 需要 Tavily API Key。
+> 在 [app.tavily.com](https://app.tavily.com) 免费注册即可获取（每月 1,000 credits，无需信用卡），
+> 然后在 `.env` 中加入 `TAVILY_API_KEY=tvly-你的密钥`。
+> **未配置时该技能会被静默禁用**，系统自动降级到内置多引擎搜索，报告质量会受影响。
+> 详细步骤见[使用手册 §5.3](docs/SYSTEM_USAGE_GUIDE.md)。
 
 ### 启动
 

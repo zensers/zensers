@@ -228,5 +228,6 @@ docs/问卷Agent模拟链路审查与MVP修订方案.md
 
 # internal engineering docs (kept locally, not published)
 research_report_prompt_opt/
-docs/
+docs/*
+!docs/SYSTEM_USAGE_GUIDE.md
 task_plan_session.md
