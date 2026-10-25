@@ -90,7 +90,7 @@ Conversational Framework → Multi-Source Retrieval → Section Writing/Review/R
 
 ### Requirements
 
-- Python 3.10+ · Node.js 18+ (frontend) · LLM API Key (OpenAI / DeepSeek)
+- Python 3.10+ · Node.js 18+ (frontend) · LLM API Key (OpenAI / DeepSeek) · Tavily API Key (recommended, primary web search)
 
 ### Install
 
@@ -101,10 +101,17 @@ cd zensers
 # Backend
 pip install -r requirements.txt
 cp config/settings.example.yaml config/settings.yaml   # add your LLM API key
+cp .env.example .env                                   # add your Tavily API key (see below)
 
 # Frontend
 cd web && npm install && cd ..
 ```
+
+> 🔑 **Web Search Setup (Recommended)**: The primary web-search skill `lc_tavily_search` requires a Tavily API key.
+> Sign up for free at [app.tavily.com](https://app.tavily.com) (1,000 credits/month, no credit card),
+> then add `TAVILY_API_KEY=tvly-your-key` to `.env`.
+> **Without the key, the skill is silently disabled** and the system falls back to built-in multi-engine search, reducing report quality.
+> See the [Usage Guide §5.3](docs/SYSTEM_USAGE_GUIDE.md) for detailed steps.
 
 ### Run
 
