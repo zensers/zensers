@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from src.core.deep_mode.config import DeepModeConfig
-from src.core.deep_mode.models import CompanyShareRecord
+from src.core.deep_mode.models import CompanyShareRecord, DeepModePlan
 from src.core.deep_mode.service import DeepModeService
 from src.core.search.gateway import SearchResponse, SearchResult
 
@@ -327,3 +327,89 @@ def test_dedupe_keeps_distinct_metric_basis():
 
     assert len(kept) == 2
     assert removed == 0
+
+
+@pytest.mark.asyncio
+async def test_get_section_evidence_returns_tables_and_gap_notes(tmp_path):
+    service = DeepModeService(
+        config=DeepModeConfig(max_searches=6),
+        gateway_provider=lambda: FakeGateway(),
+        store_dir=tmp_path,
+    )
+    await service.enrich(
+        topic="新能源汽车",
+        section_specs=SECTIONS,
+        output_type="industry_report",
+        task_id="task-evidence",
+    )
+
+    share = service.get_section_evidence("competitive_landscape")
+    assert "| 公司 |" in share["tables"]
+    assert share["gap_notes"] == []
+
+    folded = service.get_section_evidence("competitive_landscape::sub_0")
+    assert folded["tables"] == share["tables"]
+
+    supplier = service.get_section_evidence("value_chain")
+    assert supplier["tables"] == ""
+    assert supplier["gap_notes"] == ["供应商配套关系"]
+
+
+def test_get_section_evidence_without_plan_returns_empty():
+    service = DeepModeService(
+        config=DeepModeConfig(),
+        gateway_provider=lambda: FakeGateway(),
+    )
+
+    evidence = service.get_section_evidence("section_5")
+
+    assert evidence == {"tables": "", "gap_notes": []}
+
+
+@pytest.mark.asyncio
+async def test_shadow_mode_suppresses_injection_but_keeps_artifacts(tmp_path):
+    service = DeepModeService(
+        config=DeepModeConfig(shadow=True, max_searches=6),
+        gateway_provider=lambda: FakeGateway(),
+        store_dir=tmp_path,
+    )
+    await service.enrich(
+        topic="新能源汽车",
+        section_specs=SECTIONS,
+        output_type="industry_report",
+        task_id="task-shadow",
+    )
+
+    assert service.get_tables("competitive_landscape") == ""
+    assert service.get_section_evidence("competitive_landscape") == {
+        "tables": "",
+        "gap_notes": [],
+    }
+    assert (tmp_path / "task-shadow" / "summary.json").exists()
+
+
+def test_gap_note_only_for_missing_record_type():
+    service = DeepModeService(
+        config=DeepModeConfig(),
+        gateway_provider=lambda: FakeGateway(),
+    )
+    service._last_plan = DeepModePlan(
+        topic="新能源汽车",
+        sections={"company_share": "section_5", "supplier": "section_5"},
+        section_needs={},
+    )
+    point = CompanyShareRecord(
+        section_id="section_5",
+        data_need="头部企业份额",
+        source_url="https://example.com/share",
+        source_quote="比亚迪 22.3%",
+        company_name="比亚迪",
+        share_pct=22.3,
+    ).to_data_point()
+    service._records_by_section = {"section_5": [point]}
+    service._tables_by_section = {"section_5": "| 公司 | 市场份额 |"}
+
+    evidence = service.get_section_evidence("section_5")
+
+    assert evidence["tables"] == "| 公司 | 市场份额 |"
+    assert evidence["gap_notes"] == ["供应商配套关系"]

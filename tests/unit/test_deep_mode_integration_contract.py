@@ -28,3 +28,9 @@ def test_orchestrator_requirements_carry_output_type():
     orch_source = inspect.getsource(orchestrator)
     assert orch_source.count('"output_type": output_type_value') >= 4
     assert orch_source.count('"output_type": requirement_dict["output_type"]') >= 1
+
+
+def test_orchestrator_wires_deep_mode_service_to_report_upgrade():
+    source = inspect.getsource(orchestrator)
+    assert source.count("deep_mode_service=") >= 2
+    assert "self._execution_engine.deep_mode_service" in source

@@ -1242,6 +1242,7 @@ class ReportOrchestrator:
         chart_planner=None,
         chart_generator=None,
         checkpoint_dir: Optional[Path] = None,
+        deep_mode_service=None,
     ) -> None:
         self._chapter_writer = chapter_writer
         self._chapter_reviewer = chapter_reviewer
@@ -1263,6 +1264,7 @@ class ReportOrchestrator:
         self._chart_planner = chart_planner
         self._chart_generator = chart_generator
         self._structured_data_repair = StructuredDataRepairAgent(skill_registry=skill_registry)
+        self._deep_mode_service = deep_mode_service
         self._llm_trace: List[Dict[str, Any]] = []
         self._chapters: List[ChapterWriteOutput] = []
         self._framework_config: Dict[str, Any] = {}
@@ -1479,6 +1481,10 @@ class ReportOrchestrator:
                         sub_section_id=section_spec.get("sub_section_id", ""),
                         skill_registry=self._skill_registry,
                     )
+                    deep_evidence = self._deep_section_evidence(section_spec)
+                    if deep_evidence:
+                        chapter_data = dict(chapter_data) if isinstance(chapter_data, dict) else {}
+                        chapter_data["deep_mode_evidence"] = deep_evidence
                     requirement = self._build_chapter_requirement(section_spec)
                     coverage = self._coverage_checker.check(
                         requirement, chapter_data, self._evidence_context,
@@ -2457,6 +2463,40 @@ class ReportOrchestrator:
         if isinstance(aggregated_result, dict):
             return aggregated_result.get(name, default)
         return getattr(aggregated_result, name, default)
+
+    def _deep_section_evidence(self, section_spec: Dict[str, Any]) -> Dict[str, Any]:
+        """Deep-mode evidence for a chapter: validated tables + gap notes.
+
+        Returns {} when deep mode is absent/disabled or the section has
+        neither tables nor gaps, so callers can inject unconditionally.
+        """
+        if self._deep_mode_service is None:
+            return {}
+        getter = getattr(self._deep_mode_service, "get_section_evidence", None)
+        if not callable(getter):
+            return {}
+        section_id = str(
+            section_spec.get("parent_section_id")
+            or section_spec.get("section_id")
+            or ""
+        )
+        if not section_id:
+            return {}
+        # Chapter specs carry leaf ids (section_N::sub_k); deep-mode tables
+        # are keyed by the parent section id.
+        section_id = section_id.split("::")[0]
+        try:
+            evidence = getter(section_id) or {}
+        except Exception:  # noqa: BLE001
+            logger.warning("deep_mode evidence lookup failed for %s", section_id)
+            return {}
+        tables = str(evidence.get("tables") or "")
+        gap_notes = [
+            str(note) for note in (evidence.get("gap_notes") or []) if str(note).strip()
+        ]
+        if not tables and not gap_notes:
+            return {}
+        return {"tables": tables, "gap_notes": gap_notes}
 
     @staticmethod
     def _build_evidence_context(

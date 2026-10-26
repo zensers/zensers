@@ -1371,3 +1371,42 @@ class TestFlattenSectionDataPoints:
     def test_empty_sections_yield_empty_list(self):
         assert ReportOrchestrator._flatten_section_data_points([]) == []
         assert ReportOrchestrator._flatten_section_data_points(None) == []
+
+
+class TestDeepSectionEvidence:
+    def _orchestrator(self, deep_mode_service):
+        from src.agents.fixed_agents.report_upgrade.orchestrator import ReportOrchestrator
+
+        orchestrator = ReportOrchestrator.__new__(ReportOrchestrator)
+        orchestrator._deep_mode_service = deep_mode_service
+        return orchestrator
+
+    def test_reads_service_and_folds_leaf_id(self):
+        class _FakeDeepService:
+            def get_section_evidence(self, section_id):
+                if section_id == "section_5":
+                    return {"tables": "| 公司 | 市场份额 |", "gap_notes": []}
+                return {"tables": "", "gap_notes": []}
+
+        orchestrator = self._orchestrator(_FakeDeepService())
+
+        evidence = orchestrator._deep_section_evidence(
+            {"section_id": "section_5::sub_5_0", "parent_section_id": ""}
+        )
+        assert evidence == {"tables": "| 公司 | 市场份额 |", "gap_notes": []}
+
+    def test_empty_evidence_returns_empty_dict(self):
+        class _EmptyDeepService:
+            def get_section_evidence(self, section_id):
+                return {"tables": "", "gap_notes": []}
+
+        orchestrator = self._orchestrator(_EmptyDeepService())
+
+        assert orchestrator._deep_section_evidence(
+            {"section_id": "section_6::sub_6_0", "parent_section_id": ""}
+        ) == {}
+
+    def test_missing_service_returns_empty_dict(self):
+        orchestrator = self._orchestrator(None)
+
+        assert orchestrator._deep_section_evidence({"section_id": "section_5"}) == {}

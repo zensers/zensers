@@ -5,7 +5,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from src.core.search.gateway import SearchRequest
 
@@ -26,6 +26,13 @@ _TERMINAL_STOP_REASONS = frozenset({"max_searches_reached", "invalid_scope"})
 
 
 class DeepModeService:
+
+    _RECORD_TYPE_LABELS: ClassVar[dict[str, str]] = {
+        "company_share": "公司市场份额",
+        "bom_item": "BOM 成本结构",
+        "supplier": "供应商配套关系",
+    }
+
     def __init__(
         self,
         config: DeepModeConfig,
@@ -298,7 +305,40 @@ class DeepModeService:
         return result, removed
 
     def get_tables(self, section_id: str) -> str:
+        # Shadow mode stores artifacts without injecting anywhere, so every
+        # consumer of tables must see them as absent (engine analysis prompt,
+        # report-upgrade chapter writer, etc.).
+        if self.config.shadow:
+            return ""
         return self._tables_by_section.get(section_id, "")
+
+    def get_section_evidence(self, section_id: str) -> dict[str, Any]:
+        """Return validated tables plus planned-but-empty gap notes.
+
+        Report chapters address sections by their parent id (``section_N``
+        or ``section_N::sub_k``); leaf suffixes are folded here so callers
+        can pass the chapter id verbatim.  Each planned record type mapped
+        to this section with zero surviving records is reported as a gap
+        note so the writer can state the public-data gap explicitly instead
+        of staying silent about it.
+        """
+        if self.config.shadow:
+            return {"tables": "", "gap_notes": []}
+        parent = str(section_id or "").split("::")[0]
+        tables = self._tables_by_section.get(parent, "")
+        present_types = {
+            str(point.get("record_type") or "")
+            for point in (self._records_by_section.get(parent) or [])
+        }
+        gap_notes: list[str] = []
+        plan = self._last_plan
+        if plan is not None:
+            for record_type, mapped in plan.sections.items():
+                if mapped == parent and record_type not in present_types:
+                    gap_notes.append(
+                        self._RECORD_TYPE_LABELS.get(record_type, record_type)
+                    )
+        return {"tables": tables, "gap_notes": gap_notes}
 
     def ensure_tables(
         self,

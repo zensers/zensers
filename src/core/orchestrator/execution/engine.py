@@ -293,7 +293,7 @@ class ExecutionEngine:
         )
         self._deep_mode_done_tasks: set[str] = set()
         self._deep_mode_lock = asyncio.Lock()
-        
+
         # 控制机制
         self.concurrency = ConcurrencyManager(ConcurrencyConfig(
             max_concurrent=config.max_concurrent,
@@ -381,7 +381,12 @@ class ExecutionEngine:
             self.data_checker = None
             self.analysis_checker = None
             self.report_checker = None
-    
+
+    @property
+    def deep_mode_service(self):
+        """Public read-only access for report-upgrade evidence injection."""
+        return getattr(self, "_deep_mode_service", None)
+
     def classify_agent(self, agent: "IAgent") -> AgentCategory:
         """
         分类Agent

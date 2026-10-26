@@ -749,6 +749,23 @@ class TestFrameworkTreeLLMGuidance:
         assert 'prefer' in ResearchAPI._JSON_OUTPUT_SCHEMA.lower() or 'RULE' in ResearchAPI._JSON_OUTPUT_SCHEMA, \
             "_JSON_OUTPUT_SCHEMA must include rule about preferring framework_tree for multi-level topics"
 
+    def test_json_schema_enforces_framework_rigor(self):
+        from src.api.research_api import ResearchAPI
+        schema = ResearchAPI._JSON_OUTPUT_SCHEMA
+        # Tree granularity contract: 6-9 sections, 3-5 sub_sections, 2-4 points
+        assert '6-9 sections' in schema
+        assert '3-5' in schema and '2-4' in schema
+        # Quantified data-need contract (指标+口径+期间, no vague placeholders)
+        assert '量化' in schema or 'quantified data need' in schema
+        assert '市场规模情况' in schema  # the forbidden-vague example stays pinned
+        # Mandatory industry-report coverage dimensions
+        for dim in ('产业链', '竞争格局', '技术路线', '政策与监管', '风险与展望'):
+            assert dim in schema, f"mandatory coverage dimension missing: {dim}"
+        # Deep-mode alignment: share/supplier/BOM points seed evidence tables
+        assert 'CR5/CR8' in schema
+        assert '关键供应商配套关系' in schema
+        assert 'BOM' in schema
+
 
 # ============================================================
 # 10. B5: HTML/DOCX multi-level rendering

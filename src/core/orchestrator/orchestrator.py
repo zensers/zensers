@@ -1,4 +1,4 @@
-"""
+﻿"""
 Research Orchestrator - Research Task Master Scheduler (Integrated Interactive Version)
 
 Responsibilities:
@@ -1740,6 +1740,7 @@ class ResearchOrchestrator:
                     chart_planner=ChartPlannerAgent(search_gateway=_task_gateway),
                     chart_generator=ChartGenerator(output_dir=str(_CHART_OUTPUT_DIR)),
                     checkpoint_dir=output_dir_path,
+                    deep_mode_service=self._execution_engine.deep_mode_service,
                 )
 
                 _output_type_value = requirement.output_type.value if hasattr(
@@ -3270,6 +3271,7 @@ class ResearchOrchestrator:
                     chart_planner=ChartPlannerAgent(search_gateway=task_gateway),
                     chart_generator=ChartGenerator(output_dir=str(_CHART_OUTPUT_DIR)),
                     checkpoint_dir=output_dir_path,
+                    deep_mode_service=self._execution_engine.deep_mode_service,
                 )
 
                 if hasattr(routing_result, 'task_structure') and routing_result.task_structure:

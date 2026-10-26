@@ -2,6 +2,27 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
 
+def resolve_expected_chars(chapter_spec: Optional[Dict[str, Any]], framework_config: Optional[Dict[str, Any]]) -> int:
+    """Chapter length target in chars.
+
+    Priority: explicit per-chapter ``word_count_target`` → framework
+    ``agent_config.content.min_section_length`` → legacy 2000 default.
+    Shared by the chapter writer (prompt directive + streaming budget) and
+    the reviewer (length criterion) so both enforce the same contract.
+    """
+    raw = (chapter_spec or {}).get("word_count_target")
+    if raw is None:
+        content_cfg = ((framework_config or {}).get("agent_config") or {}).get(
+            "content"
+        ) or {}
+        raw = content_cfg.get("min_section_length")
+    try:
+        resolved = int(raw) if raw is not None else 2000
+    except (TypeError, ValueError):
+        resolved = 2000
+    return max(500, resolved)
+
+
 @dataclass
 class ChapterRequirement:
     section_id: str

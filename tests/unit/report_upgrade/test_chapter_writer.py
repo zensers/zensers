@@ -445,3 +445,84 @@ class TestChapterPromptPptxBulletLimit:
             make_input(), RetryVariations(), "")
         assert "个中文字符" not in prompt
         assert "bullet_max_chars" not in prompt
+
+
+class TestDeepModeEvidencePrompt:
+    def _writer(self, mock_prompts):
+        return ChapterWriter(prompt_manager=mock_prompts, use_streaming=False)
+    def test_write_prompt_appends_deep_mode_evidence_block(self, mock_prompts):
+        writer = self._writer(mock_prompts)
+        inp = make_input(chapter_data={
+            "deep_mode_evidence": {
+                "tables": "| 公司 | 市场份额 |\n|---|---|\n| 比亚迪 | 22.3% |",
+                "gap_notes": ["供应商配套关系"],
+            },
+        })
+
+        prompt = writer._build_write_prompt(inp, RetryVariations(), "前文摘要")
+
+        assert "深度模式结构化证据" in prompt
+        assert "### 深度模式数据表" in prompt
+        assert "| 比亚迪 | 22.3% |" in prompt
+        assert "供应商配套关系" in prompt
+        assert "不得虚构数值填补" in prompt
+        assert "self_check" in prompt
+
+    def test_write_prompt_has_no_deep_evidence_block_by_default(self, mock_prompts):
+        writer = self._writer(mock_prompts)
+
+        prompt = writer._build_write_prompt(make_input(), RetryVariations(), "前文摘要")
+
+        assert "深度模式结构化证据" not in prompt
+
+
+class TestLengthTargetResolution:
+    def _writer(self, mock_prompts):
+        return ChapterWriter(prompt_manager=mock_prompts, use_streaming=False)
+
+    def test_prefers_chapter_spec_over_framework(self):
+        assert ChapterWriter._resolve_expected_chars(
+            {"word_count_target": 3000},
+            {"agent_config": {"content": {"min_section_length": 5000}}},
+        ) == 3000
+
+    def test_falls_back_to_framework_min_section_length(self):
+        assert ChapterWriter._resolve_expected_chars(
+            {},
+            {"agent_config": {"content": {"min_section_length": 5000}}},
+        ) == 5000
+
+    def test_defaults_to_2000_without_any_target(self):
+        assert ChapterWriter._resolve_expected_chars({}, {}) == 2000
+        assert ChapterWriter._resolve_expected_chars({}, None) == 2000
+
+    def test_garbage_values_fall_back_to_default(self):
+        assert ChapterWriter._resolve_expected_chars(
+            {"word_count_target": "abc"}, {}
+        ) == 2000
+
+    def test_prompt_contains_length_directive(self, mock_prompts):
+        writer = self._writer(mock_prompts)
+        inp = make_input(framework_config={
+            "name": "行业研究",
+            "agent_config": {"content": {"min_section_length": 5000}},
+        })
+
+        prompt = writer._build_write_prompt(inp, RetryVariations(), "前文摘要")
+
+        assert "篇幅要求" in prompt
+        assert "5000" in prompt
+
+    def test_pptx_prompt_has_no_length_directive(self, mock_prompts):
+        writer = self._writer(mock_prompts)
+        inp = make_input(
+            output_format="pptx",
+            framework_config={
+                "name": "行业研究",
+                "agent_config": {"content": {"min_section_length": 5000}},
+            },
+        )
+
+        prompt = writer._build_write_prompt(inp, RetryVariations(), "前文摘要")
+
+        assert "篇幅要求" not in prompt

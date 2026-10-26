@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
 
-from .models import ChapterWriteInput, ChapterWriteOutput, DataPoint
+from .models import ChapterWriteInput, ChapterWriteOutput, DataPoint, resolve_expected_chars
 from .prompt_manager import PromptManager
 from src.core.content_contract import (
     check_content, check_finding_line, content_opens_meta, current_report_language,
@@ -87,10 +87,9 @@ class ChapterWriter:
         self._raw_data_location = input_data.raw_data_location or ""
         chapter_spec = input_data.chapter_spec
         raw_location = input_data.raw_data_location or ""
-        try:
-            expected_chars = int((chapter_spec or {}).get("word_count_target") or 2000)
-        except (TypeError, ValueError):
-            expected_chars = 2000
+        expected_chars = self._resolve_expected_chars(
+            chapter_spec, input_data.framework_config
+        )
         task_tag = f"writer:{(chapter_spec or {}).get('section_id', '')}"
         try:
             outcome = await call_llm_ex(
@@ -164,6 +163,11 @@ class ChapterWriter:
                     f"budget_exhausted:{exhausted.classification.error_class.value}")
         return chapter
 
+    @staticmethod
+    def _resolve_expected_chars(chapter_spec, framework_config) -> int:
+        """Chapter length target in chars (delegates to shared resolver)."""
+        return resolve_expected_chars(chapter_spec, framework_config)
+
     def _build_write_prompt(self, input_data: ChapterWriteInput,
                             variations: RetryVariations, preceding_summary: str,
                             tools_bound: bool = False) -> str:
@@ -231,9 +235,54 @@ class ChapterWriter:
         try:
             prompt = self._prompts.get(prompt_name, **prompt_kwargs)
         except FileNotFoundError:
-            # Keep custom/legacy prompt directories working until they add the
-            # optional PPT template.
+            # Keep custom/legacy prompt directories working until they add
+            # the optional PPT template.
             prompt = self._prompts.get("chapter_write", **prompt_kwargs)
+        if input_data.output_format != "pptx":
+            expected_chars = self._resolve_expected_chars(
+                input_data.chapter_spec, input_data.framework_config
+            )
+            prompt = (
+                f"{prompt}\n\n## 篇幅要求\n"
+                f"本章正文（content 字段）目标约 {expected_chars} 字（±15%）。"
+                f"数据表格计入篇幅；低于 {int(expected_chars * 0.8)} 字视为未完成，"
+                "必须通过补充论证、对比分析、情景推演和口径说明达到目标，"
+                "禁止用重复表述或空洞总结注水。"
+            )
+        deep_evidence = {}
+        if isinstance(input_data.chapter_data, dict):
+            deep_evidence = input_data.chapter_data.get("deep_mode_evidence") or {}
+        if isinstance(deep_evidence, dict) and (
+            deep_evidence.get("tables") or deep_evidence.get("gap_notes")
+        ):
+            deep_lines = [
+                "",
+                "## 深度模式结构化证据（已通过证据校验，优先级高于其他数据来源）",
+                "写作硬性要求：",
+                (
+                    "1. 将下方表格以 Markdown 表格原样嵌入本章正文，保留表格标题行"
+                    "「### 深度模式数据表」、全部行列、期间与来源链接，不得合并或删减行；"
+                ),
+                (
+                    "2. 表中数值是这些指标的唯一可信口径：不得改写、舍入或重新计算，"
+                    "不得引入表中不存在的公司名或数值；"
+                ),
+                "3. 标记 * 的为估算值，必须保留其估算方法脚注；",
+                (
+                    "4. 完成自检（self_check）时必须确认：深度表格已完整嵌入，"
+                    "正文引用数字与表格一致。"
+                ),
+            ]
+            if deep_evidence.get("tables"):
+                deep_lines.append("### 深度模式数据表\n")
+                deep_lines.append(str(deep_evidence["tables"]))
+            for note in deep_evidence.get("gap_notes") or []:
+                deep_lines.append(
+                    f"数据缺口说明：{note}的公开结构化数据存在缺口。"
+                    "本章必须明确说明该缺口及其对结论完整性的影响，"
+                    "不得虚构数值填补；缺口说明不计入表格嵌入要求。"
+                )
+            prompt = f"{prompt}\n" + "\n".join(deep_lines)
         if variations.strip_reasoning:
             prompt = f"直接输出正式章节内容，不要输出任何思考过程。\n{prompt}"
         if variations.strict_json_prefix:

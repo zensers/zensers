@@ -465,7 +465,13 @@ class ResearchAPI:
   "base_report_version": 3,
   "tool_call": {"name": "tool_name", "arguments": {}} or null
 }
-RULE: When action="enter_framework", if the topic has natural multi-level structure (e.g., industry segments, regional breakdowns, product categories), prefer using "framework_tree" instead of only "framework_sections". Simple topics can use "framework_sections" alone."""
+RULE: When action="enter_framework", derive the framework to professional deep-research standards:
+- For industry/company deep research ALWAYS use "framework_tree": 6-9 sections; each section 3-5 "sub_sections"; each sub_section 2-4 "points".
+- Every point must be a searchable, quantified data need: 指标+口径+期间 (e.g. "全球半导体设备市场规模（亿美元，2023-2026）"), never vague placeholders like "市场规模情况" or "相关分析".
+- Industry reports MUST cover: 行业界定与统计口径 / 市场规模与增长（全球+中国）/ 产业链结构与瓶颈 / 竞争格局（市场份额、CR5/CR8 集中度）/ 技术路线与创新（核心部件与成本结构）/ 政策与监管 / 风险与展望.
+- The 竞争格局 section must carry market-share and concentration points; the 产业链 section must carry 关键供应商配套关系 points; the 技术路线 section must carry BOM/核心部件成本占比 points — these points seed the structured evidence tables and per-section data checks.
+- Section and point names must be written in the user's language.
+Simple non-industry topics may use "framework_sections" alone."""
 
     def __init__(self, orchestrator=None, preview_generator=None, use_intelligent_routing=True, knowledge_manager=None):
         """_knowledge_manager"""
@@ -2375,7 +2381,7 @@ IMPORTANT: The DEFAULT action for ambiguous messages like "继续" is resume_res
             if content:
                 history_text += f"{role}: {content}\n"
         user_lang = 'Chinese' if lang == 'zh' else 'English'
-        prompt = f"""Based on the following conversation about a research topic, derive appropriate report sections for a professional research framework.\n\nResearch topic: {topic}\n\nConversation history:\n{history_text}\n\nRequirements:\n- Output 4-8 sections that comprehensively cover the research topic\n- Section names must be in {user_lang}\n- Reflect what was actually discussed or requested in the conversation\n- NO duplicate or semantically overlapping sections\n- Output ONLY a JSON array of section name strings, no other text\n- Example format: ["Market Size Analysis", "Competitive Landscape", "Policy Environment"]\n"""
+        prompt = f"""Based on the following conversation about a research topic, derive appropriate report sections for a professional research framework.\n\nResearch topic: {topic}\n\nConversation history:\n{history_text}\n\nRequirements:\n- Output 6-9 sections that comprehensively cover the research topic\n- Industry reports MUST cover: 行业界定与统计口径 / 市场规模与增长 / 产业链结构与瓶颈 / 竞争格局（份额与集中度）/ 技术路线与创新（部件成本结构）/ 政策与监管 / 风险与展望\n- Section names must be specific and searchable: 携带量化口径提示（如"竞争格局：市场份额与集中度"、"技术路线：核心部件成本结构"），不得使用"相关分析"等空泛表述\n- Section names must be in {user_lang}\n- Reflect what was actually discussed or requested in the conversation\n- NO duplicate or semantically overlapping sections\n- Output ONLY a JSON array of section name strings, no other text\n- Example format: ["Market Size Analysis", "Competitive Landscape", "Policy Environment"]\n"""
         try:
             from src.core.llm_client import call_llm
             from src.config.llm_profiles import RoutingHint

@@ -113,3 +113,41 @@ class TestChapterReviewAgentParseOutput:
         result = reviewer._parse_output(raw)
         assert result.passed is False
         assert result.score == 0.0
+
+
+class TestLengthCriterion:
+    def test_review_prompt_carries_min_chars(self, reviewer, mock_prompts):
+        captured = {}
+
+        def fake_get(prompt_name, **kwargs):
+            captured.update(kwargs)
+            return "PROMPT"
+
+        mock_prompts.get = fake_get
+        inp = make_review_input(framework_config={
+            "name": "行业研究",
+            "agent_config": {"content": {"min_section_length": 5000}},
+        })
+
+        import asyncio
+        from unittest.mock import patch
+
+        from src.core.llm_retry import RetryVariations
+
+        def fake_engine(prompt_builder, **kwargs):
+            prompt_builder(RetryVariations())
+            return (
+                "<<<CHAPTER_REVIEW>>>\nPASSED: true\nSCORE: 85\n"
+                "<<<ISSUES>>>\n<<<END_CHAPTER_REVIEW>>>"
+            )
+
+        async def run():
+            with patch(
+                "src.agents.fixed_agents.report_upgrade.chapter_reviewer.call_llm_ex",
+                new_callable=AsyncMock,
+            ) as mock_call:
+                mock_call.side_effect = fake_engine
+                await reviewer.review(inp)
+
+        asyncio.run(run())
+        assert captured.get("min_chars") == 5000

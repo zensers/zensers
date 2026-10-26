@@ -28,6 +28,8 @@ class ChapterReviewAgent:
         chapter_spec = input_data.chapter_spec
 
         def build_prompt(variations) -> str:
+            from .models import resolve_expected_chars
+
             prompt = self._prompts.get(
                 "chapter_review",
                 topic=input_data.topic,
@@ -42,6 +44,7 @@ class ChapterReviewAgent:
                 ),
                 chapter_data=json.dumps(input_data.chapter_data, ensure_ascii=False, indent=2)
                              if input_data.chapter_data else '无可用数据',
+                min_chars=resolve_expected_chars(chapter_spec, input_data.framework_config),
             )
             if variations.strict_json_prefix:
                 # Delimiter contract: this builder owns the rung and
