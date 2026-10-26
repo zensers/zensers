@@ -33,6 +33,7 @@
 | 4 | **固态电池行业分析报告** | 5 | 78 | 5 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/solid-state-battery.html) |
 | 5 | **新能源汽车市场研究**（快速版） | 2 | 66 | 2 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/nev-market.html) |
 | 6 | **人工智能行业深度报告**（7 章深度版） | 7 | 30 | 13 | `formal / degraded` | [📖 阅读](https://zensers.github.io/zensers/samples/ai-industry-deep.html) |
+| 7 | **半导体设备行业深度报告**（深度模式：供应商/BOM 证据表） | 8 | 125 | 14 | `diagnostic / blocked` | [📖 阅读](https://zensers.github.io/zensers/samples/semiconductor-equipment.html) |
 
 > 💡 每份报告开头的「口径、假设与方法」集中声明统计边界；正文关键数字 100% 可溯源；
 > 存在未完全核验的证据链时，交付签名会如实降级标注（degraded）——**宁可诚实降级，绝不掩饰不确定性**。

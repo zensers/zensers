@@ -33,6 +33,7 @@ Every report ships with a **delivery signature**, a **methodology & definitions 
 | 4 | **Solid-State Battery Industry Report** | 5 | 78 | 5 | `formal / degraded` | [📖 Read](https://zensers.github.io/zensers/samples/solid-state-battery.html) |
 | 5 | **EV Market Research** (Express) | 2 | 66 | 2 | `formal / degraded` | [📖 Read](https://zensers.github.io/zensers/samples/nev-market.html) |
 | 6 | **AI Industry In-Depth Report** (7 sections) | 7 | 30 | 13 | `formal / degraded` | [📖 Read](https://zensers.github.io/zensers/samples/ai-industry-deep.html) |
+| 7 | **Semiconductor Equipment In-Depth Report** (Deep Mode: supplier/BOM evidence tables) | 8 | 125 | 14 | `diagnostic / blocked` | [📖 Read](https://zensers.github.io/zensers/samples/semiconductor-equipment.html) |
 
 > 💡 Every report opens with a consolidated "Methodology, Definitions & Assumptions" section; every key figure is traceable;
 > when evidence cannot be fully verified, the delivery signature is downgraded honestly (degraded) — **honest degradation over false confidence**.
