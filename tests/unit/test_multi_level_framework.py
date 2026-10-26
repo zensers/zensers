@@ -495,6 +495,37 @@ class TestResultAggregatorFrameworkSkeleton:
 # 9. framework_tree -> section_data_specs P0 alignment
 # ============================================================
 
+class TestAspectNameSpecSynthesis:
+    def test_synthesizes_keyword_driven_specs(self):
+        from src.core.decomposition.strategies import (
+            _synthesize_specs_from_aspect_names, SectionDataSpec,
+        )
+
+        specs = _synthesize_specs_from_aspect_names([
+            "competitive_landscape", "value_chain", "technology_trends",
+            "random_section",
+        ])
+
+        assert [s.section_id for s in specs] == [
+            "section_0", "section_1", "section_2", "section_3",
+        ]
+        by_name = {s.name: s for s in specs}
+        share_needs = " ".join(by_name["competitive_landscape"].all_data_needs)
+        assert "市场份额" in share_needs
+        assert "CR5/CR8" in share_needs
+        supplier_needs = " ".join(by_name["value_chain"].all_data_needs)
+        assert "供应商配套关系" in supplier_needs
+        tech_needs = " ".join(by_name["technology_trends"].all_data_needs)
+        assert "BOM" in tech_needs
+        # Unknown sections fall back to the section name as their own need
+        assert by_name["random_section"].all_data_needs == ["random_section"]
+
+    def test_empty_aspects_yield_no_specs(self):
+        from src.core.decomposition.strategies import _synthesize_specs_from_aspect_names
+
+        assert _synthesize_specs_from_aspect_names([]) == []
+
+
 class TestFrameworkTreeSectionDataSpecsAlignment:
     def test_alignment_overrides_sub_section_names(self):
         from src.core.decomposition.strategies import (

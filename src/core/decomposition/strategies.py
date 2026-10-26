@@ -380,13 +380,71 @@ def _specs_from_framework_tree(
                 data_needs=[requested],
                 data_source_type="search",
             )]
+            specs.append(SectionDataSpec(
+                # The caller passes only data-bearing aspects, so this positional
+                # ID is the canonical identity used by IndustryResearchStrategy.
+                # Template IDs are metadata and must not leak into execution IDs.
+                section_id=f"section_{index}",
+                name=requested,
+                sub_sections=sub_specs,
+            ))
+    return specs
+
+
+# Keyword → data-needs mapping used when neither the intent analysis nor the
+# framework tree provides per-section data contracts (template/fallback
+# frameworks). Keeps per-section coverage and deep-mode evidence alive for
+# every data-bearing section instead of silently degrading to no specs.
+_ASPECT_KEYWORD_DATA_NEEDS = (
+    (("competitive", "竞争", "份额", "market share", "格局"), [
+        "主要厂商市场份额（%，最新年度）",
+        "CR5/CR8 市场集中度",
+        "竞争梯队与格局演变",
+    ]),
+    (("bom", "成本结构", "技术路线", "technology", "技术"), [
+        "核心部件成本结构（BOM 占比）",
+        "关键技术路线对比",
+    ]),
+    (("value_chain", "产业链", "供应", "supply", "supplier"), [
+        "关键环节供应商配套关系",
+        "上游材料与零部件供应安全",
+    ]),
+    (("market_size", "市场规模", "market size", "增长", "growth"), [
+        "市场规模（全球与中国，最新期）",
+        "增速与未来三年预测",
+    ]),
+    (("policy", "政策", "监管"), ["关键政策与监管动态"]),
+    (("financial", "财务", "营收"), ["代表企业营收与毛利率对比"]),
+    (("risk", "风险"), ["主要风险因素与影响路径"]),
+)
+
+
+def _synthesize_specs_from_aspect_names(aspect_names: List[str]) -> List[SectionDataSpec]:
+    """Build minimal data specs from section names alone.
+
+    Mirrors `_specs_from_framework_tree` identity conventions (positional
+    ``section_{index}`` ids over data-bearing aspects) so downstream lookups
+    by section id keep working.
+    """
+    specs: List[SectionDataSpec] = []
+    for index, aspect in enumerate(aspect_names or []):
+        name = str(aspect or "").strip()
+        lowered = name.lower()
+        needs: List[str] = []
+        for keywords, data_needs in _ASPECT_KEYWORD_DATA_NEEDS:
+            if any(kw in lowered for kw in keywords):
+                needs.extend(data_needs)
+        if not needs:
+            needs = [name]
         specs.append(SectionDataSpec(
-            # The caller passes only data-bearing aspects, so this positional
-            # ID is the canonical identity used by IndustryResearchStrategy.
-            # Template IDs are metadata and must not leak into execution IDs.
             section_id=f"section_{index}",
-            name=requested,
-            sub_sections=sub_specs,
+            name=name,
+            sub_sections=[SubSectionSpec(
+                sub_section_id=f"sub_{index}_0",
+                name=name,
+                data_needs=list(dict.fromkeys(needs)),
+                data_source_type="search",
+            )],
         ))
     return specs
 
@@ -738,6 +796,16 @@ class IndustryResearchStrategy(TaskDecompositionStrategy):
             )
             # Rebuild lookup maps after reconstruction; the maps are consumed
             # by every collection and analysis AgentSpec below.
+            section_spec_by_id = {spec.section_id: spec for spec in section_data_specs}
+            section_spec_by_name = {spec.name: spec for spec in section_data_specs}
+        if not section_data_specs:
+            # Template/fallback frameworks carry neither intent-derived specs
+            # nor a framework tree. Without specs, per-section coverage and
+            # deep-mode evidence silently degrade to nothing; synthesize a
+            # minimal contract from the section names instead.
+            section_data_specs = _synthesize_specs_from_aspect_names(
+                [aspect for _, aspect in normal_aspects]
+            )
             section_spec_by_id = {spec.section_id: spec for spec in section_data_specs}
             section_spec_by_name = {spec.name: spec for spec in section_data_specs}
         
